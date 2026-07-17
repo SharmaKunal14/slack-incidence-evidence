@@ -401,7 +401,6 @@ resource "aws_lambda_function" "worker" {
       INCIDENT_WORKFLOW_STATE_MACHINE_ARN = aws_sfn_state_machine.incident_workflow.arn
       LOG_LEVEL                           = var.log_level
       NODE_ENV                            = local.node_env
-      NODE_EXTRA_CA_CERTS                 = "/var/runtime/ca-cert.pem"
     }
   }
 
@@ -427,10 +426,6 @@ resource "aws_lambda_function" "worker" {
       error_message = "worker_subnet_ids and worker_security_group_ids must either both be empty or both be populated."
     }
 
-    precondition {
-      condition     = var.environment != "production" || local.worker_vpc_enabled
-      error_message = "Production requires worker_subnet_ids and worker_security_group_ids so PostgreSQL remains private behind RDS Proxy."
-    }
   }
 
   depends_on = [

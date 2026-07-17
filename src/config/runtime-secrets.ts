@@ -6,10 +6,18 @@ const slackSigningSecretSchema = z
   })
   .strict();
 
-const databaseCredentialsSchema = z
+const certificateBundleSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^(?:-----BEGIN CERTIFICATE-----\r?\n[A-Za-z0-9+/=\r\n]+-----END CERTIFICATE-----\r?\n?)+$/,
+  );
+
+const databaseConnectionSecretSchema = z
   .object({
     username: z.string().trim().min(1),
     password: z.string().min(1),
+    caCertificate: certificateBundleSchema,
   })
   .strict();
 
@@ -17,9 +25,10 @@ export interface SlackSigningSecret {
   readonly signingSecret: string;
 }
 
-export interface DatabaseCredentials {
+export interface DatabaseConnectionSecret {
   readonly username: string;
   readonly password: string;
+  readonly caCertificate: string;
 }
 
 export function parseSlackSigningSecret(value: string): SlackSigningSecret {
@@ -30,9 +39,11 @@ export function parseSlackSigningSecret(value: string): SlackSigningSecret {
   }
 }
 
-export function parseDatabaseCredentials(value: string): DatabaseCredentials {
+export function parseDatabaseConnectionSecret(
+  value: string,
+): DatabaseConnectionSecret {
   try {
-    return databaseCredentialsSchema.parse(parseJson(value));
+    return databaseConnectionSecretSchema.parse(parseJson(value));
   } catch {
     throw new InvalidRuntimeSecretError();
   }

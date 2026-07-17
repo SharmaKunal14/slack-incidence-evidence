@@ -10,15 +10,19 @@ lambda_artifact_path = "../../artifacts/incident-copilot-lambda.zip"
 slack_signing_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-AbCdEf"
 database_secret_arn      = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/database-GhIjKl"
 
-# This must be an existing, privately reachable RDS Proxy endpoint once the
-# database networking layer is added. It is intentionally not provisioned here.
-database_host = "incident-copilot-dev.proxy-example.ap-southeast-2.rds.amazonaws.com"
-database_name = "incident_copilot"
+# Lambda is IPv4-only by default, so use Supabase's transaction pooler rather
+# than the direct IPv6 database endpoint. Supply only the hostname, never the
+# complete connection string. Credentials and the Supabase CA live in the
+# database Secrets Manager value described in README.md.
+database_host = "aws-0-ap-southeast-2.pooler.supabase.com"
+database_port = 6543
+database_name = "postgres"
 
-# Required for production and for any private RDS Proxy endpoint. These are
-# existing networking resources; this Terraform root does not create a VPC.
-worker_subnet_ids         = ["subnet-0123456789abcdef0", "subnet-0fedcba9876543210"]
-worker_security_group_ids = ["sg-0123456789abcdef0"]
+# Leave both empty for Supabase's public TLS endpoint. If a later deployment
+# uses PrivateLink or another private endpoint, populate both lists and provide
+# the necessary controlled egress; this root does not create a VPC.
+worker_subnet_ids         = []
+worker_security_group_ids = []
 
 additional_tags = {
   Owner      = "platform-engineering"
