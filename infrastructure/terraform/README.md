@@ -55,7 +55,7 @@ failures and never assumes exactly-once execution.
 This root does **not** create:
 
 - A VPC, subnets, NAT gateway, VPC endpoints, or security groups.
-- RDS PostgreSQL or RDS Proxy.
+- PostgreSQL or its managed connection pooler.
 - Secrets Manager secrets or secret values.
 - The Lambda ZIP artifact.
 - A custom domain, WAF, Route 53 records, or an ACM certificate.
@@ -66,19 +66,19 @@ Those omissions are intentional. They prevent one early portfolio environment
 from paying for unused fixed-cost infrastructure and prevent credentials from
 being copied into Terraform state.
 
-The worker accepts an existing RDS Proxy hostname, database secret ARN, private
-subnet IDs, and security group IDs. When both network lists are supplied, it is
-attached to those subnets and receives the minimal Lambda ENI-management IAM
-actions. Terraform rejects a production plan without both lists. This root does
-not create or configure those resources: the next infrastructure layer must
-provision the VPC, RDS Proxy, and narrowly scoped security group path.
+The worker accepts an existing PostgreSQL hostname and database secret ARN. The
+current hosted deployment uses Supabase's IPv4 transaction pooler on port 6543,
+which is designed for transient serverless clients. The connection uses TLS
+with CA and hostname verification; credentials and the trusted CA bundle are
+read from Secrets Manager and never enter Terraform state.
 
-Empty VPC inputs are allowed only for cheap development with an externally
-reachable TLS PostgreSQL endpoint. That is not an acceptable production design.
-Once attached to private subnets, the worker needs either Secrets Manager and
-Step Functions interface endpoints or controlled NAT egress to reach those AWS
-APIs. Future Slack, GitHub, and hosted-model calls also require controlled
-internet egress; interface endpoints do not replace NAT for those services.
+Leave both VPC input lists empty for Supabase's public pooler. When both lists
+are supplied, the worker is attached to those subnets and receives the minimal
+Lambda ENI-management IAM actions. A private deployment then needs either
+Secrets Manager and Step Functions interface endpoints or controlled NAT egress
+to reach those AWS APIs. Future Slack, GitHub, and hosted-model calls also need
+deliberate internet egress. Supabase PrivateLink can replace the public database
+path when its cost and availability requirements justify it.
 
 ## Secret contracts
 
@@ -93,22 +93,29 @@ Slack signing secret:
 }
 ```
 
-Database credential secret:
+Database connection secret:
 
 ```json
 {
-  "username": "incident_application",
-  "password": "actual database password"
+  "username": "postgres.your-project-reference",
+  "password": "actual database password",
+  "caCertificate": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
 }
 ```
 
 The database host, port, name, and mandatory TLS setting are separate non-secret
 environment variables. A complete `DATABASE_URL` is intentionally never
 constructed in Terraform, so the password cannot leak into plans or state.
-The Node.js 22 worker also loads Lambda's managed Amazon CA bundle through
-`NODE_EXTRA_CA_CERTS=/var/runtime/ca-cert.pem` and the PostgreSQL client rejects
-an untrusted server certificate. A later optimized artifact can bundle only the
-regional RDS CA chain to reduce cold-start certificate loading.
+The worker passes the trusted CA bundle explicitly to PostgreSQL with
+`rejectUnauthorized=true`, which verifies both the certificate chain and the
+pooler hostname. The secret parser rejects missing, malformed, or unexpected
+fields before opening a connection. Keeping the CA in the already-required
+secret adds no API call and permits CA rotation without rebuilding the Lambda.
+
+Download the CA from the Supabase dashboard's **Database > SSL Configuration**
+section. Do not bootstrap trust by copying the root from an unverified server
+handshake. Add the PEM as `caCertificate` to the existing JSON secret before
+deploying this worker version.
 
 If either secret uses a customer-managed KMS key, pass its ARN in
 `secrets_kms_key_arns`. The resulting `kms:Decrypt` grant is restricted to calls
@@ -150,8 +157,8 @@ Prerequisites:
 - A `zip` command-line utility used by `npm run build:lambda`.
 - The built Lambda artifact.
 - Existing Slack and database Secrets Manager secret ARNs.
-- An existing database endpoint. Production requires RDS Proxy and both private
-  subnet and security group inputs described above.
+- An existing PostgreSQL endpoint. For the current Supabase deployment, use the
+  transaction-pooler hostname, port 6543, and empty VPC input lists.
 
 Create an ignored variable file:
 
@@ -220,9 +227,9 @@ Deploy immutable artifacts by commit SHA:
   PostgreSQL, not in workflow state.
 
 Lambda can scale faster than Slack, GitHub, model providers, or PostgreSQL.
-Raise reserved concurrency only after checking all four budgets. When the worker
-is attached to RDS Proxy, cap concurrency against the database connection limit
-rather than treating Lambda's regional quota as a target.
+Raise reserved concurrency only after checking all four budgets. Cap concurrency
+against the Supabase pooler and project connection limits rather than treating
+Lambda's regional quota as a target.
 
 ## Operational alarms
 

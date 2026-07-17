@@ -134,10 +134,12 @@ and deployment gates are in
 [infrastructure/terraform/README.md](infrastructure/terraform/README.md).
 
 The Terraform is not proof that this repository is already deployed. It also
-does not provision PostgreSQL, RDS Proxy, private networking, the Slack app, or
-remote Terraform state. Those inputs must exist before the AWS path can process
-a real incident. The current Step Functions definition records workflow
-acceptance only; evidence collection and AI tasks have not been implemented yet.
+does not provision PostgreSQL, the Slack app, or remote Terraform state. The
+current hosted path uses an existing Supabase transaction pooler with its CA
+certificate verified by the worker. Those inputs must exist before the AWS path
+can process a real incident. The current Step Functions definition records
+workflow acceptance only; evidence collection and AI tasks have not been
+implemented yet.
 
 ## Security posture
 

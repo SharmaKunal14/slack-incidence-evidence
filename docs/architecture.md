@@ -491,21 +491,22 @@ The first AWS topology is:
   `states:StartExecution` permission;
 - a Step Functions Standard workflow, currently containing only the truthful
   `WorkflowAccepted` terminal state;
-- existing RDS PostgreSQL through RDS Proxy in private subnets;
+- existing Supabase PostgreSQL through its IPv4 transaction pooler;
 - Secrets Manager for credentials;
 - bounded-retention CloudWatch logs and queue alarms; and
 - Terraform-managed infrastructure.
 
 Both Lambdas use one immutable ZIP but different composition roots, roles,
-configuration, timeouts, memory, and concurrency. The worker accepts existing
-private subnet and security-group IDs; the current Terraform root deliberately
-does not provision the VPC, RDS, RDS Proxy, secrets, artifact registry, or remote
-state. A production Terraform plan fails when worker VPC inputs are absent.
+configuration, timeouts, memory, and concurrency. The current worker remains
+outside a VPC so it can reach Supabase's public IPv4 pooler, Secrets Manager, and
+Step Functions without a NAT gateway. The PostgreSQL connection verifies the
+Supabase CA and pooler hostname. The Terraform root deliberately does not
+provision Supabase, secrets, artifact registry, or remote state.
 
 This is a deployable boundary, not evidence that an AWS environment has been
-created. Private subnets also need controlled access to Secrets Manager and Step
-Functions through interface endpoints or NAT. Later Slack/GitHub/model calls
-need deliberate internet egress.
+created. A later private-network design can attach the worker to a VPC and use
+controlled NAT, AWS interface endpoints, and Supabase PrivateLink when its
+security and availability benefits justify the added fixed cost.
 
 Development can use test doubles or local emulators, but parity limitations must be documented. In-memory queues are not evidence that FIFO redelivery, visibility timeouts, or IAM policies work.
 
@@ -516,7 +517,7 @@ The expected load is bursty around incidents but modest in aggregate. Scale inde
 - API Gateway request rate, Lambda duration, cold starts, and throttles;
 - visible queue depth and oldest-message age; and
 - worker reserved/event-source concurrency constrained by Slack/provider rate
-  limits, RDS Proxy capacity, and the per-environment connection pool.
+  limits, Supabase pooler capacity, and the per-environment connection pool.
 
 The current global worker cap protects aggregate downstream capacity, and the
 incident-scoped FIFO group avoids tenant-wide head-of-line blocking. It does not

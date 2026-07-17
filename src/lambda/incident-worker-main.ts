@@ -6,7 +6,7 @@ import { systemClock } from '../application/ports/clock.js';
 import { uuidGenerator } from '../application/ports/id-generator.js';
 import { ProcessIncidentReview } from '../application/process-incident-review.js';
 import { loadIncidentWorkerLambdaEnvironment } from '../config/environment.js';
-import { parseDatabaseCredentials } from '../config/runtime-secrets.js';
+import { parseDatabaseConnectionSecret } from '../config/runtime-secrets.js';
 import { PostgresIncidentRepository } from '../infrastructure/postgres/incident-repository.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { SfnIncidentWorkflowStarter } from '../infrastructure/workflow/sfn-incident-workflow-starter.js';
@@ -60,7 +60,7 @@ async function buildHandler(): Promise<IncidentWorkerHandler> {
   let database: Pool | undefined;
 
   try {
-    const credentials = parseDatabaseCredentials(
+    const connectionSecret = parseDatabaseConnectionSecret(
       await new SecretsManagerSecretReader(secrets).readString(
         environment.DATABASE_SECRET_ARN,
       ),
@@ -70,9 +70,14 @@ async function buildHandler(): Promise<IncidentWorkerHandler> {
       host: environment.DATABASE_HOST,
       port: environment.DATABASE_PORT,
       database: environment.DATABASE_NAME,
-      user: credentials.username,
-      password: credentials.password,
-      ssl: environment.DATABASE_SSL ? { rejectUnauthorized: true } : false,
+      user: connectionSecret.username,
+      password: connectionSecret.password,
+      ssl: environment.DATABASE_SSL
+        ? {
+            ca: connectionSecret.caCertificate,
+            rejectUnauthorized: true,
+          }
+        : false,
       application_name: 'incident-evidence-copilot-lambda-worker',
       connectionTimeoutMillis: 5_000,
       idleTimeoutMillis: 30_000,

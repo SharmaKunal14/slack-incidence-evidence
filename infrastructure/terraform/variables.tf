@@ -65,7 +65,7 @@ variable "slack_signing_secret_arn" {
 }
 
 variable "database_secret_arn" {
-  description = "ARN of an existing Secrets Manager secret containing JSON {\"username\":\"...\",\"password\":\"...\"}. Terraform never reads the value."
+  description = "ARN of an existing Secrets Manager secret containing username, password, and the trusted PostgreSQL CA certificate. Terraform never reads the value."
   type        = string
 
   validation {
@@ -75,17 +75,22 @@ variable "database_secret_arn" {
 }
 
 variable "database_host" {
-  description = "Existing RDS Proxy endpoint used by the worker. The proxy and its VPC are deliberately outside this foundation."
+  description = "PostgreSQL hostname used by the worker, such as a Supabase transaction-pooler endpoint. Supply only a DNS hostname, never a connection URL."
   type        = string
 
   validation {
-    condition     = length(trimspace(var.database_host)) > 0 && !can(regex("^https?://", var.database_host))
-    error_message = "database_host must be a non-empty hostname without a URL scheme."
+    condition = (
+      length(trimspace(var.database_host)) > 0 &&
+      can(regex("^[A-Za-z0-9.-]+$", var.database_host)) &&
+      !startswith(var.database_host, ".") &&
+      !endswith(var.database_host, ".")
+    )
+    error_message = "database_host must contain only a DNS hostname, without a scheme, credentials, port, path, or whitespace."
   }
 }
 
 variable "database_port" {
-  description = "PostgreSQL port exposed by the existing RDS Proxy."
+  description = "PostgreSQL port. Supabase transaction-pooler connections use 6543."
   type        = number
   default     = 5432
 
@@ -107,7 +112,7 @@ variable "database_name" {
 }
 
 variable "database_pool_max" {
-  description = "Maximum PostgreSQL connections held by one warm worker execution environment. Keep deliberately small behind RDS Proxy."
+  description = "Maximum PostgreSQL connections held by one warm worker execution environment. Keep deliberately small behind any server-side pooler."
   type        = number
   default     = 2
 
@@ -118,7 +123,7 @@ variable "database_pool_max" {
 }
 
 variable "worker_subnet_ids" {
-  description = "Existing private subnet IDs for worker access to RDS Proxy. Supply together with worker_security_group_ids; empty is development-only."
+  description = "Optional private subnet IDs for worker VPC attachment. Supply together with worker_security_group_ids; leave empty for a public managed database endpoint."
   type        = list(string)
   default     = []
 
@@ -129,7 +134,7 @@ variable "worker_subnet_ids" {
 }
 
 variable "worker_security_group_ids" {
-  description = "Existing security group IDs for the worker. Supply together with worker_subnet_ids; allow only the RDS Proxy port plus required egress."
+  description = "Optional security group IDs for worker VPC attachment. Supply together with worker_subnet_ids and provide controlled database and service egress."
   type        = list(string)
   default     = []
 
