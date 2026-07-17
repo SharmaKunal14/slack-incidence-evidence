@@ -8,6 +8,7 @@ lambda_artifact_path = "../../artifacts/incident-copilot-lambda.zip"
 
 # Only ARNs enter Terraform. Do not put secret values in this file.
 slack_signing_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-AbCdEf"
+slack_bot_token_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-bot-IjKlMn"
 database_secret_arn      = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/database-GhIjKl"
 
 # Lambda is IPv4-only by default, so use Supabase's transaction pooler rather

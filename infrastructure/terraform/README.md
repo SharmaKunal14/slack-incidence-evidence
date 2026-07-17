@@ -85,13 +85,28 @@ path when its cost and availability requirements justify it.
 Supply only secret **ARNs** to Terraform. The functions retrieve values at
 runtime and cache them within the Lambda execution environment.
 
-Slack signing secret:
+Slack signing secret (ingress access only):
 
 ```json
 {
   "signingSecret": "actual Slack signing secret"
 }
 ```
+
+Slack bot token (worker access only):
+
+```json
+{
+  "workspaceId": "T0123456789",
+  "botToken": "actual Slack bot token"
+}
+```
+
+Keep these as separate secrets. Request authentication does not require an API
+token, and outbound Slack access does not require the signing secret. The
+worker validates that each job's workspace matches the workspace bound to the
+token before making an API request. The app needs the `chat:write` bot scope and
+must be a member of the triggering channel.
 
 Database connection secret:
 
@@ -156,7 +171,8 @@ Prerequisites:
 - AWS credentials for a non-production account.
 - A `zip` command-line utility used by `npm run build:lambda`.
 - The built Lambda artifact.
-- Existing Slack and database Secrets Manager secret ARNs.
+- Existing Slack signing, Slack bot-token, and database Secrets Manager secret
+  ARNs.
 - An existing PostgreSQL endpoint. For the current Supabase deployment, use the
   transaction-pooler hostname, port 6543, and empty VPC input lists.
 

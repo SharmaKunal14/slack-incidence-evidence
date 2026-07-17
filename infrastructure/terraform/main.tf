@@ -308,6 +308,12 @@ data "aws_iam_policy_document" "worker" {
   }
 
   statement {
+    sid       = "ReadSlackBotToken"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.slack_bot_token_secret_arn]
+  }
+
+  statement {
     sid       = "StartIncidentWorkflow"
     actions   = ["states:StartExecution"]
     resources = [aws_sfn_state_machine.incident_workflow.arn]
@@ -376,7 +382,7 @@ resource "aws_lambda_function" "ingress" {
 
 resource "aws_lambda_function" "worker" {
   function_name = "${local.name_prefix}-incident-worker"
-  description   = "Consumes one incident job idempotently and starts its durable Step Functions execution."
+  description   = "Consumes one incident job idempotently, starts its workflow, and posts a Slack status reply."
   role          = aws_iam_role.worker.arn
   runtime       = "nodejs22.x"
   architectures = [var.lambda_architecture]
@@ -401,6 +407,7 @@ resource "aws_lambda_function" "worker" {
       INCIDENT_WORKFLOW_STATE_MACHINE_ARN = aws_sfn_state_machine.incident_workflow.arn
       LOG_LEVEL                           = var.log_level
       NODE_ENV                            = local.node_env
+      SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
     }
   }
 

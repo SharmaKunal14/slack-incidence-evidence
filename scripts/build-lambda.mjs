@@ -77,6 +77,7 @@ await executeFile(
       DATABASE_SECRET_ARN: 'test-database-secret',
       INCIDENT_QUEUE_URL: 'https://sqs.example.test/incident-jobs.fifo',
       INCIDENT_WORKFLOW_STATE_MACHINE_ARN: 'test-state-machine',
+      SLACK_BOT_TOKEN_SECRET_ARN: 'test-slack-bot-secret',
       SLACK_SIGNING_SECRET_ARN: 'test-slack-secret',
     },
   },

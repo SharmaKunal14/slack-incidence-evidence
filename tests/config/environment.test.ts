@@ -30,6 +30,7 @@ describe('Lambda environment configuration', () => {
       DATABASE_SSL: 'false',
       DATABASE_POOL_MAX: '3',
       INCIDENT_WORKFLOW_STATE_MACHINE_ARN: 'state-machine-arn',
+      SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
     });
 
     expect(environment).toMatchObject({
@@ -46,6 +47,7 @@ describe('Lambda environment configuration', () => {
       DATABASE_HOST: 'proxy.internal.example',
       DATABASE_NAME: 'incident_copilot',
       INCIDENT_WORKFLOW_STATE_MACHINE_ARN: 'state-machine-arn',
+      SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
     };
 
     expect(loadIncidentWorkerLambdaEnvironment(source).DATABASE_SSL).toBe(true);

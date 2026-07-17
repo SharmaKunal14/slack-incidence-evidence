@@ -41,6 +41,7 @@ const incidentWorkerLambdaEnvironmentSchema = commonEnvironmentSchema.extend({
     .transform((value) => value === 'true'),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(10).default(2),
   INCIDENT_WORKFLOW_STATE_MACHINE_ARN: z.string().trim().min(1),
+  SLACK_BOT_TOKEN_SECRET_ARN: z.string().trim().min(1),
 });
 
 export type ApiEnvironment = z.infer<typeof apiEnvironmentSchema>;
