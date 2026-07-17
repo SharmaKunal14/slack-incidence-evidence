@@ -48,14 +48,24 @@ Explicitly out of scope:
 
 ### Implemented foundation
 
-- A strict TypeScript single-package modular monolith with separate Fastify API and SQS worker entrypoints.
+- A strict TypeScript single-package modular monolith with local Fastify/polling
+  entrypoints and production API Gateway/Lambda adapters.
 - A Slack ingress boundary that verifies signed requests before accepting work.
 - Replay protection based on Slack's signed request timestamp.
 - Parsing for Slack URL-verification requests and `app_mention` incident-review commands.
 - An initial fail-closed Slack-ID guard that accepts `C`-prefixed channel IDs only, ignores `G`/`D`/unknown prefixes, and ignores unrelated event types.
 - A Zod-validated, versioned `incident.review.requested` queue contract.
 - SQS FIFO producer and consumer adapters with explicit at-least-once delivery semantics.
+- An API Gateway payload-v2 Lambda adapter that verifies Slack's signature over
+  reconstructed raw or base64-decoded bytes before parsing.
+- An SQS Lambda adapter that validates every record, reports partial batch
+  failures, and stops after the first FIFO failure.
 - An idempotent worker application service backed by PostgreSQL uniqueness and optimistic concurrency.
+- A Step Functions Standard adapter with deterministic incident-scoped execution
+  names; duplicate execution starts are the only orchestration error treated as
+  success.
+- Runtime retrieval of Slack and database credentials from Secrets Manager using
+  strict, content-safe secret contracts.
 - An `IncidentAggregate` with explicit lifecycle states and controlled transitions.
 - Tenant-keyed PostgreSQL schemas for installations, incidents, source artifacts, timeline events, claims, evidence links, workflow jobs, and audits, with composite foreign keys preventing cross-tenant associations.
 - An incident repository whose every query carries tenant scope, plus checksum-verified, advisory-lock-protected SQL migrations.
@@ -63,7 +73,10 @@ Explicitly out of scope:
 - Zod-validated, process-specific environment configuration.
 - Liveness and readiness endpoints.
 - Structured Pino logging with request logging disabled and sensitive-field redaction.
-- Docker/local Compose, CI, and unit-test foundations.
+- Docker/local Compose, CI, deterministic Lambda packaging, and unit-test foundations.
+- Terraform for API Gateway HTTP API, Lambda ingress and worker functions, SQS
+  FIFO/DLQ, the initial Standard state machine, least-privilege IAM, log
+  retention, concurrency limits, and queue health alarms.
 - Dependency direction that keeps domain logic independent of Fastify, Slack, AWS, PostgreSQL, and model vendors.
 
 ### Deliberately not implemented yet
@@ -78,7 +91,11 @@ Explicitly out of scope:
 - Action-item creation.
 - Private-channel or direct-message processing.
 - Automatic source discovery.
-- Production AWS infrastructure provisioning and deployment.
+- A provisioned AWS account or completed deployment.
+- RDS/RDS Proxy, VPC/subnets/endpoints or NAT, database backups, and remote
+  Terraform state.
+- Real collection/extraction/review tasks in Step Functions; its implemented
+  state currently records acceptance and succeeds.
 
 The roadmap is tracked in [roadmap.md](./roadmap.md). Threats that become relevant as these capabilities are introduced are tracked in [threat-model.md](./threat-model.md).
 
@@ -117,14 +134,16 @@ Logs and trace attributes may include correlation IDs, hashed stable identifiers
 ```mermaid
 flowchart LR
     U["Slack user"] --> SL["Slack platform"]
-    SL --> API["API entrypoint"]
+    SL --> GW["API Gateway"]
+    GW --> API["Ingress Lambda"]
     API --> Q["SQS FIFO"]
-    Q --> W["Worker entrypoint"]
+    Q --> W["Worker Lambda"]
     W --> PG["PostgreSQL"]
+    W --> SFN["Step Functions Standard"]
 
-    W -. "roadmap" .-> SA["Slack Web API"]
-    W -. "roadmap" .-> GH["GitHub App API"]
-    W -. "roadmap" .-> AI["Approved model provider"]
+    SFN -. "roadmap" .-> SA["Slack Web API"]
+    SFN -. "roadmap" .-> GH["GitHub App API"]
+    SFN -. "roadmap" .-> AI["Approved model provider"]
     PG -. "roadmap" .-> UI["Reviewer web app"]
     UI -. "human-approved" .-> PUB["Publisher / action tracker"]
 ```
@@ -137,12 +156,15 @@ Solid lines are the foundation execution path. Dashed lines are planned integrat
 sequenceDiagram
     autonumber
     participant Slack
-    participant API
+    participant Gateway as API Gateway
+    participant API as Ingress Lambda
     participant FIFO as SQS FIFO
-    participant Worker
+    participant Worker as Worker Lambda
     participant DB as PostgreSQL
+    participant SFN as Step Functions
 
-    Slack->>API: Raw signed HTTP request
+    Slack->>Gateway: Raw signed HTTP request
+    Gateway->>API: Payload v2 body + base64 flag
     API->>API: Verify timestamp and HMAC over raw body
     API->>API: Parse and apply initial C-prefix channel guard
     API->>FIFO: Enqueue typed job with stable deduplication ID
@@ -152,14 +174,16 @@ sequenceDiagram
     FIFO->>Worker: Deliver job (possibly more than once)
     Worker->>DB: Acquire idempotency key / create job
     alt first valid attempt
-        Worker->>DB: Transition job through allowed states
-        Worker-->>FIFO: Acknowledge after durable completion
+        Worker->>DB: Transition incident to COLLECTING
+        Worker->>SFN: Start deterministic incident execution
+        SFN-->>Worker: Started or already exists
+        Worker-->>FIFO: Report success
     else duplicate or terminal job
         Worker->>DB: Read existing outcome
-        Worker-->>FIFO: Acknowledge without repeating effects
+        Worker->>SFN: Start same deterministic execution
+        Worker-->>FIFO: Report success without repeating workflow
     else retryable failure
-        Worker->>DB: Record safe failure metadata
-        Worker--xFIFO: Do not acknowledge; retry later
+        Worker--xFIFO: Report record plus unprocessed FIFO records as failures
     end
 ```
 
@@ -167,11 +191,12 @@ The API must preserve the exact raw request bytes for signature verification. Pa
 
 ## Runtime components
 
-### API entrypoint
+### Ingress entrypoints
 
 Responsibilities:
 
-- expose Fastify liveness, readiness, and Slack ingress endpoints;
+- expose Fastify health/Slack routes locally or the Slack route through API
+  Gateway HTTP API in AWS;
 - capture the raw HTTP body;
 - validate Slack's versioned HMAC signature with constant-time comparison;
 - reject timestamps outside the replay window;
@@ -225,7 +250,8 @@ Queue policy:
 - use a message group that preserves the smallest ordering scope the workflow requires;
 - configure a dead-letter queue and bounded receive count;
 - set visibility timeout above the expected worker lease and extend it for long work;
-- encrypt the queue with KMS in production;
+- enable server-side queue encryption; use a customer-managed KMS key when the
+  organisation's key-control requirements justify it;
 - restrict send permission to the API role and receive/delete permission to the worker role; and
 - never place OAuth credentials or Slack signing secrets in a message.
 
@@ -236,15 +262,20 @@ FIFO deduplication reduces duplicate deliveries within its broker window; it doe
 Responsibilities:
 
 - validate the queue schema and supported version;
-- acquire a durable job using the business idempotency key;
-- reject tenant/workspace mismatches;
-- perform only allowed state transitions;
-- record attempt metadata without recording source content;
-- classify failures as retryable or terminal;
-- acknowledge a queue message only after durable completion; and
-- treat duplicate delivery as a successful no-op when prior work is terminal.
+- reject tenant/workspace mismatches before database processing;
+- create or recover the incident using the business idempotency key;
+- advance it through an allowed transition to `COLLECTING`;
+- request the same deterministic Step Functions execution for both new and
+  duplicate deliveries;
+- report success only after the database and workflow-start boundaries succeed;
+  and
+- on a FIFO failure, report the failed and all unprocessed records for
+  redelivery.
 
-Roadmap responsibilities include evidence collection, structured AI extraction, validation, and notifying a reviewer. Those steps must be checkpointed so a retry does not repeat completed external side effects.
+Roadmap responsibilities include terminal-versus-retryable failure
+classification, evidence collection, structured AI extraction, validation, and
+notifying a reviewer. Those steps must be checkpointed so a retry does not
+repeat completed external side effects.
 
 ### PostgreSQL
 
@@ -451,19 +482,30 @@ Unsafe fields include `requestBody`, `messageText`, `authorization`, `cookie`, `
 
 ## Deployment topology
 
-The intended first production topology is:
+The first AWS topology is:
 
-- API service on ECS Fargate behind an Application Load Balancer;
-- worker service on ECS Fargate with no public ingress;
-- SQS FIFO queue and dead-letter queue;
-- RDS PostgreSQL in private subnets;
+- API Gateway HTTP API with one `POST /integrations/slack/events` route;
+- an ingress Lambda with only log, signing-secret-read, and queue-send access;
+- SQS FIFO plus a FIFO dead-letter queue;
+- a worker Lambda with bounded concurrency, database access, and
+  `states:StartExecution` permission;
+- a Step Functions Standard workflow, currently containing only the truthful
+  `WorkflowAccepted` terminal state;
+- existing RDS PostgreSQL through RDS Proxy in private subnets;
 - Secrets Manager for credentials;
-- KMS for queue, database, secret, and evidence encryption;
-- least-privilege task roles for API and worker;
-- OpenTelemetry export to an approved observability backend; and
+- bounded-retention CloudWatch logs and queue alarms; and
 - Terraform-managed infrastructure.
 
-The API and worker use the same release artifact but different entrypoint commands. They can be deployed and scaled independently. This provides failure and scaling isolation without introducing distributed domain ownership.
+Both Lambdas use one immutable ZIP but different composition roots, roles,
+configuration, timeouts, memory, and concurrency. The worker accepts existing
+private subnet and security-group IDs; the current Terraform root deliberately
+does not provision the VPC, RDS, RDS Proxy, secrets, artifact registry, or remote
+state. A production Terraform plan fails when worker VPC inputs are absent.
+
+This is a deployable boundary, not evidence that an AWS environment has been
+created. Private subnets also need controlled access to Secrets Manager and Step
+Functions through interface endpoints or NAT. Later Slack/GitHub/model calls
+need deliberate internet egress.
 
 Development can use test doubles or local emulators, but parity limitations must be documented. In-memory queues are not evidence that FIFO redelivery, visibility timeouts, or IAM policies work.
 
@@ -471,11 +513,16 @@ Development can use test doubles or local emulators, but parity limitations must
 
 The expected load is bursty around incidents but modest in aggregate. Scale independently on:
 
-- API request rate and latency;
+- API Gateway request rate, Lambda duration, cold starts, and throttles;
 - visible queue depth and oldest-message age; and
-- worker concurrency constrained by Slack/provider rate limits and database capacity.
+- worker reserved/event-source concurrency constrained by Slack/provider rate
+  limits, RDS Proxy capacity, and the per-environment connection pool.
 
-Use bounded concurrency per workspace to prevent one tenant from consuming all downstream quota. The FIFO message group must not be the entire application unless global serialization is intended; that would create head-of-line blocking.
+The current global worker cap protects aggregate downstream capacity, and the
+incident-scoped FIFO group avoids tenant-wide head-of-line blocking. It does not
+provide tenant fairness: one noisy workspace can still occupy the global worker
+budget with many incidents. Per-tenant admission or fair scheduling is required
+before onboarding workloads where that behavior is plausible.
 
 PostgreSQL remains appropriate until measured contention, dataset size, or isolation requirements justify a change. `pgvector` may later support similar-incident retrieval, but is not required for the ingestion foundation.
 
@@ -511,6 +558,20 @@ PostgreSQL keeps transactions, constraints, review state, and future vector look
 ### Modular monolith versus microservices
 
 Separate API and worker processes isolate latency and scaling. Keeping domain modules in one codebase preserves transactional clarity and makes refactoring cheap while the product model is still changing. The cost is that module boundaries require discipline rather than network enforcement.
+
+### Lambda and Step Functions versus containers
+
+The serverless runtime fits low-idle, bursty incident traffic and avoids an
+always-running load balancer and tasks. It adds cold-start latency, VPC egress
+design, execution-duration limits, workflow-transition cost, and a database
+connection hazard if concurrency is left unbounded. Fargate remains a valid
+measured migration target for sustained workloads or stages that do not fit
+Lambda; it is not needed merely to make the diagram look more conventional.
+
+The current Step Functions machine intentionally performs no collection or AI
+work. A decorative multi-state graph would be misleading. Each future state
+must arrive with a bounded input/output contract, retry policy, idempotency key,
+and stage implementation.
 
 ### Public channels only
 

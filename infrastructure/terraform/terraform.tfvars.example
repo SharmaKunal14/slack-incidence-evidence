@@ -1,0 +1,26 @@
+aws_region  = "ap-southeast-2"
+environment = "development"
+
+# Produce this ZIP from the application build before running terraform plan.
+# It must contain both root exports: slack-ingress-main.handler and
+# incident-worker-main.handler, plus all production dependencies.
+lambda_artifact_path = "../../artifacts/incident-copilot-lambda.zip"
+
+# Only ARNs enter Terraform. Do not put secret values in this file.
+slack_signing_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-AbCdEf"
+database_secret_arn      = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/database-GhIjKl"
+
+# This must be an existing, privately reachable RDS Proxy endpoint once the
+# database networking layer is added. It is intentionally not provisioned here.
+database_host = "incident-copilot-dev.proxy-example.ap-southeast-2.rds.amazonaws.com"
+database_name = "incident_copilot"
+
+# Required for production and for any private RDS Proxy endpoint. These are
+# existing networking resources; this Terraform root does not create a VPC.
+worker_subnet_ids         = ["subnet-0123456789abcdef0", "subnet-0fedcba9876543210"]
+worker_security_group_ids = ["sg-0123456789abcdef0"]
+
+additional_tags = {
+  Owner      = "platform-engineering"
+  Repository = "slack-rca"
+}

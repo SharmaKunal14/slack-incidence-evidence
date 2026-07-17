@@ -24,18 +24,24 @@ It is not successful merely because an LLM can summarise a transcript.
 The current foundation establishes:
 
 - a strict TypeScript single-package modular monolith;
-- separate Fastify API and SQS worker entrypoints;
+- local Fastify/polling entrypoints plus production API Gateway/Lambda adapters;
 - Slack signed-request and replay validation;
 - URL-verification and `app_mention` command parsing;
 - an initial `C`-prefixed Slack channel guard that ignores `G`/`D`/unknown prefixes;
 - a strict Zod-validated, versioned SQS FIFO job contract;
-- SQS producer/consumer adapters with at-least-once processing semantics;
+- SQS producer/consumer adapters with at-least-once processing semantics and
+  FIFO-safe Lambda partial batch responses;
 - a tenant-scoped PostgreSQL incident repository with uniqueness and optimistic concurrency for idempotent work;
 - an `IncidentAggregate` and explicit lifecycle state machine;
 - tenant-keyed schemas for installations, incidents, source artifacts, timeline events, claims, claim-evidence links, workflow jobs, and audits, including cross-tenant composite foreign-key protection;
 - checksum-verified, advisory-lock-protected SQL migrations;
 - a vendor-neutral, Zod-validated AI-analysis contract without production model calls;
-- Zod-validated API and worker configuration;
+- deterministic Step Functions Standard execution starts that close the
+  database-commit/start retry window;
+- Secrets Manager adapters and Zod-validated local/Lambda configuration plus
+  strict runtime secret contracts;
+- Terraform for API Gateway, Lambda, SQS FIFO/DLQ, the initial Standard workflow,
+  scoped IAM, logs, concurrency controls, networking inputs, and queue alarms;
 - liveness and readiness endpoints;
 - structured, redacted Pino logging with raw request logging disabled;
 - Docker/local Compose, CI, and unit-test foundations; and
@@ -61,7 +67,11 @@ A developer installs/configures the Slack app, triggers it in a supported public
 - Status response in the triggering Slack thread.
 - Extend CI from the implemented unit checks to integration, migration, container, and dependency-security tests.
 - OpenTelemetry traces and core queue/job metrics.
-- Terraform for the first deployable environment.
+- Provision the database/RDS Proxy/network layer consumed by the implemented
+  serverless Terraform root.
+- Add encrypted remote Terraform state and immutable artifact promotion.
+- Execute real AWS staging smoke, redelivery, cold-start, and database-connection
+  tests; local emulation is insufficient.
 
 ### Exit criteria
 
@@ -73,6 +83,8 @@ A developer installs/configures the Slack app, triggers it in a supported public
 - Dead-lettered work is visible and has a documented redrive process.
 - Representative logs and traces contain no raw Slack content or secrets.
 - A clean environment can be created from infrastructure and migration code.
+- A Standard workflow execution exists exactly once per durable incident, even
+  when the SQS delivery around `StartExecution` is retried.
 
 ### Main risks
 
