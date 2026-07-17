@@ -16,6 +16,7 @@ interface IncidentRow {
   readonly source_event_id: string;
   readonly source_workspace_id: string;
   readonly source_channel_id: string;
+  readonly source_message_ts: string | null;
   readonly source_thread_ts: string | null;
   readonly requested_by_user_id: string;
   readonly title: string;
@@ -34,6 +35,7 @@ const INCIDENT_COLUMNS = `
   source_event_id,
   source_workspace_id,
   source_channel_id,
+  source_message_ts,
   source_thread_ts,
   requested_by_user_id,
   title,
@@ -78,6 +80,9 @@ function toIncident(row: IncidentRow): Incident {
     sourceEventId: row.source_event_id,
     sourceWorkspaceId: row.source_workspace_id,
     sourceChannelId: row.source_channel_id,
+    ...(row.source_message_ts === null
+      ? {}
+      : { sourceMessageTs: row.source_message_ts }),
     ...(row.source_thread_ts === null
       ? {}
       : { sourceThreadTs: row.source_thread_ts }),
@@ -150,6 +155,7 @@ export class PostgresIncidentRepository implements IncidentRepository {
             source_event_id,
             source_workspace_id,
             source_channel_id,
+            source_message_ts,
             source_thread_ts,
             requested_by_user_id,
             title,
@@ -162,7 +168,7 @@ export class PostgresIncidentRepository implements IncidentRepository {
             version
           )
           VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
           )
           ON CONFLICT (tenant_id, source_event_id) DO NOTHING
           RETURNING ${INCIDENT_COLUMNS}
@@ -173,6 +179,7 @@ export class PostgresIncidentRepository implements IncidentRepository {
           incident.sourceEventId,
           incident.sourceWorkspaceId,
           incident.sourceChannelId,
+          incident.sourceMessageTs ?? null,
           incident.sourceThreadTs ?? null,
           incident.requestedByUserId,
           incident.title,

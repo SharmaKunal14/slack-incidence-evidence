@@ -47,7 +47,7 @@ describe('runMigrations', () => {
         appliedBy: 'test-suite',
       }),
     ).resolves.toEqual({
-      applied: ['0001_initial.sql'],
+      applied: ['0001_initial.sql', '0002_slack_thread_collection.sql'],
       alreadyApplied: 0,
     });
 
@@ -57,6 +57,9 @@ describe('runMigrations', () => {
     expect(query).toHaveBeenCalledWith('BEGIN');
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('CREATE TABLE tenants'),
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE TABLE slack_thread_collections'),
     );
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO schema_migrations'),

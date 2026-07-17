@@ -1,7 +1,7 @@
 # Product and engineering roadmap
 
 Status: working plan  
-Last updated: 2026-07-17
+Last updated: 2026-07-18
 
 ## Goal
 
@@ -14,6 +14,8 @@ It is not successful merely because an LLM can summarise a transcript.
 ## Status vocabulary
 
 - **Implemented:** code and tests exist in the repository. This does not imply production deployment.
+- **In progress:** a bounded production slice exists, but the stage's full exit
+  criteria are not met.
 - **Next:** the immediate vertical slice; design is sufficiently constrained to build.
 - **Planned:** valuable after the preceding exit criteria are met.
 - **Explore:** hypothesis requiring user evidence or measured scale.
@@ -41,6 +43,13 @@ The current foundation establishes:
 - workspace-bound Slack status replies with separate least-privilege bot-token
   access, bounded network calls, strict response validation, and a stable
   client message ID for retry safety;
+- bounded triggering-thread retrieval with strict Slack response validation,
+  stable permalinks, operational-message filtering, and provider rate-limit
+  handling;
+- transactional evidence upserts and optimistic page checkpoints so Lambda and
+  Step Functions retries converge without duplicate artifacts;
+- a Step Functions loop which keeps source content out of workflow state and
+  delegates waits rather than billing a sleeping Lambda;
 - Secrets Manager adapters and Zod-validated local/Lambda configuration plus
   strict runtime secret contracts;
 - Terraform for API Gateway, Lambda, SQS FIFO/DLQ, the initial Standard workflow,
@@ -50,11 +59,14 @@ The current foundation establishes:
 - Docker/local Compose, CI, and unit-test foundations; and
 - architecture and security documentation.
 
-This foundation proves the shape of reliable ingestion. It does **not** yet claim to collect historical evidence, produce an AI report, provide a review interface, or publish anything.
+This foundation proves reliable ingestion and triggering-thread collection. It
+does **not** yet claim complete channel evidence coverage, enforced expiry
+deletion, production OAuth lifecycle management, AI reporting, review, or
+publication.
 
 ## Stage 1 — Deploy and prove the integration foundation
 
-Status: **Next**
+Status: **In progress**
 
 ### User outcome
 
@@ -97,7 +109,7 @@ A developer installs/configures the Slack app, triggers it in a supported public
 
 ## Stage 2 — Deterministic Slack evidence bundle
 
-Status: **Planned**
+Status: **In progress**
 
 ### User outcome
 
@@ -117,6 +129,25 @@ From a message shortcut or mention, a user selects an incident time window and e
 - Partial-source failure representation.
 - Source manifest listing searched, unavailable, and excluded sources.
 - Deletion/uninstall/token-revocation handling.
+
+### Implemented slice
+
+- Mention-triggered root/thread retrieval for one configured workspace and one
+  supported public channel.
+- One 15-message page per Lambda invocation with a durable cursor, atomic
+  artifact/checkpoint transaction, and Step Functions pagination loop.
+- Stable `workspace + channel + message timestamp` artifact identity, content
+  hash, author/source timestamps, selected edit metadata, and HTTPS Slack
+  permalinks.
+- Explicit Slack throttling waits, bounded transient retries, terminal safe
+  failure codes, bounded collector concurrency, and workflow-failure alarm.
+- A configurable retention deadline is recorded on each snapshot.
+
+Still missing from this stage are OAuth installation/token lifecycle, trusted
+conversation metadata authorization, the scoping modal, selected-channel time
+windows, reactions, a coverage manifest, and the deletion job that enforces the
+recorded retention deadline. A timestamp alone is not an enforced retention
+policy.
 
 ### Non-scope
 

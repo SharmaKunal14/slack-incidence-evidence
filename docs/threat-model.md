@@ -1,17 +1,20 @@
 # Threat model
 
-Status: active; foundation controls implemented, roadmap controls identified  
-Last updated: 2026-07-17
+Status: active; triggering-thread collection controls implemented, later-stage controls identified
+Last updated: 2026-07-18
 
 ## Scope
 
 This threat model covers the Incident Evidence Copilot foundation:
 
 ```text
-Slack signed request -> API Gateway -> ingress Lambda -> SQS FIFO -> worker Lambda -> PostgreSQL + Step Functions
+Slack signed request -> API Gateway -> ingress Lambda -> SQS FIFO -> worker Lambda -> PostgreSQL + Step Functions -> Slack collector -> Slack Web API + PostgreSQL
 ```
 
-It also anticipates planned Slack history collection, GitHub evidence, model-provider calls, a reviewer UI, publication, and follow-up issue creation. Planned controls are not credited as current protection.
+Triggering-thread history collection is implemented. It also anticipates
+selected-channel Slack collection, GitHub evidence, model-provider calls, a
+reviewer UI, publication, and follow-up issue creation. Planned controls are not
+credited as current protection.
 
 This is an engineering threat model, not a compliance certification or penetration-test result.
 
@@ -61,7 +64,8 @@ Known design assumptions:
 - Slack signing secrets are delivered through a secret manager in production.
 - TLS terminates only at approved infrastructure and the application receives the original request body.
 - AWS IAM policies separate API send permission from worker receive/delete permission.
-- PostgreSQL is not publicly reachable.
+- PostgreSQL credentials are secret-managed and its public Supabase pooler is
+  reached only with certificate-chain and hostname verification.
 - The initial Slack trigger policy accepts public channels only.
 - No model output is published automatically.
 
@@ -80,6 +84,7 @@ Unproven assumptions that must be validated during deployment:
 flowchart LR
     subgraph Internet["Untrusted / external"]
         Slack["Slack"]
+        SlackAPI["Slack Web API"]
         Attacker["Attacker"]
     end
 
@@ -94,10 +99,11 @@ flowchart LR
         DB["PostgreSQL"]
         Secrets["Secrets Manager / KMS"]
         Workflow["Step Functions"]
+        Collector["Slack collector"]
     end
 
     subgraph Future["External processors and destinations — roadmap"]
-        Source["Slack / GitHub APIs"]
+        GitHub["GitHub API"]
         Model["Model provider"]
         Review["Reviewer browser"]
         Publish["Document / issue destination"]
@@ -112,7 +118,11 @@ flowchart LR
     Worker -->|"tenant-scoped queries"| DB
     Worker -->|"ID-only execution input"| Workflow
     Secrets -->|"runtime credentials"| Worker
-    Worker -. "restricted evidence" .-> Source
+    Workflow -->|"ID-only task input"| Collector
+    Secrets -->|"runtime credentials"| Collector
+    Collector -->|"restricted evidence"| SlackAPI
+    Collector -->|"tenant-scoped artifacts"| DB
+    Worker -. "roadmap" .-> GitHub
     Worker -. "restricted prompt" .-> Model
     DB -. "review data" .-> Review
     Review -. "human-approved command" .-> Publish
@@ -160,14 +170,19 @@ Implemented controls:
 - ignore `G`-prefixed private/group conversations, `D`-prefixed DMs, and unknown prefixes; and
 - do not provide a configuration flag that silently bypasses the policy.
 
-Required before production history collection:
+Required before onboarding external workspaces or expanding history collection:
 
 - resolve conversation metadata using the authorized Slack API and installation policy;
 - fail closed when the API cannot establish the conversation type;
 - treat Slack Connect as a separate policy case; and
 - do not use the ID prefix as the final source-authorization decision.
 
-Residual risk: the prefix check is a coarse foundation guard, not a complete authorization proof. Public channels still contain sensitive information; public is not synonymous with non-sensitive.
+Residual risk: triggering-thread collection currently relies on the signed
+event's `C` prefix plus a workspace-bound bot grant. That is a coarse guard, not
+a complete conversation-type or data-classification proof. This is acceptable
+for a controlled single-workspace development deployment, but not sufficient
+authorization for an externally onboarded multi-tenant product. Public channels
+can still contain sensitive information.
 
 ### Queue tampering, poison messages, and schema confusion
 
@@ -202,6 +217,11 @@ Implemented controls:
 - legal state transitions;
 - terminal duplicate delivery is a no-op; and
 - FIFO ordering is scoped deliberately.
+- Slack artifacts use a stable workspace/channel/message identity and a
+  database unique constraint;
+- artifact upserts and optimistic page-cursor advancement share one PostgreSQL
+  transaction; and
+- a completed checkpoint returns without calling Slack again.
 
 Roadmap control:
 
@@ -322,7 +342,32 @@ Controls required before deployment:
 - restricted package lifecycle scripts where feasible; and
 - signed release provenance.
 
-## AI and evidence threats (roadmap)
+## AI and evidence threats
+
+### Triggering-thread evidence collection
+
+Implemented controls:
+
+- fixed Slack API endpoints prevent source text or identifiers from selecting a
+  destination host;
+- strict identifier, cursor, response-size, response-schema, permalink-host,
+  redirect, and timeout validation;
+- workspace binding is checked before the bot token is sent;
+- one 15-message page per invocation and bounded permalink concurrency;
+- Slack retry hints become Step Functions waits instead of sleeping compute;
+- source content remains in `source_artifacts`, not Step Functions state or
+  operational logs; and
+- evidence carries canonical identity, timestamps, a content hash, and a
+  retention deadline.
+
+Known gap: the deadline is recorded but not enforced by a deletion process yet.
+Slack uninstall/revocation handling, conversation metadata authorization, and
+backup-deletion semantics are also not implemented. The bot token has the union
+of the app's Slack scopes even though separate Lambda roles restrict which
+application adapter receives it; AWS IAM cannot narrow capabilities inside that
+Slack-issued token.
+
+## AI threats (roadmap)
 
 ### Prompt injection through evidence
 

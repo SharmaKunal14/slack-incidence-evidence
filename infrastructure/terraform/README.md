@@ -16,19 +16,23 @@ the application's at-least-once and idempotency assumptions.
   `ReportBatchItemFailures` enabled.
 - An incident worker Lambda which consumes the job and starts a Standard Step
   Functions execution.
-- A deliberately honest workflow whose only current state is
-  `WorkflowAccepted` (`Succeed`). Collection, extraction, review, and publishing
-  states will be added as their application handlers are implemented.
+- A Slack evidence collector Lambda which retrieves and persists one bounded
+  triggering-thread page per invocation.
+- A Standard workflow which loops over durable Slack page checkpoints, waits on
+  Slack rate-limit hints without holding Lambda compute, and terminates on a
+  durable complete or failed result.
 - Resource-scoped IAM policies for queue and secret access and for starting the
   workflow. The Step Functions logging APIs are the documented exception that
   require wildcard resources.
 - Bounded-retention CloudWatch log groups.
 - Reserved Lambda concurrency limits to protect cost, Slack/GitHub quotas, and
   the future database connection budget.
-- Alarms for failed jobs in the DLQ and excessive source-queue age.
+- Alarms for failed jobs in the DLQ, excessive source-queue age, and failed
+  evidence workflows.
 
-Both functions use the same immutable ZIP artifact but have separate handlers,
-roles, environment variables, memory, timeouts, and concurrency limits.
+All three functions use the same immutable ZIP artifact but have separate
+handlers, roles, environment variables, memory, timeouts, and concurrency
+limits.
 
 ## Architecture and trust boundaries
 
@@ -38,7 +42,10 @@ Slack
   -> Slack ingress Lambda (verify exact raw bytes, enqueue, acknowledge)
   -> SQS FIFO
   -> incident worker Lambda (idempotent database operation)
-  -> Step Functions Standard (currently WorkflowAccepted)
+  -> Step Functions Standard
+     -> Slack evidence collector Lambda (one page)
+        -> Slack Web API + PostgreSQL checkpoint/artifacts
+     -> Choice -> Wait -> next page, complete, or fail
 ```
 
 API Gateway throttling is a cost and abuse guard; it is **not** Slack
@@ -93,7 +100,7 @@ Slack signing secret (ingress access only):
 }
 ```
 
-Slack bot token (worker access only):
+Slack bot token (worker and Slack collector access only):
 
 ```json
 {
@@ -104,9 +111,12 @@ Slack bot token (worker access only):
 
 Keep these as separate secrets. Request authentication does not require an API
 token, and outbound Slack access does not require the signing secret. The
-worker validates that each job's workspace matches the workspace bound to the
-token before making an API request. The app needs the `chat:write` bot scope and
-must be a member of the triggering channel.
+outbound adapters validate that every requested workspace matches the workspace
+bound to the token before making an API request. The app needs `chat:write` for
+status replies and `channels:history` for public-channel thread retrieval, in
+addition to ingress's `app_mentions:read`. Reinstall the Slack app after adding
+a scope and update the secret if Slack issues a new bot token. The app must be
+able to access the triggering channel.
 
 Database connection secret:
 
@@ -142,13 +152,14 @@ encrypted, versioned remote backend with locking and tightly scoped access.
 
 ## Lambda artifact contract
 
-`lambda_artifact_path` must point to one ZIP containing both composition roots
+`lambda_artifact_path` must point to one ZIP containing all composition roots
 at its root:
 
 ```text
 package.json                 declares the bundle as CommonJS
 slack-ingress-main.js        exports handler
 incident-worker-main.js      exports handler
+slack-evidence-collector-main.js exports handler
 ```
 
 The defaults are therefore:
@@ -156,6 +167,7 @@ The defaults are therefore:
 ```hcl
 ingress_lambda_handler = "slack-ingress-main.handler"
 worker_lambda_handler  = "incident-worker-main.handler"
+slack_evidence_collector_lambda_handler = "slack-evidence-collector-main.handler"
 ```
 
 Build for the selected `lambda_architecture`; the default is `arm64`. Pure
@@ -175,6 +187,8 @@ Prerequisites:
   ARNs.
 - An existing PostgreSQL endpoint. For the current Supabase deployment, use the
   transaction-pooler hostname, port 6543, and empty VPC input lists.
+- Database migration `0002_slack_thread_collection.sql` applied before the
+  collector Lambda is deployed or invoked.
 
 Create an ignored variable file:
 
@@ -196,6 +210,13 @@ terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
+Apply database migrations before `terraform apply` updates the workflow. The
+migration CLI uses a PostgreSQL advisory lock and must run through a
+session-capable connection (for Supabase, the session pooler on port 5432), not
+the transaction pooler on port 6543 used by Lambda. An incident created before
+migration 0002 has no triggering message timestamp; create a new Slack trigger
+instead of attempting to collect that old record.
+
 After apply, obtain the Slack URL:
 
 ```bash
@@ -215,7 +236,7 @@ promotion path for development, staging, and production.
 
 Deploy immutable artifacts by commit SHA:
 
-1. Test and bundle both Lambda composition roots.
+1. Test and bundle all Lambda composition roots.
 2. Publish the artifact to the trusted CI workspace (or evolve this root to a
    versioned S3 artifact once a release pipeline exists).
 3. Run `terraform plan` and preserve it for review.
@@ -224,9 +245,10 @@ Deploy immutable artifacts by commit SHA:
 
 ## Scaling and cost controls
 
-- API Gateway and both Lambdas charge primarily when used; no ALB or ECS tasks
+- API Gateway and all Lambdas charge primarily when used; no ALB or ECS tasks
   remain running while the project is idle.
-- Ingress and worker concurrency are independent and explicitly capped.
+- Ingress, worker, and collector concurrency are independent and explicitly
+  capped.
 - The SQS event source's maximum concurrency equals the worker's reserved
   concurrency, preventing the poller from creating avoidable Lambda throttles.
 - The FIFO queue buffers bursts and the oldest-message alarm exposes backlog.
@@ -238,6 +260,10 @@ Deploy immutable artifacts by commit SHA:
   serializing unrelated incidents across an entire tenant.
 - Step Functions execution data is excluded from logs to reduce both sensitive
   data exposure and log volume.
+- The collector reads at most 15 thread messages per invocation, resolves
+  permalinks with concurrency three, and has its own reserved-concurrency cap.
+  A stored cursor makes each page independently retryable; a configurable page
+  limit and cursor-progress check prevent unbounded executions.
 - Standard workflows are appropriate for durable, auditable, human-scale
   incident processing. Model requests and large evidence must live in S3 or
   PostgreSQL, not in workflow state.
@@ -255,6 +281,13 @@ Pass one or more SNS topic ARNs through `alarm_action_arns` to route alerts.
 - **DLQ visible messages:** alarms immediately when any job exhausts retries.
 - **Oldest source message:** alarms after two consecutive periods above the
   configured age threshold.
+- **Failed workflow:** alarms when collection exhausts transient retries or
+  reaches a terminal Slack failure.
+
+The configured evidence-retention period sets `retention_expires_at`; this
+release does not yet run an expiry deletion processor. Do not describe the data
+as automatically deleted until that job and its backup semantics are deployed
+and tested.
 
 The DLQ is not an archive. Diagnose the dependency or data failure, deploy a
 fix, and use an audited redrive procedure. Database and publication side effects

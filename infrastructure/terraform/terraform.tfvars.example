@@ -2,8 +2,8 @@ aws_region  = "ap-southeast-2"
 environment = "development"
 
 # Produce this ZIP from the application build before running terraform plan.
-# It must contain both root exports: slack-ingress-main.handler and
-# incident-worker-main.handler, plus all production dependencies.
+# It must contain slack-ingress-main.handler, incident-worker-main.handler, and
+# slack-evidence-collector-main.handler, plus all production dependencies.
 lambda_artifact_path = "../../artifacts/incident-copilot-lambda.zip"
 
 # Only ARNs enter Terraform. Do not put secret values in this file.
@@ -18,6 +18,14 @@ database_secret_arn      = "arn:aws:secretsmanager:ap-southeast-2:123456789012:s
 database_host = "aws-0-ap-southeast-2.pooler.supabase.com"
 database_port = 6543
 database_name = "postgres"
+
+# Raw Slack message snapshots are stamped with this expiry. A separate deletion
+# processor is still required to enforce it.
+evidence_retention_days = 30
+
+# Each page contains at most 15 messages. This prevents a bad cursor or an
+# unexpectedly large thread from creating an unbounded workflow.
+slack_thread_max_pages = 100
 
 # Leave both empty for Supabase's public TLS endpoint. If a later deployment
 # uses PrivateLink or another private endpoint, populate both lists and provide

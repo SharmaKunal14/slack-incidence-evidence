@@ -11,6 +11,7 @@ const discovered = (): IncidentAggregate =>
     sourceEventId: 'Ev001',
     sourceWorkspaceId: 'T001',
     sourceChannelId: 'C001',
+    sourceMessageTs: '1721178000.000100',
     requestedByUserId: 'U001',
     title: 'Checkout outage',
     now: new Date('2026-07-17T01:00:00.000Z'),

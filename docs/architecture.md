@@ -1,7 +1,7 @@
 # Incident Evidence Copilot architecture
 
-Status: foundation architecture  
-Last updated: 2026-07-17
+Status: triggering-thread collection implemented
+Last updated: 2026-07-18
 
 ## Purpose
 
@@ -75,14 +75,19 @@ Explicitly out of scope:
 - Structured Pino logging with request logging disabled and sensitive-field redaction.
 - Docker/local Compose, CI, deterministic Lambda packaging, and unit-test foundations.
 - Terraform for API Gateway HTTP API, Lambda ingress and worker functions, SQS
-  FIFO/DLQ, the initial Standard state machine, least-privilege IAM, log
-  retention, concurrency limits, and queue health alarms.
+  FIFO/DLQ, the Slack evidence collector Lambda, a checkpointed Standard state
+  machine, least-privilege IAM, log retention, concurrency limits, and queue and
+  workflow health alarms.
+- Bounded retrieval of the triggering public Slack thread, stable source
+  permalinks, canonical artifact identities, retention deadlines, durable page
+  checkpoints, and explicit Slack rate-limit waits.
 - Dependency direction that keeps domain logic independent of Fastify, Slack, AWS, PostgreSQL, and model vendors.
 
 ### Deliberately not implemented yet
 
 - Slack OAuth installation and token lifecycle management.
-- Historical Slack thread or channel collection.
+- Explicitly selected Slack channel-history collection beyond the triggering
+  thread.
 - GitHub App evidence collection.
 - Production AI extraction, claim generation, or report writing.
 - Evidence comparison and contradiction detection.
@@ -94,8 +99,7 @@ Explicitly out of scope:
 - A provisioned AWS account or completed deployment.
 - RDS/RDS Proxy, VPC/subnets/endpoints or NAT, database backups, and remote
   Terraform state.
-- Real collection/extraction/review tasks in Step Functions; its implemented
-  state currently records acceptance and succeeds.
+- Extraction, review, and publication tasks after Slack collection.
 
 The roadmap is tracked in [roadmap.md](./roadmap.md). Threats that become relevant as these capabilities are introduced are tracked in [threat-model.md](./threat-model.md).
 
@@ -141,7 +145,9 @@ flowchart LR
     W --> PG["PostgreSQL"]
     W --> SFN["Step Functions Standard"]
 
-    SFN -. "roadmap" .-> SA["Slack Web API"]
+    SFN --> EC["Slack collector Lambda"]
+    EC --> SA["Slack Web API"]
+    EC --> PG
     SFN -. "roadmap" .-> GH["GitHub App API"]
     SFN -. "roadmap" .-> AI["Approved model provider"]
     PG -. "roadmap" .-> UI["Reviewer web app"]
@@ -162,6 +168,8 @@ sequenceDiagram
     participant Worker as Worker Lambda
     participant DB as PostgreSQL
     participant SFN as Step Functions
+    participant Collector as Collector Lambda
+    participant WebAPI as Slack Web API
 
     Slack->>Gateway: Raw signed HTTP request
     Gateway->>API: Payload v2 body + base64 flag
@@ -177,6 +185,13 @@ sequenceDiagram
         Worker->>DB: Transition incident to COLLECTING
         Worker->>SFN: Start deterministic incident execution
         SFN-->>Worker: Started or already exists
+        loop One bounded page until complete
+            SFN->>Collector: tenant + incident + job IDs
+            Collector->>WebAPI: conversations.replies (limit 15)
+            Collector->>WebAPI: chat.getPermalink
+            Collector->>DB: Upsert artifacts + advance cursor atomically
+            Collector-->>SFN: status + counts only
+        end
         Worker-->>FIFO: Report success
     else duplicate or terminal job
         Worker->>DB: Read existing outcome
@@ -272,10 +287,11 @@ Responsibilities:
 - on a FIFO failure, report the failed and all unprocessed records for
   redelivery.
 
-Roadmap responsibilities include terminal-versus-retryable failure
-classification, evidence collection, structured AI extraction, validation, and
-notifying a reviewer. Those steps must be checkpointed so a retry does not
-repeat completed external side effects.
+The triggering-thread collector already separates provider throttling,
+retryable dependency failures, and terminal Slack authorization failures.
+Roadmap responsibilities include selected-channel collection, structured AI
+extraction, validation, and reviewer notification. Those steps must also be
+checkpointed so a retry does not repeat completed external side effects.
 
 ### PostgreSQL
 
@@ -291,7 +307,11 @@ The foundation requires at least:
 
 The implemented migration runner serialises concurrent migrators with a database advisory lock, runs each migration transactionally, and records a SHA-256 checksum. Editing, renaming, or removing an already applied migration is therefore an integrity failure rather than silent schema drift.
 
-Future source content, if stored at all, belongs in a separately classified evidence snapshot with a retention deadline and collection authority. It must not be casually added to a generic JSON job column.
+Collected Slack text is stored only in the restricted `source_artifacts`
+record, with a content hash and retention deadline. It is never placed in the
+workflow state or a generic job JSON column. The current release records expiry
+but does not yet delete expired content; the deletion processor remains required
+before claiming an enforced retention policy.
 
 ### AI gateway
 
@@ -378,7 +398,8 @@ Rules:
 | Tenant              | Isolation root and lifecycle                                              | organisation identity                                   | schema implemented                                      |
 | Slack installation  | Workspace grant and encrypted bot-token metadata                          | token ciphertext, scopes, installing user               | schema implemented; OAuth flow is roadmap               |
 | Incident            | Stable idempotency, tenant/source identity, lifecycle, optimistic version | Slack identifiers and requested title                   | schema and repository implemented                       |
-| Source artifact     | Tenant-safe source metadata and optional snapshot                         | restricted content when collection is enabled           | schema implemented; collection is roadmap               |
+| Source artifact     | Tenant-safe source metadata and optional snapshot                         | restricted Slack content                                | triggering-thread collection implemented                |
+| Slack collection    | Durable page cursor, counts, state, and safe failure code                 | Slack source identifiers                                | schema and repository implemented                       |
 | Timeline event      | Normalised event/report time and classification                           | generated incident detail                               | schema implemented; extraction is roadmap               |
 | Claim               | Structured incident statement, classification, and review state           | generated or human-authored incident detail             | schema implemented; model generation and review roadmap |
 | Claim-evidence link | Support, contradiction, or context relation                               | relationship rationale                                  | schema implemented; population is roadmap               |
@@ -409,7 +430,10 @@ Only operational metadata is allowed in standard logs. Identifiers should be has
 2. **API to queue:** authenticated input becomes an internal versioned command; IAM and queue encryption protect transport and storage.
 3. **Queue to worker:** messages remain untrusted because producers or stored messages may be compromised; schema and tenant validation run again.
 4. **Worker to database:** parameterised repository methods and tenant-scoped access protect durable state.
-5. **Worker to source APIs (roadmap):** OAuth grants authorize retrieval; each artifact retains its source and permission metadata.
+5. **Collector to Slack:** a workspace-bound bot grant authorizes retrieval;
+   each artifact retains its canonical source identity and permalink. The
+   current single-workspace secret is not a replacement for a production OAuth
+   installation lifecycle.
 6. **Worker to model provider (roadmap):** restricted data leaves the product boundary under an explicit tenant and provider policy.
 7. **Review to publication (roadmap):** a human decision plus an audience policy changes a draft into an external artifact.
 
@@ -489,19 +513,21 @@ The first AWS topology is:
 - SQS FIFO plus a FIFO dead-letter queue;
 - a worker Lambda with bounded concurrency, database access, and
   `states:StartExecution` permission;
-- a Step Functions Standard workflow, currently containing only the truthful
-  `WorkflowAccepted` terminal state;
+- a Step Functions Standard workflow that invokes one bounded Slack thread page
+  per task and owns pagination/rate-limit waits;
+- a Slack evidence collector Lambda with bounded concurrency, database access,
+  and workspace-bound Slack bot-token access;
 - existing Supabase PostgreSQL through its IPv4 transaction pooler;
 - Secrets Manager for credentials;
 - bounded-retention CloudWatch logs and queue alarms; and
 - Terraform-managed infrastructure.
 
-Both Lambdas use one immutable ZIP but different composition roots, roles,
-configuration, timeouts, memory, and concurrency. The current worker remains
-outside a VPC so it can reach Supabase's public IPv4 pooler, Secrets Manager, and
-Step Functions without a NAT gateway. The PostgreSQL connection verifies the
-Supabase CA and pooler hostname. The Terraform root deliberately does not
-provision Supabase, secrets, artifact registry, or remote state.
+All three Lambdas use one immutable ZIP but different composition roots, roles,
+configuration, timeouts, memory, and concurrency. The database-using functions
+remain outside a VPC so they can reach Supabase's public IPv4 pooler, Secrets
+Manager, Step Functions, and Slack without a NAT gateway. PostgreSQL connections
+verify the Supabase CA and pooler hostname. The Terraform root deliberately does
+not provision Supabase, secrets, artifact registry, or remote state.
 
 This is a deployable boundary, not evidence that an AWS environment has been
 created. A later private-network design can attach the worker to a VPC and use
@@ -569,10 +595,10 @@ connection hazard if concurrency is left unbounded. Fargate remains a valid
 measured migration target for sustained workloads or stages that do not fit
 Lambda; it is not needed merely to make the diagram look more conventional.
 
-The current Step Functions machine intentionally performs no collection or AI
-work. A decorative multi-state graph would be misleading. Each future state
-must arrive with a bounded input/output contract, retry policy, idempotency key,
-and stage implementation.
+The current Step Functions machine performs only triggering-thread collection.
+Its task input/output is bounded and source content stays in PostgreSQL. Each
+future state must likewise arrive with a bounded contract, retry policy,
+idempotency boundary, and implemented stage rather than a decorative graph.
 
 ### Public channels only
 
