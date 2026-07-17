@@ -1,6 +1,7 @@
 import type { SQSBatchResponse, SQSEvent } from 'aws-lambda';
 import type { Logger } from 'pino';
 import type { IncidentWorkflowStarter } from '../application/ports/incident-workflow-starter.js';
+import type { IncidentStatusNotifier } from '../application/ports/incident-status-notifier.js';
 import type { ProcessIncidentReviewResult } from '../application/process-incident-review.js';
 import {
   parseIncidentReviewJob,
@@ -14,6 +15,7 @@ export interface IncidentReviewProcessor {
 export interface IncidentWorkerHandlerDependencies {
   readonly processIncidentReview: IncidentReviewProcessor;
   readonly workflowStarter: IncidentWorkflowStarter;
+  readonly statusNotifier: IncidentStatusNotifier;
   readonly logger: Logger;
 }
 
@@ -26,9 +28,9 @@ export type IncidentWorkerHandler = (
  *
  * SQS and Lambda provide at-least-once delivery. The application use case owns
  * incident idempotency, while the workflow starter must use a deterministic
- * execution name. Starting the workflow for both `started` and
- * `already_started` outcomes closes the failure window between committing the
- * incident record and requesting the Step Functions execution.
+ * execution name and the status notifier must use a stable provider idempotency
+ * key. Repeating both effects for `started` and `already_started` outcomes
+ * closes ambiguous failure windows after the incident commit.
  *
  * For a FIFO queue, processing stops at the first failure. The failed record
  * and every record that has not been attempted are returned so Lambda can retry
@@ -47,6 +49,13 @@ export function createIncidentWorkerHandler(
           tenantId: job.tenantId,
           incidentId: result.incidentId,
           jobId: job.jobId,
+        });
+
+        await dependencies.statusNotifier.notifyAccepted({
+          workspaceId: job.source.workspaceId,
+          incidentId: result.incidentId,
+          channelId: job.source.channelId,
+          threadTs: job.source.threadTs ?? job.source.messageTs,
         });
 
         dependencies.logger.info(

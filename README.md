@@ -98,15 +98,17 @@ Configure the Slack app's Events API request URL as:
 https://<public-development-url>/integrations/slack/events
 ```
 
-Subscribe to `app_mention`, install the app with the minimum required scopes,
-invite it to a public development channel, and send:
+Subscribe to `app_mention`, grant the bot `app_mentions:read` and `chat:write`,
+install the app, invite it to a public development channel, and send:
 
 ```text
 @IncidentCopilot generate incident review: Checkout outage
 ```
 
-The worker will create the incident idempotently and advance it to `COLLECTING`.
-It does not retrieve channel history yet; that connector is the next milestone.
+The production worker creates the incident idempotently, advances it to
+`COLLECTING`, starts the durable workflow, and posts an idempotent acceptance
+reply in the triggering Slack thread. It does not retrieve channel history yet;
+that connector is the next milestone.
 
 ## Engineering checks
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   InvalidRuntimeSecretError,
   parseDatabaseConnectionSecret,
+  parseSlackBotTokenSecret,
   parseSlackSigningSecret,
 } from '../../src/config/runtime-secrets.js';
 
@@ -12,12 +13,17 @@ const databaseCa = [
 ].join('\n');
 
 describe('runtime secret contracts', () => {
-  it('parses the two least-privilege secret shapes', () => {
+  it('parses the least-privilege secret shapes', () => {
     expect(
       parseSlackSigningSecret(
         JSON.stringify({ signingSecret: 'slack-secret' }),
       ),
     ).toEqual({ signingSecret: 'slack-secret' });
+    expect(
+      parseSlackBotTokenSecret(
+        JSON.stringify({ workspaceId: 'T001', botToken: 'xoxb-secret' }),
+      ),
+    ).toEqual({ workspaceId: 'T001', botToken: 'xoxb-secret' });
     expect(
       parseDatabaseConnectionSecret(
         JSON.stringify({
@@ -39,6 +45,16 @@ describe('runtime secret contracts', () => {
         JSON.stringify({ signingSecret: 'value', databasePassword: 'wrong' }),
       ),
     ).toThrow();
+
+    expect(() =>
+      parseSlackBotTokenSecret(
+        JSON.stringify({
+          workspaceId: 'T001',
+          botToken: 'xoxb-secret',
+          signingSecret: 'wrong-boundary',
+        }),
+      ),
+    ).toThrow(InvalidRuntimeSecretError);
   });
 
   it('does not echo malformed secret content in JSON errors', () => {

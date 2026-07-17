@@ -38,6 +38,9 @@ The current foundation establishes:
 - a vendor-neutral, Zod-validated AI-analysis contract without production model calls;
 - deterministic Step Functions Standard execution starts that close the
   database-commit/start retry window;
+- workspace-bound Slack status replies with separate least-privilege bot-token
+  access, bounded network calls, strict response validation, and a stable
+  client message ID for retry safety;
 - Secrets Manager adapters and Zod-validated local/Lambda configuration plus
   strict runtime secret contracts;
 - Terraform for API Gateway, Lambda, SQS FIFO/DLQ, the initial Standard workflow,
@@ -64,7 +67,6 @@ A developer installs/configures the Slack app, triggers it in a supported public
 - Replace the initial channel-ID-prefix guard with authorized Slack conversation metadata and installation policy before history collection.
 - Production SQS FIFO and dead-letter queue configuration.
 - Production worker retry, visibility-timeout, and terminal-failure policy.
-- Status response in the triggering Slack thread.
 - Extend CI from the implemented unit checks to integration, migration, container, and dependency-security tests.
 - OpenTelemetry traces and core queue/job metrics.
 - Provision the database/RDS Proxy/network layer consumed by the implemented

@@ -6,6 +6,13 @@ const slackSigningSecretSchema = z
   })
   .strict();
 
+const slackBotTokenSecretSchema = z
+  .object({
+    workspaceId: z.string().regex(/^T[A-Z0-9]{1,63}$/),
+    botToken: z.string().min(1).max(4096),
+  })
+  .strict();
+
 const certificateBundleSchema = z
   .string()
   .trim()
@@ -25,6 +32,11 @@ export interface SlackSigningSecret {
   readonly signingSecret: string;
 }
 
+export interface SlackBotTokenSecret {
+  readonly workspaceId: string;
+  readonly botToken: string;
+}
+
 export interface DatabaseConnectionSecret {
   readonly username: string;
   readonly password: string;
@@ -34,6 +46,14 @@ export interface DatabaseConnectionSecret {
 export function parseSlackSigningSecret(value: string): SlackSigningSecret {
   try {
     return slackSigningSecretSchema.parse(parseJson(value));
+  } catch {
+    throw new InvalidRuntimeSecretError();
+  }
+}
+
+export function parseSlackBotTokenSecret(value: string): SlackBotTokenSecret {
+  try {
+    return slackBotTokenSecretSchema.parse(parseJson(value));
   } catch {
     throw new InvalidRuntimeSecretError();
   }

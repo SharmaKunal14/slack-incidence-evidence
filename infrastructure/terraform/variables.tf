@@ -64,6 +64,16 @@ variable "slack_signing_secret_arn" {
   }
 }
 
+variable "slack_bot_token_secret_arn" {
+  description = "ARN of an existing Secrets Manager secret containing JSON {\"workspaceId\":\"T...\",\"botToken\":\"...\"}. Terraform never reads the value."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.slack_bot_token_secret_arn))
+    error_message = "slack_bot_token_secret_arn must be a Secrets Manager secret ARN."
+  }
+}
+
 variable "database_secret_arn" {
   description = "ARN of an existing Secrets Manager secret containing username, password, and the trusted PostgreSQL CA certificate. Terraform never reads the value."
   type        = string
