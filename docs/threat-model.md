@@ -8,7 +8,7 @@ Last updated: 2026-07-17
 This threat model covers the Incident Evidence Copilot foundation:
 
 ```text
-Slack signed request -> API -> SQS FIFO -> worker -> PostgreSQL
+Slack signed request -> API Gateway -> ingress Lambda -> SQS FIFO -> worker Lambda -> PostgreSQL + Step Functions
 ```
 
 It also anticipates planned Slack history collection, GitHub evidence, model-provider calls, a reviewer UI, publication, and follow-up issue creation. Planned controls are not credited as current protection.
@@ -84,7 +84,8 @@ flowchart LR
     end
 
     subgraph Edge["Public application boundary"]
-        API["API entrypoint"]
+        Gateway["API Gateway"]
+        API["Ingress Lambda"]
     end
 
     subgraph AWS["Private application boundary"]
@@ -92,6 +93,7 @@ flowchart LR
         Worker["Worker"]
         DB["PostgreSQL"]
         Secrets["Secrets Manager / KMS"]
+        Workflow["Step Functions"]
     end
 
     subgraph Future["External processors and destinations — roadmap"]
@@ -101,12 +103,14 @@ flowchart LR
         Publish["Document / issue destination"]
     end
 
-    Slack -->|"signed raw request"| API
-    Attacker -->|"arbitrary request"| API
+    Slack -->|"signed raw request"| Gateway
+    Attacker -->|"arbitrary request"| Gateway
+    Gateway -->|"payload v2 body"| API
     Secrets -->|"runtime secret"| API
     API -->|"versioned command"| FIFO
     FIFO -->|"untrusted delivery"| Worker
     Worker -->|"tenant-scoped queries"| DB
+    Worker -->|"ID-only execution input"| Workflow
     Secrets -->|"runtime credentials"| Worker
     Worker -. "restricted evidence" .-> Source
     Worker -. "restricted prompt" .-> Model
@@ -180,7 +184,8 @@ Implemented controls:
 
 Production requirements:
 
-- KMS encryption;
+- server-side encryption, with a customer-managed KMS key when policy requires
+  customer-controlled key lifecycle;
 - a resource policy that denies non-TLS access;
 - API role can send but cannot receive or purge;
 - worker role can receive/delete but cannot alter queue policy; and

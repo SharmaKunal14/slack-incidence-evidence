@@ -17,8 +17,16 @@ the human review console are the next vertical increments.
 - `@app generate incident review: <title>` and equivalent RCA/postmortem command
   parsing for public channels.
 - Immediate Slack acknowledgement followed by durable SQS FIFO handoff.
-- Versioned queue contract with rapid-retry deduplication.
-- At-least-once worker with database-backed idempotency and optimistic locking.
+- API Gateway HTTP API and Lambda adapters which preserve the same application
+  contracts as the local Fastify API and polling worker.
+- Versioned queue contract with rapid-retry deduplication and Lambda partial
+  batch failure handling for FIFO ordering.
+- At-least-once worker with database-backed idempotency, optimistic locking, and
+  deterministic Step Functions execution identity.
+- Secrets Manager runtime loading with narrow, validated JSON secret contracts.
+- Terraform for API Gateway, two independently scaled Lambdas, encrypted SQS
+  FIFO/DLQ, a Standard workflow boundary, least-privilege IAM, bounded logs,
+  concurrency controls, and queue alarms.
 - Incident aggregate with explicit, validated lifecycle transitions.
 - PostgreSQL schema for tenants, installations, incidents, source artifacts,
   timeline events, claims, evidence links, workflow jobs, and audit events.
@@ -31,23 +39,28 @@ the human review console are the next vertical increments.
 
 ```mermaid
 flowchart LR
-    Slack["Slack Events API"] --> API["Fastify API"]
+    Slack["Slack Events API"] --> Gateway["API Gateway HTTP API"]
+    Gateway --> API["Ingress Lambda"]
     API --> Verify["Signature + replay verification"]
     Verify --> SQS["SQS FIFO"]
-    SQS --> Worker["Idempotent worker"]
+    SQS --> Worker["Worker Lambda"]
     Worker --> Domain["Incident aggregate"]
     Domain --> Postgres["PostgreSQL"]
-    Postgres --> Future["Evidence collection and AI pipeline"]
+    Worker --> SFN["Step Functions Standard"]
+    SFN -. "next" .-> Future["Evidence and AI stages"]
 ```
 
-The API and worker are separate process entrypoints in one modular codebase.
-This isolates Slack's short response deadline from long-running processing while
-keeping domain and deployment complexity low. See [architecture](docs/architecture.md),
+Production uses serverless protocol adapters; local development retains the
+Fastify API and polling worker. Both paths compose the same application services
+and domain rules from one modular codebase. This isolates Slack's short response
+deadline from durable processing without duplicating business logic. See
+[architecture](docs/architecture.md), [serverless deployment](infrastructure/terraform/README.md),
 [threat model](docs/threat-model.md), and [roadmap](docs/roadmap.md).
 
 ## Requirements
 
 - Node.js 22+
+- A `zip` command-line utility for Lambda packaging
 - Docker with Compose
 - A development Slack app for live Slack events
 
@@ -102,7 +115,29 @@ npm run check
 ```
 
 The command runs formatting verification, ESLint with type-aware rules, strict
-TypeScript checking, the test suite, and the production build.
+TypeScript checking, the test suite, the Node.js build, and a reproducible Lambda
+ZIP build.
+
+## AWS deployment foundation
+
+Build the shared Lambda artifact:
+
+```bash
+npm run build:lambda
+```
+
+This produces the ignored artifact
+`artifacts/incident-copilot-lambda.zip`, containing two composition roots:
+`slack-ingress-main.handler` and `incident-worker-main.handler`. Terraform
+instructions, required secret shapes, networking assumptions, cost controls,
+and deployment gates are in
+[infrastructure/terraform/README.md](infrastructure/terraform/README.md).
+
+The Terraform is not proof that this repository is already deployed. It also
+does not provision PostgreSQL, RDS Proxy, private networking, the Slack app, or
+remote Terraform state. Those inputs must exist before the AWS path can process
+a real incident. The current Step Functions definition records workflow
+acceptance only; evidence collection and AI tasks have not been implemented yet.
 
 ## Security posture
 

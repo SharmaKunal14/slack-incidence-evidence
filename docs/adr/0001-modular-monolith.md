@@ -1,6 +1,6 @@
 # ADR 0001: Use a modular monolith with separate API and worker entrypoints
 
-- Status: accepted
+- Status: accepted for logical architecture; AWS runtime topology amended by ADR 0002
 - Date: 2026-07-17
 - Decision owners: project maintainers
 

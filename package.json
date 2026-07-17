@@ -9,7 +9,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
+    "build:lambda": "node scripts/build-lambda.mjs",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run build:lambda",
     "db:migrate": "tsx src/infrastructure/postgres/migrate-cli.ts",
     "dev:api": "tsx watch src/api/main.ts",
     "dev:worker": "tsx watch src/worker/main.ts",
@@ -23,6 +24,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1089.0",
+    "@aws-sdk/client-sfn": "^3.1089.0",
     "@aws-sdk/client-sqs": "^3.0.0",
     "fastify": "^5.0.0",
     "pg": "^8.0.0",
@@ -31,8 +34,10 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@types/aws-lambda": "^8.10.162",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.0.0",
+    "esbuild": "^0.28.1",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0",
     "tsx": "^4.0.0",

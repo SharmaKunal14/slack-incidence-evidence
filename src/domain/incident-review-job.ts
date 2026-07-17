@@ -22,7 +22,19 @@ export const incidentReviewRequestedV1Schema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((job, context) => {
+    // The initial tenancy model is one tenant per Slack workspace. Do not trust
+    // the duplicated envelope field if a producer or stored message is
+    // compromised; both identities must describe the same boundary.
+    if (job.tenantId !== job.source.workspaceId) {
+      context.addIssue({
+        code: 'custom',
+        path: ['tenantId'],
+        message: 'Tenant must match the source Slack workspace',
+      });
+    }
+  });
 
 export type IncidentReviewRequestedV1 = z.infer<
   typeof incidentReviewRequestedV1Schema

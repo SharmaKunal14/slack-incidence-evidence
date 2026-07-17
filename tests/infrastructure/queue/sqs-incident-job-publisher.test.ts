@@ -22,7 +22,7 @@ const job: IncidentReviewJob = {
 };
 
 describe('SqsIncidentJobPublisher', () => {
-  it('uses tenant ordering and a bounded deterministic deduplication ID', async () => {
+  it('uses incident-scoped ordering and a bounded deterministic deduplication ID', async () => {
     const send = vi.fn().mockResolvedValue({});
     const publisher = new SqsIncidentJobPublisher(
       { send } as unknown as SQSClient,
@@ -35,10 +35,45 @@ describe('SqsIncidentJobPublisher', () => {
       { input?: Record<string, unknown> } | undefined;
     expect(command?.input).toMatchObject({
       QueueUrl: 'https://sqs.example.test/incident-review-requests.fifo',
-      MessageGroupId: 'T001',
+      MessageGroupId: `incident-${createHash('sha256')
+        .update(['T001', 'C001', '1721178000.000100'].join('\0'), 'utf8')
+        .digest('hex')}`,
       MessageDeduplicationId: createHash('sha256')
-        .update('T001:Ev001', 'utf8')
+        .update('T001', 'utf8')
+        .update('\0', 'utf8')
+        .update('Ev001', 'utf8')
         .digest('hex'),
     });
+  });
+
+  it('keeps retries in one group while allowing independent incident threads to run concurrently', async () => {
+    const send = vi.fn().mockResolvedValue({});
+    const publisher = new SqsIncidentJobPublisher(
+      { send } as unknown as SQSClient,
+      'https://sqs.example.test/incident-review-requests.fifo',
+    );
+
+    await publisher.publish(job);
+    await publisher.publish({
+      ...job,
+      jobId: 'job-2',
+      source: { ...job.source, eventId: 'Ev002' },
+    });
+    await publisher.publish({
+      ...job,
+      jobId: 'job-3',
+      source: {
+        ...job.source,
+        eventId: 'Ev003',
+        messageTs: '1721179000.000200',
+      },
+    });
+
+    const inputs = send.mock.calls.map(
+      ([command]) =>
+        (command as { input: { MessageGroupId: string } }).input.MessageGroupId,
+    );
+    expect(inputs[0]).toBe(inputs[1]);
+    expect(inputs[2]).not.toBe(inputs[0]);
   });
 });
