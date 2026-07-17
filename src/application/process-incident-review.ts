@@ -32,6 +32,7 @@ export class ProcessIncidentReview {
       sourceEventId: job.source.eventId,
       sourceWorkspaceId: job.source.workspaceId,
       sourceChannelId: job.source.channelId,
+      sourceMessageTs: job.source.messageTs,
       ...(job.source.threadTs === undefined
         ? {}
         : { sourceThreadTs: job.source.threadTs }),

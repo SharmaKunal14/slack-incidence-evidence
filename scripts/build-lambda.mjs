@@ -27,6 +27,8 @@ await build({
   bundle: true,
   entryPoints: {
     'incident-worker-main': 'src/lambda/incident-worker-main.ts',
+    'slack-evidence-collector-main':
+      'src/lambda/slack-evidence-collector-main.ts',
     'slack-ingress-main': 'src/lambda/slack-ingress-main.ts',
   },
   entryNames: '[name]',
@@ -52,6 +54,7 @@ const bundleFiles = (await readdir(stagingDirectory)).sort();
 const expectedBundleFiles = [
   'incident-worker-main.js',
   'package.json',
+  'slack-evidence-collector-main.js',
   'slack-ingress-main.js',
 ];
 if (JSON.stringify(bundleFiles) !== JSON.stringify(expectedBundleFiles)) {
@@ -66,7 +69,7 @@ await executeFile(
   process.execPath,
   [
     '-e',
-    "const ingress = require('./slack-ingress-main.js'); const worker = require('./incident-worker-main.js'); if (typeof ingress.handler !== 'function' || typeof worker.handler !== 'function') throw new Error('Lambda handler export missing');",
+    "const ingress = require('./slack-ingress-main.js'); const worker = require('./incident-worker-main.js'); const collector = require('./slack-evidence-collector-main.js'); if (typeof ingress.handler !== 'function' || typeof worker.handler !== 'function' || typeof collector.handler !== 'function') throw new Error('Lambda handler export missing');",
   ],
   {
     cwd: stagingDirectory,
@@ -75,9 +78,11 @@ await executeFile(
       DATABASE_HOST: 'database.example.test',
       DATABASE_NAME: 'incident_copilot',
       DATABASE_SECRET_ARN: 'test-database-secret',
+      EVIDENCE_RETENTION_DAYS: '30',
       INCIDENT_QUEUE_URL: 'https://sqs.example.test/incident-jobs.fifo',
       INCIDENT_WORKFLOW_STATE_MACHINE_ARN: 'test-state-machine',
       SLACK_BOT_TOKEN_SECRET_ARN: 'test-slack-bot-secret',
+      SLACK_THREAD_MAX_PAGES: '100',
       SLACK_SIGNING_SECRET_ARN: 'test-slack-secret',
     },
   },

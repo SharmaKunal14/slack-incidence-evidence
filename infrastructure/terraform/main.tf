@@ -119,6 +119,11 @@ resource "aws_cloudwatch_log_group" "worker" {
   retention_in_days = var.log_retention_days
 }
 
+resource "aws_cloudwatch_log_group" "slack_evidence_collector" {
+  name              = "/aws/lambda/${local.name_prefix}-slack-evidence-collector"
+  retention_in_days = var.log_retention_days
+}
+
 resource "aws_cloudwatch_log_group" "api" {
   name              = "/aws/apigateway/${local.name_prefix}"
   retention_in_days = var.log_retention_days
@@ -130,10 +135,9 @@ resource "aws_cloudwatch_log_group" "workflow" {
 }
 
 # -----------------------------------------------------------------------------
-# Step Functions: an intentionally small, truthful orchestration boundary.
-# The current worker starts an execution and this state records acceptance. New
-# collection, extraction, review, and publication states should be added only
-# when the corresponding idempotent application stages exist.
+# Step Functions owns bounded Slack pagination and provider rate-limit waits.
+# Evidence remains in PostgreSQL; the workflow carries only identifiers,
+# counters, status, and a safe failure code.
 # -----------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "step_functions_assume_role" {
@@ -177,17 +181,93 @@ resource "aws_iam_role_policy" "step_functions_logging" {
   policy = data.aws_iam_policy_document.step_functions_logging.json
 }
 
+data "aws_iam_policy_document" "step_functions_tasks" {
+  statement {
+    sid       = "InvokeSlackEvidenceCollector"
+    actions   = ["lambda:InvokeFunction"]
+    resources = [aws_lambda_function.slack_evidence_collector.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "step_functions_tasks" {
+  name   = "workflow-tasks"
+  role   = aws_iam_role.step_functions.id
+  policy = data.aws_iam_policy_document.step_functions_tasks.json
+}
+
 resource "aws_sfn_state_machine" "incident_workflow" {
   name     = "${local.name_prefix}-incident-workflow"
   role_arn = aws_iam_role.step_functions.arn
   type     = "STANDARD"
 
   definition = jsonencode({
-    Comment = "Incident workflow orchestration boundary. Only acceptance is implemented in the current release."
-    StartAt = "WorkflowAccepted"
+    Comment = "Checkpointed incident evidence collection. Message content remains in PostgreSQL, never workflow state."
+    StartAt = "CollectSlackThreadPage"
     States = {
-      WorkflowAccepted = {
+      CollectSlackThreadPage = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::lambda:invoke"
+        Parameters = {
+          FunctionName = aws_lambda_function.slack_evidence_collector.arn
+          Payload = {
+            "version.$"    = "$.version"
+            "tenantId.$"   = "$.tenantId"
+            "incidentId.$" = "$.incidentId"
+            "jobId.$"      = "$.jobId"
+          }
+        }
+        OutputPath = "$.Payload"
+        Retry = [{
+          ErrorEquals     = ["States.TaskFailed"]
+          IntervalSeconds = 2
+          MaxAttempts     = 3
+          BackoffRate     = 2
+        }]
+        Next = "CollectionStatus"
+      }
+      CollectionStatus = {
+        Type = "Choice"
+        Choices = [
+          {
+            Variable     = "$.status"
+            StringEquals = "CONTINUE"
+            Next         = "WaitBetweenPages"
+          },
+          {
+            Variable     = "$.status"
+            StringEquals = "RATE_LIMITED"
+            Next         = "WaitForSlackRateLimit"
+          },
+          {
+            Variable     = "$.status"
+            StringEquals = "COMPLETE"
+            Next         = "SlackEvidenceCollected"
+          },
+          {
+            Variable     = "$.status"
+            StringEquals = "FAILED"
+            Next         = "SlackEvidenceCollectionFailed"
+          }
+        ]
+        Default = "SlackEvidenceCollectionFailed"
+      }
+      WaitBetweenPages = {
+        Type    = "Wait"
+        Seconds = 1
+        Next    = "CollectSlackThreadPage"
+      }
+      WaitForSlackRateLimit = {
+        Type        = "Wait"
+        SecondsPath = "$.retryAfterSeconds"
+        Next        = "CollectSlackThreadPage"
+      }
+      SlackEvidenceCollected = {
         Type = "Succeed"
+      }
+      SlackEvidenceCollectionFailed = {
+        Type  = "Fail"
+        Error = "SlackEvidenceCollectionFailed"
+        Cause = "Slack thread evidence could not be collected; inspect the durable collection failure code."
       }
     }
   })
@@ -198,7 +278,10 @@ resource "aws_sfn_state_machine" "incident_workflow" {
     log_destination        = "${aws_cloudwatch_log_group.workflow.arn}:*"
   }
 
-  depends_on = [aws_iam_role_policy.step_functions_logging]
+  depends_on = [
+    aws_iam_role_policy.step_functions_logging,
+    aws_iam_role_policy.step_functions_tasks,
+  ]
 }
 
 # -----------------------------------------------------------------------------
@@ -340,8 +423,71 @@ resource "aws_iam_role_policy" "worker" {
   policy = data.aws_iam_policy_document.worker.json
 }
 
+resource "aws_iam_role" "slack_evidence_collector" {
+  name               = "${local.name_prefix}-slack-evidence-collector-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+}
+
+data "aws_iam_policy_document" "slack_evidence_collector" {
+  statement {
+    sid       = "WriteFunctionLogs"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.slack_evidence_collector.arn}:*"]
+  }
+
+  dynamic "statement" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      # Lambda ENI management requires wildcard resources. This grant exists
+      # only when explicit VPC inputs attach the database-using collectors.
+      sid = "ManageCollectorVpcNetworkInterfaces"
+      actions = [
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:CreateNetworkInterface",
+        "ec2:DeleteNetworkInterface",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeSubnets",
+        "ec2:UnassignPrivateIpAddresses",
+      ]
+      resources = ["*"]
+    }
+  }
+
+  statement {
+    sid       = "ReadDatabaseCredentials"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.database_secret_arn]
+  }
+
+  statement {
+    sid       = "ReadSlackBotToken"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.slack_bot_token_secret_arn]
+  }
+
+  dynamic "statement" {
+    for_each = length(var.secrets_kms_key_arns) == 0 ? [] : [1]
+    content {
+      sid       = "DecryptCustomerManagedSecretKeys"
+      actions   = ["kms:Decrypt"]
+      resources = var.secrets_kms_key_arns
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+      }
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "slack_evidence_collector" {
+  name   = "slack-evidence-collector"
+  role   = aws_iam_role.slack_evidence_collector.id
+  policy = data.aws_iam_policy_document.slack_evidence_collector.json
+}
+
 # -----------------------------------------------------------------------------
-# Lambda compute. Both functions use one immutable build artifact but distinct
+# Lambda compute. All functions use one immutable build artifact but distinct
 # composition roots, IAM roles, configuration, and concurrency budgets.
 # -----------------------------------------------------------------------------
 
@@ -438,6 +584,67 @@ resource "aws_lambda_function" "worker" {
   depends_on = [
     aws_cloudwatch_log_group.worker,
     aws_iam_role_policy.worker,
+  ]
+}
+
+resource "aws_lambda_function" "slack_evidence_collector" {
+  function_name = "${local.name_prefix}-slack-evidence-collector"
+  description   = "Collects and checkpoints one bounded page of triggering Slack thread evidence."
+  role          = aws_iam_role.slack_evidence_collector.arn
+  runtime       = "nodejs22.x"
+  architectures = [var.lambda_architecture]
+  handler       = var.slack_evidence_collector_lambda_handler
+
+  filename         = var.lambda_artifact_path
+  source_code_hash = filebase64sha256(var.lambda_artifact_path)
+
+  memory_size                    = var.evidence_collector_memory_mb
+  timeout                        = var.evidence_collector_timeout_seconds
+  reserved_concurrent_executions = var.evidence_collector_reserved_concurrency
+
+  environment {
+    variables = {
+      AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
+      DATABASE_HOST                       = var.database_host
+      DATABASE_NAME                       = var.database_name
+      DATABASE_POOL_MAX                   = tostring(var.database_pool_max)
+      DATABASE_PORT                       = tostring(var.database_port)
+      DATABASE_SECRET_ARN                 = var.database_secret_arn
+      DATABASE_SSL                        = "true"
+      EVIDENCE_RETENTION_DAYS             = tostring(var.evidence_retention_days)
+      LOG_LEVEL                           = var.log_level
+      NODE_ENV                            = local.node_env
+      SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
+      SLACK_THREAD_MAX_PAGES              = tostring(var.slack_thread_max_pages)
+    }
+  }
+
+  tracing_config {
+    mode = "PassThrough"
+  }
+
+  dynamic "vpc_config" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      subnet_ids         = var.worker_subnet_ids
+      security_group_ids = var.worker_security_group_ids
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition = (
+        length(var.worker_subnet_ids) == 0 && length(var.worker_security_group_ids) == 0
+        ) || (
+        length(var.worker_subnet_ids) > 0 && length(var.worker_security_group_ids) > 0
+      )
+      error_message = "worker_subnet_ids and worker_security_group_ids must either both be empty or both be populated."
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.slack_evidence_collector,
+    aws_iam_role_policy.slack_evidence_collector,
   ]
 }
 
@@ -554,5 +761,24 @@ resource "aws_cloudwatch_metric_alarm" "oldest_incident_job" {
 
   dimensions = {
     QueueName = aws_sqs_queue.incident_jobs.name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "incident_workflow_failed" {
+  alarm_name          = "${local.name_prefix}-incident-workflow-failed"
+  alarm_description   = "An incident evidence workflow exhausted retries or reached a terminal source failure."
+  namespace           = "AWS/States"
+  metric_name         = "ExecutionsFailed"
+  statistic           = "Sum"
+  period              = 60
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = var.alarm_action_arns
+  ok_actions          = var.alarm_action_arns
+
+  dimensions = {
+    StateMachineArn = aws_sfn_state_machine.incident_workflow.arn
   }
 }

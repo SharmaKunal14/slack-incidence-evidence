@@ -6,9 +6,10 @@ a one-prompt transcript summarizer: incident facts, hypotheses, timeline events,
 and evidence references are represented as separate domain concepts so later AI
 stages cannot silently turn speculation into fact.
 
-The current release establishes the secure ingestion and durable workflow
-foundation. Slack collection, GitHub evidence retrieval, model inference, and
-the human review console are the next vertical increments.
+The current release establishes secure ingestion and collects the triggering
+public Slack thread into a deterministic, retention-bound evidence bundle.
+Selected-channel collection, GitHub retrieval, model inference, and the human
+review console are later vertical increments.
 
 ## Implemented
 
@@ -23,10 +24,16 @@ the human review console are the next vertical increments.
   batch failure handling for FIFO ordering.
 - At-least-once worker with database-backed idempotency, optimistic locking, and
   deterministic Step Functions execution identity.
+- Checkpointed Slack thread collection in bounded 15-message pages, with
+  provider-directed rate-limit waits owned by Step Functions rather than a
+  sleeping Lambda.
+- Idempotent Slack evidence upserts with stable source IDs, SHA-256 content
+  hashes, source permalinks, selected metadata, and configurable retention
+  deadlines.
 - Secrets Manager runtime loading with narrow, validated JSON secret contracts.
-- Terraform for API Gateway, two independently scaled Lambdas, encrypted SQS
-  FIFO/DLQ, a Standard workflow boundary, least-privilege IAM, bounded logs,
-  concurrency controls, and queue alarms.
+- Terraform for API Gateway, three independently scaled Lambdas, encrypted SQS
+  FIFO/DLQ, a checkpointed Standard workflow, least-privilege IAM, bounded
+  logs, concurrency controls, and queue/workflow alarms.
 - Incident aggregate with explicit, validated lifecycle transitions.
 - PostgreSQL schema for tenants, installations, incidents, source artifacts,
   timeline events, claims, evidence links, workflow jobs, and audit events.
@@ -47,7 +54,10 @@ flowchart LR
     Worker --> Domain["Incident aggregate"]
     Domain --> Postgres["PostgreSQL"]
     Worker --> SFN["Step Functions Standard"]
-    SFN -. "next" .-> Future["Evidence and AI stages"]
+    SFN --> Collector["Slack evidence collector"]
+    Collector --> SlackAPI["Slack Web API"]
+    Collector --> Postgres
+    SFN -. "next" .-> Future["GitHub and AI stages"]
 ```
 
 Production uses serverless protocol adapters; local development retains the
@@ -98,8 +108,9 @@ Configure the Slack app's Events API request URL as:
 https://<public-development-url>/integrations/slack/events
 ```
 
-Subscribe to `app_mention`, grant the bot `app_mentions:read` and `chat:write`,
-install the app, invite it to a public development channel, and send:
+Subscribe to `app_mention`, grant the bot `app_mentions:read`, `chat:write`, and
+`channels:history`, reinstall the app after changing scopes, invite it to a
+public development channel, and send:
 
 ```text
 @IncidentCopilot generate incident review: Checkout outage
@@ -107,8 +118,9 @@ install the app, invite it to a public development channel, and send:
 
 The production worker creates the incident idempotently, advances it to
 `COLLECTING`, starts the durable workflow, and posts an idempotent acceptance
-reply in the triggering Slack thread. It does not retrieve channel history yet;
-that connector is the next milestone.
+reply in the triggering Slack thread. The workflow retrieves that thread,
+filters the product's operational status reply, stores canonical message
+artifacts, and checkpoints progress after every page.
 
 ## Engineering checks
 
@@ -129,19 +141,19 @@ npm run build:lambda
 ```
 
 This produces the ignored artifact
-`artifacts/incident-copilot-lambda.zip`, containing two composition roots:
-`slack-ingress-main.handler` and `incident-worker-main.handler`. Terraform
-instructions, required secret shapes, networking assumptions, cost controls,
-and deployment gates are in
+`artifacts/incident-copilot-lambda.zip`, containing three composition roots:
+`slack-ingress-main.handler`, `incident-worker-main.handler`, and
+`slack-evidence-collector-main.handler`. Terraform instructions, required
+secret shapes, networking assumptions, cost controls, and deployment gates are in
 [infrastructure/terraform/README.md](infrastructure/terraform/README.md).
 
 The Terraform is not proof that this repository is already deployed. It also
 does not provision PostgreSQL, the Slack app, or remote Terraform state. The
 current hosted path uses an existing Supabase transaction pooler with its CA
 certificate verified by the worker. Those inputs must exist before the AWS path
-can process a real incident. The current Step Functions definition records
-workflow acceptance only; evidence collection and AI tasks have not been
-implemented yet.
+can process a real incident. The current Step Functions definition collects
+only the triggering Slack thread; selected-channel discovery, AI analysis, and
+publication are not implemented yet.
 
 ## Security posture
 
@@ -159,10 +171,12 @@ checks must be completed before onboarding external workspaces.
 
 ## Project status
 
-The next milestone is the first visible vertical slice:
+The next product increments are:
 
-1. Fetch the triggering Slack thread and explicitly selected public channels.
-2. Store source references and retention-bound evidence snapshots.
+1. Add an incident-scoping flow for time windows and explicitly selected public
+   channels, plus a source-coverage manifest.
+2. Enforce retention expiry with a deletion processor and handle Slack
+   revocation/uninstall events.
 3. Integrate a GitHub App for deployments, commits, pull requests, and workflows.
 4. Extract structured timeline events and claims using a schema-constrained model.
 5. Render an evidence-linked review rather than publishing automatically.

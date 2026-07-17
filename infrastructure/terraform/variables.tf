@@ -27,7 +27,7 @@ variable "environment" {
 }
 
 variable "lambda_artifact_path" {
-  description = "Path to one deployment ZIP containing both Lambda composition entrypoints and their production dependencies."
+  description = "Path to one deployment ZIP containing all Lambda composition entrypoints and their production dependencies."
   type        = string
 }
 
@@ -41,6 +41,12 @@ variable "worker_lambda_handler" {
   description = "Handler exported at the root of the shared Lambda artifact."
   type        = string
   default     = "incident-worker-main.handler"
+}
+
+variable "slack_evidence_collector_lambda_handler" {
+  description = "Slack evidence collector handler exported at the root of the shared Lambda artifact."
+  type        = string
+  default     = "slack-evidence-collector-main.handler"
 }
 
 variable "lambda_architecture" {
@@ -253,6 +259,61 @@ variable "worker_reserved_concurrency" {
   validation {
     condition     = var.worker_reserved_concurrency >= 2
     error_message = "worker_reserved_concurrency must be at least 2 because SQS event-source maximum concurrency has an AWS minimum of 2."
+  }
+}
+
+variable "evidence_collector_memory_mb" {
+  description = "Memory assigned to the bounded Slack evidence collector Lambda."
+  type        = number
+  default     = 512
+
+  validation {
+    condition     = var.evidence_collector_memory_mb >= 128 && var.evidence_collector_memory_mb <= 10240
+    error_message = "evidence_collector_memory_mb must be between 128 and 10240 MB."
+  }
+}
+
+variable "evidence_collector_timeout_seconds" {
+  description = "Timeout for collecting and persisting one bounded Slack thread page."
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.evidence_collector_timeout_seconds >= 10 && var.evidence_collector_timeout_seconds <= 300
+    error_message = "evidence_collector_timeout_seconds must be between 10 and 300 seconds."
+  }
+}
+
+variable "evidence_collector_reserved_concurrency" {
+  description = "Hard concurrency boundary protecting Slack and PostgreSQL during evidence collection."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.evidence_collector_reserved_concurrency >= 1
+    error_message = "evidence_collector_reserved_concurrency must be at least 1."
+  }
+}
+
+variable "evidence_retention_days" {
+  description = "Days that raw Slack evidence remains eligible for retention before deletion processing."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.evidence_retention_days >= 1 && var.evidence_retention_days <= 365
+    error_message = "evidence_retention_days must be between 1 and 365."
+  }
+}
+
+variable "slack_thread_max_pages" {
+  description = "Hard per-incident Slack thread page limit; each page contains at most 15 messages."
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.slack_thread_max_pages >= 1 && var.slack_thread_max_pages <= 1000
+    error_message = "slack_thread_max_pages must be between 1 and 1000."
   }
 }
 

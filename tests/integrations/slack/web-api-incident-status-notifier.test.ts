@@ -62,6 +62,10 @@ describe('SlackWebApiIncidentStatusNotifier', () => {
       mrkdwn: false,
       unfurl_links: false,
       unfurl_media: false,
+      metadata: {
+        event_type: 'incident_copilot_status',
+        event_payload: { incident_id: incidentId },
+      },
     });
     expect(init.body).not.toContain(botToken);
   });

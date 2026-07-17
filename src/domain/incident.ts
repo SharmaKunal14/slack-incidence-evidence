@@ -31,6 +31,7 @@ export interface Incident {
   readonly sourceEventId: string;
   readonly sourceWorkspaceId: string;
   readonly sourceChannelId: string;
+  readonly sourceMessageTs?: string;
   readonly sourceThreadTs?: string;
   readonly requestedByUserId: string;
   readonly title: string;
@@ -49,6 +50,7 @@ export interface CreateIncident {
   readonly sourceEventId: string;
   readonly sourceWorkspaceId: string;
   readonly sourceChannelId: string;
+  readonly sourceMessageTs: string;
   readonly sourceThreadTs?: string;
   readonly requestedByUserId: string;
   readonly title: string;
@@ -98,6 +100,7 @@ export class IncidentAggregate {
       sourceEventId: input.sourceEventId,
       sourceWorkspaceId: input.sourceWorkspaceId,
       sourceChannelId: input.sourceChannelId,
+      sourceMessageTs: input.sourceMessageTs,
       ...(input.sourceThreadTs === undefined
         ? {}
         : { sourceThreadTs: input.sourceThreadTs }),
