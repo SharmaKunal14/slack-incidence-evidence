@@ -1,6 +1,6 @@
 # Threat model
 
-Status: active; triggering-thread collection controls implemented, later-stage controls identified
+Status: active; triggering-thread collection and AI extraction controls implemented
 Last updated: 2026-07-18
 
 ## Scope
@@ -8,13 +8,13 @@ Last updated: 2026-07-18
 This threat model covers the Incident Evidence Copilot foundation:
 
 ```text
-Slack signed request -> API Gateway -> ingress Lambda -> SQS FIFO -> worker Lambda -> PostgreSQL + Step Functions -> Slack collector -> Slack Web API + PostgreSQL
+Slack signed request -> API Gateway -> ingress Lambda -> SQS FIFO -> worker Lambda -> PostgreSQL + Step Functions -> Slack collector + analysis Lambda -> Slack/OpenAI APIs + PostgreSQL
 ```
 
-Triggering-thread history collection is implemented. It also anticipates
-selected-channel Slack collection, GitHub evidence, model-provider calls, a
-reviewer UI, publication, and follow-up issue creation. Planned controls are not
-credited as current protection.
+Triggering-thread history collection and structured model extraction are
+implemented. This model also anticipates selected-channel Slack collection,
+GitHub evidence, a reviewer UI, publication, and follow-up issue creation.
+Planned controls are not credited as current protection.
 
 This is an engineering threat model, not a compliance certification or penetration-test result.
 
@@ -68,6 +68,7 @@ Known design assumptions:
   reached only with certificate-chain and hostname verification.
 - The initial Slack trigger policy accepts public channels only.
 - No model output is published automatically.
+- The model runtime has no tools and cannot create a human-confirmed record.
 
 Unproven assumptions that must be validated during deployment:
 
@@ -367,22 +368,24 @@ of the app's Slack scopes even though separate Lambda roles restrict which
 application adapter receives it; AWS IAM cannot narrow capabilities inside that
 Slack-issued token.
 
-## AI threats (roadmap)
+## AI threats
 
 ### Prompt injection through evidence
 
 Threat: a Slack message, pasted log, file, PR description, or linked page tells the model to ignore policy, reveal another incident, call a tool, or publish content.
 
-Required controls:
+Implemented controls:
 
 - label source material as untrusted data in every model contract;
 - separate system policy from evidence payloads;
-- no provider tool calling in extraction or writing stages;
-- allowlisted application-owned operations only;
+- no provider tool calling in extraction;
 - schema-constrained output with strict parsing;
 - never execute commands, URLs, SQL, or instructions emitted by a model;
-- retrieve links only through an allowlisted connector with SSRF protection; and
-- include adversarial evidence in the evaluation corpus.
+- use application-owned fixed provider/source endpoints rather than model-selected
+  URLs.
+
+Adversarial unit fixtures exist, but a labelled prompt-injection evaluation
+corpus remains a release gap.
 
 Prompt text is a weak control by itself. Tool and publication authority must be absent from the model runtime.
 
@@ -390,15 +393,19 @@ Prompt text is a weak control by itself. Tool and publication authority must be 
 
 Threat: plausible prose asserts impact, causality, timing, ownership, or remediation that evidence does not support.
 
-Required controls:
+Implemented controls:
 
 - extraction creates evidence-linked structured claims before prose;
-- every incident-specific factual sentence references claim IDs;
-- deterministic renderer resolves claim citations to source references;
+- timeline events require citations and non-hypothetical factual claims require
+  supporting evidence;
 - classifications distinguish observation, assertion, hypothesis, inference, dispute, unknown, and human-confirmed cause;
-- evidence-support and contradiction validators run before review;
+- supporting and contradicting references are kept separate;
 - unknowns remain visible; and
-- humans confirm causal statements and publication.
+- model output cannot use the human-confirmed classification.
+
+Entailment validation, deterministic report rendering, evaluation, and human
+review are not implemented. Therefore a cited claim can still misrepresent its
+source, and no generated result is authoritative.
 
 Numeric confidence scores must not be exposed unless calibrated against a labelled corpus.
 
@@ -415,6 +422,12 @@ Required controls:
 - content minimisation before provider calls;
 - separate production and development provider projects; and
 - a kill switch that disables model calls without disabling incident ingestion.
+
+Current controls tenant-scope the manifest query and every evidence reference,
+pseudonymise explicit Slack author IDs before provider submission, keep prompts
+and responses out of workflow/log state, and use separate secret/IAM boundaries.
+Provider contractual controls, regional endpoint selection, sensitivity
+classification, and a graceful kill switch remain gaps.
 
 ### Sensitive content sent to a provider
 

@@ -29,6 +29,18 @@ class InMemoryIncidentRepository implements IncidentRepository {
     this.bySourceEvent.set(key, incident);
     return Promise.resolve();
   }
+
+  public findById(
+    tenantId: string,
+    incidentId: string,
+  ): Promise<Incident | null> {
+    return Promise.resolve(
+      [...this.bySourceEvent.values()].find(
+        (incident) =>
+          incident.tenantId === tenantId && incident.id === incidentId,
+      ) ?? null,
+    );
+  }
 }
 
 const job: IncidentReviewJob = {

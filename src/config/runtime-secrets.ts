@@ -28,6 +28,16 @@ const databaseConnectionSecretSchema = z
   })
   .strict();
 
+const openAiApiSecretSchema = z
+  .object({
+    apiKey: z
+      .string()
+      .min(1)
+      .max(4096)
+      .regex(/^[!-~]+$/),
+  })
+  .strict();
+
 export interface SlackSigningSecret {
   readonly signingSecret: string;
 }
@@ -41,6 +51,10 @@ export interface DatabaseConnectionSecret {
   readonly username: string;
   readonly password: string;
   readonly caCertificate: string;
+}
+
+export interface OpenAiApiSecret {
+  readonly apiKey: string;
 }
 
 export function parseSlackSigningSecret(value: string): SlackSigningSecret {
@@ -64,6 +78,14 @@ export function parseDatabaseConnectionSecret(
 ): DatabaseConnectionSecret {
   try {
     return databaseConnectionSecretSchema.parse(parseJson(value));
+  } catch {
+    throw new InvalidRuntimeSecretError();
+  }
+}
+
+export function parseOpenAiApiSecret(value: string): OpenAiApiSecret {
+  try {
+    return openAiApiSecretSchema.parse(parseJson(value));
   } catch {
     throw new InvalidRuntimeSecretError();
   }

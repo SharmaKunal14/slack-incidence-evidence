@@ -7,6 +7,7 @@ export interface CreateIncidentResult {
 
 export interface IncidentRepository {
   createIfAbsent(incident: Incident): Promise<CreateIncidentResult>;
+  findById(tenantId: string, incidentId: string): Promise<Incident | null>;
   save(incident: Incident, expectedVersion: number): Promise<void>;
 }
 

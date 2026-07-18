@@ -18,9 +18,11 @@ the application's at-least-once and idempotency assumptions.
   Functions execution.
 - A Slack evidence collector Lambda which retrieves and persists one bounded
   triggering-thread page per invocation.
+- An incident analysis Lambda which loads a bounded evidence manifest, calls the
+  OpenAI Responses API, and transactionally persists structured cited output.
 - A Standard workflow which loops over durable Slack page checkpoints, waits on
-  Slack rate-limit hints without holding Lambda compute, and terminates on a
-  durable complete or failed result.
+  Slack rate-limit hints, then runs leased structured extraction with durable
+  model retry waits without holding Lambda compute.
 - Resource-scoped IAM policies for queue and secret access and for starting the
   workflow. The Step Functions logging APIs are the documented exception that
   require wildcard resources.
@@ -30,7 +32,7 @@ the application's at-least-once and idempotency assumptions.
 - Alarms for failed jobs in the DLQ, excessive source-queue age, and failed
   evidence workflows.
 
-All three functions use the same immutable ZIP artifact but have separate
+All four functions use the same immutable ZIP artifact but have separate
 handlers, roles, environment variables, memory, timeouts, and concurrency
 limits.
 
@@ -46,6 +48,10 @@ Slack
      -> Slack evidence collector Lambda (one page)
         -> Slack Web API + PostgreSQL checkpoint/artifacts
      -> Choice -> Wait -> next page, complete, or fail
+     -> incident analysis Lambda
+        -> PostgreSQL lease/evidence + OpenAI Responses API
+        -> PostgreSQL timeline/claims/citations/questions
+     -> Choice -> Wait -> retry, complete, or fail
 ```
 
 API Gateway throttling is a cost and abuse guard; it is **not** Slack
@@ -80,12 +86,13 @@ with CA and hostname verification; credentials and the trusted CA bundle are
 read from Secrets Manager and never enter Terraform state.
 
 Leave both VPC input lists empty for Supabase's public pooler. When both lists
-are supplied, the worker is attached to those subnets and receives the minimal
-Lambda ENI-management IAM actions. A private deployment then needs either
+are supplied, database-using functions are attached to those subnets and receive
+the minimal Lambda ENI-management IAM actions. A private deployment then needs either
 Secrets Manager and Step Functions interface endpoints or controlled NAT egress
-to reach those AWS APIs. Future Slack, GitHub, and hosted-model calls also need
-deliberate internet egress. Supabase PrivateLink can replace the public database
-path when its cost and availability requirements justify it.
+to reach those AWS APIs. Slack and OpenAI calls require deliberate HTTPS egress;
+a private-subnet deployment without NAT or another approved egress path will
+fail. Supabase PrivateLink can replace the public database path when its cost and
+availability requirements justify it.
 
 ## Secret contracts
 
@@ -128,10 +135,25 @@ Database connection secret:
 }
 ```
 
+OpenAI API secret (analysis Lambda access only):
+
+```json
+{
+  "apiKey": "actual OpenAI API key"
+}
+```
+
+Create a separate provider project and key per environment, restrict its spend,
+and rotate it independently. Only the secret ARN enters Terraform. The model is
+an explicit non-secret Terraform input; production should prefer a reviewed,
+pinned model snapshot so behavior does not change without a deployment. The
+application sends `store: false`, but provider retention, training, region, and
+contractual controls still require an explicit organisational review.
+
 The database host, port, name, and mandatory TLS setting are separate non-secret
 environment variables. A complete `DATABASE_URL` is intentionally never
 constructed in Terraform, so the password cannot leak into plans or state.
-The worker passes the trusted CA bundle explicitly to PostgreSQL with
+Each database-using Lambda passes the trusted CA bundle explicitly to PostgreSQL with
 `rejectUnauthorized=true`, which verifies both the certificate chain and the
 pooler hostname. The secret parser rejects missing, malformed, or unexpected
 fields before opening a connection. Keeping the CA in the already-required
@@ -140,9 +162,9 @@ secret adds no API call and permits CA rotation without rebuilding the Lambda.
 Download the CA from the Supabase dashboard's **Database > SSL Configuration**
 section. Do not bootstrap trust by copying the root from an unverified server
 handshake. Add the PEM as `caCertificate` to the existing JSON secret before
-deploying this worker version.
+deploying this version.
 
-If either secret uses a customer-managed KMS key, pass its ARN in
+If any supplied secret uses a customer-managed KMS key, pass its ARN in
 `secrets_kms_key_arns`. The resulting `kms:Decrypt` grant is restricted to calls
 through Secrets Manager in the selected region.
 
@@ -160,6 +182,7 @@ package.json                 declares the bundle as CommonJS
 slack-ingress-main.js        exports handler
 incident-worker-main.js      exports handler
 slack-evidence-collector-main.js exports handler
+incident-analysis-main.js       exports handler
 ```
 
 The defaults are therefore:
@@ -168,6 +191,7 @@ The defaults are therefore:
 ingress_lambda_handler = "slack-ingress-main.handler"
 worker_lambda_handler  = "incident-worker-main.handler"
 slack_evidence_collector_lambda_handler = "slack-evidence-collector-main.handler"
+incident_analysis_lambda_handler = "incident-analysis-main.handler"
 ```
 
 Build for the selected `lambda_architecture`; the default is `arm64`. Pure
@@ -183,12 +207,12 @@ Prerequisites:
 - AWS credentials for a non-production account.
 - A `zip` command-line utility used by `npm run build:lambda`.
 - The built Lambda artifact.
-- Existing Slack signing, Slack bot-token, and database Secrets Manager secret
-  ARNs.
+- Existing Slack signing, Slack bot-token, database, and OpenAI Secrets Manager
+  secret ARNs.
 - An existing PostgreSQL endpoint. For the current Supabase deployment, use the
   transaction-pooler hostname, port 6543, and empty VPC input lists.
-- Database migration `0002_slack_thread_collection.sql` applied before the
-  collector Lambda is deployed or invoked.
+- Database migrations through `0003_incident_analysis.sql` applied before the
+  updated workflow is deployed or invoked.
 
 Create an ignored variable file:
 
@@ -210,12 +234,34 @@ terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
-Apply database migrations before `terraform apply` updates the workflow. The
+Apply database migrations **before** `terraform apply` updates the workflow. The
 migration CLI uses a PostgreSQL advisory lock and must run through a
 session-capable connection (for Supabase, the session pooler on port 5432), not
 the transaction pooler on port 6543 used by Lambda. An incident created before
 migration 0002 has no triggering message timestamp; create a new Slack trigger
 instead of attempting to collect that old record.
+
+After a new Slack trigger completes, verify durable analysis without exposing
+message content:
+
+```sql
+select id, status, model_name, attempt_count,
+       input_artifact_count, input_tokens, output_tokens,
+       timeline_event_count, claim_count, open_question_count
+from incident_analysis_runs
+order by started_at desc
+limit 5;
+
+select incident_id, count(*) as generated_claims
+from claims
+where analysis_run_id is not null
+group by incident_id;
+```
+
+The expected terminal workflow state is success, the analysis run is
+`COMPLETE`, generated claims remain `UNREVIEWED`, and the incident advances to
+`GENERATING`. That status means extraction is ready for the next report-writing
+stage; it does not mean a postmortem document already exists.
 
 After apply, obtain the Slack URL:
 
@@ -247,8 +293,8 @@ Deploy immutable artifacts by commit SHA:
 
 - API Gateway and all Lambdas charge primarily when used; no ALB or ECS tasks
   remain running while the project is idle.
-- Ingress, worker, and collector concurrency are independent and explicitly
-  capped.
+- Ingress, worker, collector, and analysis concurrency are independent and
+  explicitly capped.
 - The SQS event source's maximum concurrency equals the worker's reserved
   concurrency, preventing the poller from creating avoidable Lambda throttles.
 - The FIFO queue buffers bursts and the oldest-message alarm exposes backlog.
@@ -264,6 +310,9 @@ Deploy immutable artifacts by commit SHA:
   permalinks with concurrency three, and has its own reserved-concurrency cap.
   A stored cursor makes each page independently retryable; a configurable page
   limit and cursor-progress check prevent unbounded executions.
+- Analysis has independent artifact, character, output-token, timeout, attempt,
+  lease, and reserved-concurrency budgets. A completed analysis version is a
+  database no-op on retry; active duplicates wait behind the persisted lease.
 - Standard workflows are appropriate for durable, auditable, human-scale
   incident processing. Model requests and large evidence must live in S3 or
   PostgreSQL, not in workflow state.
@@ -281,8 +330,8 @@ Pass one or more SNS topic ARNs through `alarm_action_arns` to route alerts.
 - **DLQ visible messages:** alarms immediately when any job exhausts retries.
 - **Oldest source message:** alarms after two consecutive periods above the
   configured age threshold.
-- **Failed workflow:** alarms when collection exhausts transient retries or
-  reaches a terminal Slack failure.
+- **Failed workflow:** alarms when collection or analysis reaches a terminal
+  failure or exhausts infrastructure retries.
 
 The configured evidence-retention period sets `retention_expires_at`; this
 release does not yet run an expiry deletion processor. Do not describe the data

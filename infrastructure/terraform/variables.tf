@@ -49,6 +49,12 @@ variable "slack_evidence_collector_lambda_handler" {
   default     = "slack-evidence-collector-main.handler"
 }
 
+variable "incident_analysis_lambda_handler" {
+  description = "Incident analysis handler exported at the root of the shared Lambda artifact."
+  type        = string
+  default     = "incident-analysis-main.handler"
+}
+
 variable "lambda_architecture" {
   description = "Lambda CPU architecture. arm64 is cost-efficient for this pure Node.js workload."
   type        = string
@@ -87,6 +93,26 @@ variable "database_secret_arn" {
   validation {
     condition     = can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.database_secret_arn))
     error_message = "database_secret_arn must be a Secrets Manager secret ARN."
+  }
+}
+
+variable "openai_api_secret_arn" {
+  description = "ARN of an existing Secrets Manager secret containing JSON {\"apiKey\":\"...\"}. Terraform never reads the value."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.openai_api_secret_arn))
+    error_message = "openai_api_secret_arn must be a Secrets Manager secret ARN."
+  }
+}
+
+variable "openai_model" {
+  description = "Explicit OpenAI model or pinned snapshot used for incident extraction. No default is supplied so model changes are reviewed."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$", var.openai_model))
+    error_message = "openai_model must be a valid 1-200 character OpenAI model identifier."
   }
 }
 
@@ -314,6 +340,105 @@ variable "slack_thread_max_pages" {
   validation {
     condition     = var.slack_thread_max_pages >= 1 && var.slack_thread_max_pages <= 1000
     error_message = "slack_thread_max_pages must be between 1 and 1000."
+  }
+}
+
+variable "incident_analysis_memory_mb" {
+  description = "Memory assigned to structured incident analysis."
+  type        = number
+  default     = 512
+
+  validation {
+    condition     = var.incident_analysis_memory_mb >= 128 && var.incident_analysis_memory_mb <= 10240
+    error_message = "incident_analysis_memory_mb must be between 128 and 10240 MB."
+  }
+}
+
+variable "incident_analysis_timeout_seconds" {
+  description = "End-to-end timeout for one analysis attempt, including durable persistence."
+  type        = number
+  default     = 120
+
+  validation {
+    condition     = var.incident_analysis_timeout_seconds >= 30 && var.incident_analysis_timeout_seconds <= 900
+    error_message = "incident_analysis_timeout_seconds must be between 30 and 900 seconds."
+  }
+}
+
+variable "incident_analysis_reserved_concurrency" {
+  description = "Hard concurrency boundary protecting model spend and PostgreSQL."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.incident_analysis_reserved_concurrency >= 1
+    error_message = "incident_analysis_reserved_concurrency must be at least 1."
+  }
+}
+
+variable "analysis_max_artifacts" {
+  description = "Maximum evidence artifacts submitted in one analysis run."
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.analysis_max_artifacts >= 1 && var.analysis_max_artifacts <= 500
+    error_message = "analysis_max_artifacts must be between 1 and 500."
+  }
+}
+
+variable "analysis_max_input_characters" {
+  description = "Maximum serialized evidence-manifest characters submitted in one model request."
+  type        = number
+  default     = 100000
+
+  validation {
+    condition     = var.analysis_max_input_characters >= 1000 && var.analysis_max_input_characters <= 1000000
+    error_message = "analysis_max_input_characters must be between 1000 and 1000000."
+  }
+}
+
+variable "analysis_max_attempts" {
+  description = "Maximum leased model attempts after explicit retryable provider outcomes."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.analysis_max_attempts >= 1 && var.analysis_max_attempts <= 5
+    error_message = "analysis_max_attempts must be between 1 and 5."
+  }
+}
+
+variable "analysis_lease_seconds" {
+  description = "Database lease preventing concurrent model requests for one analysis version."
+  type        = number
+  default     = 180
+
+  validation {
+    condition     = var.analysis_lease_seconds >= 30 && var.analysis_lease_seconds <= 900
+    error_message = "analysis_lease_seconds must be between 30 and 900."
+  }
+}
+
+variable "openai_timeout_milliseconds" {
+  description = "Timeout for one OpenAI Responses API request."
+  type        = number
+  default     = 90000
+
+  validation {
+    condition     = var.openai_timeout_milliseconds >= 1000 && var.openai_timeout_milliseconds <= 300000
+    error_message = "openai_timeout_milliseconds must be between 1000 and 300000."
+  }
+}
+
+variable "openai_max_output_tokens" {
+  description = "Hard output-token budget for one structured extraction request."
+  type        = number
+  default     = 6000
+
+  validation {
+    condition     = var.openai_max_output_tokens >= 256 && var.openai_max_output_tokens <= 32768
+    error_message = "openai_max_output_tokens must be between 256 and 32768."
   }
 }
 

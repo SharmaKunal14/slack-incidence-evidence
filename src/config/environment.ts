@@ -30,7 +30,7 @@ const slackIngressLambdaEnvironmentSchema = queueEnvironmentSchema.extend({
   SLACK_SIGNING_SECRET_ARN: z.string().trim().min(1),
 });
 
-const lambdaPostgresEnvironmentSchema = commonEnvironmentSchema.extend({
+const lambdaPostgresBaseEnvironmentSchema = commonEnvironmentSchema.extend({
   DATABASE_SECRET_ARN: z.string().trim().min(1),
   DATABASE_HOST: z.string().trim().min(1),
   DATABASE_PORT: z.coerce.number().int().min(1).max(65_535).default(5432),
@@ -40,8 +40,12 @@ const lambdaPostgresEnvironmentSchema = commonEnvironmentSchema.extend({
     .default('true')
     .transform((value) => value === 'true'),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(10).default(2),
-  SLACK_BOT_TOKEN_SECRET_ARN: z.string().trim().min(1),
 });
+
+const lambdaPostgresEnvironmentSchema =
+  lambdaPostgresBaseEnvironmentSchema.extend({
+    SLACK_BOT_TOKEN_SECRET_ARN: z.string().trim().min(1),
+  });
 
 const incidentWorkerLambdaEnvironmentSchema =
   lambdaPostgresEnvironmentSchema.extend({
@@ -64,6 +68,54 @@ const slackEvidenceCollectorLambdaEnvironmentSchema =
       .default(100),
   });
 
+const incidentAnalysisLambdaEnvironmentSchema =
+  lambdaPostgresBaseEnvironmentSchema
+    .extend({
+      OPENAI_API_SECRET_ARN: z.string().trim().min(1),
+      OPENAI_MODEL: z
+        .string()
+        .trim()
+        .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/),
+      ANALYSIS_MAX_ARTIFACTS: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(500)
+        .default(100),
+      ANALYSIS_MAX_INPUT_CHARACTERS: z.coerce
+        .number()
+        .int()
+        .min(1_000)
+        .max(1_000_000)
+        .default(100_000),
+      ANALYSIS_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(2),
+      ANALYSIS_LEASE_SECONDS: z.coerce
+        .number()
+        .int()
+        .min(30)
+        .max(900)
+        .default(180),
+      OPENAI_TIMEOUT_MS: z.coerce
+        .number()
+        .int()
+        .min(1_000)
+        .max(300_000)
+        .default(90_000),
+      OPENAI_MAX_OUTPUT_TOKENS: z.coerce
+        .number()
+        .int()
+        .min(256)
+        .max(32_768)
+        .default(6_000),
+    })
+    .refine(
+      (value) => value.ANALYSIS_LEASE_SECONDS * 1_000 > value.OPENAI_TIMEOUT_MS,
+      {
+        message: 'Analysis lease must outlive the OpenAI request timeout',
+        path: ['ANALYSIS_LEASE_SECONDS'],
+      },
+    );
+
 export type ApiEnvironment = z.infer<typeof apiEnvironmentSchema>;
 export type WorkerEnvironment = z.infer<typeof workerEnvironmentSchema>;
 export type SlackIngressLambdaEnvironment = z.infer<
@@ -74,6 +126,9 @@ export type IncidentWorkerLambdaEnvironment = z.infer<
 >;
 export type SlackEvidenceCollectorLambdaEnvironment = z.infer<
   typeof slackEvidenceCollectorLambdaEnvironmentSchema
+>;
+export type IncidentAnalysisLambdaEnvironment = z.infer<
+  typeof incidentAnalysisLambdaEnvironmentSchema
 >;
 
 export function loadApiEnvironment(
@@ -104,4 +159,10 @@ export function loadSlackEvidenceCollectorLambdaEnvironment(
   source: NodeJS.ProcessEnv = process.env,
 ): SlackEvidenceCollectorLambdaEnvironment {
   return slackEvidenceCollectorLambdaEnvironmentSchema.parse(source);
+}
+
+export function loadIncidentAnalysisLambdaEnvironment(
+  source: NodeJS.ProcessEnv = process.env,
+): IncidentAnalysisLambdaEnvironment {
+  return incidentAnalysisLambdaEnvironmentSchema.parse(source);
 }

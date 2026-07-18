@@ -43,6 +43,11 @@ output "slack_evidence_collector_lambda_name" {
   value       = aws_lambda_function.slack_evidence_collector.function_name
 }
 
+output "incident_analysis_lambda_name" {
+  description = "Structured incident analysis Lambda function name."
+  value       = aws_lambda_function.incident_analysis.function_name
+}
+
 output "incident_workflow_arn" {
   description = "ARN of the Standard Step Functions incident workflow."
   value       = aws_sfn_state_machine.incident_workflow.arn
@@ -51,6 +56,7 @@ output "incident_workflow_arn" {
 output "cloudwatch_log_groups" {
   description = "Log groups created with bounded retention."
   value = {
+    analysis  = aws_cloudwatch_log_group.incident_analysis.name
     api       = aws_cloudwatch_log_group.api.name
     ingress   = aws_cloudwatch_log_group.ingress.name
     collector = aws_cloudwatch_log_group.slack_evidence_collector.name

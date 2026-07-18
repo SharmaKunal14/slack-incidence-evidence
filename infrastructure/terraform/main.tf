@@ -124,6 +124,11 @@ resource "aws_cloudwatch_log_group" "slack_evidence_collector" {
   retention_in_days = var.log_retention_days
 }
 
+resource "aws_cloudwatch_log_group" "incident_analysis" {
+  name              = "/aws/lambda/${local.name_prefix}-incident-analysis"
+  retention_in_days = var.log_retention_days
+}
+
 resource "aws_cloudwatch_log_group" "api" {
   name              = "/aws/apigateway/${local.name_prefix}"
   retention_in_days = var.log_retention_days
@@ -187,6 +192,12 @@ data "aws_iam_policy_document" "step_functions_tasks" {
     actions   = ["lambda:InvokeFunction"]
     resources = [aws_lambda_function.slack_evidence_collector.arn]
   }
+
+  statement {
+    sid       = "InvokeIncidentAnalysis"
+    actions   = ["lambda:InvokeFunction"]
+    resources = [aws_lambda_function.incident_analysis.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "step_functions_tasks" {
@@ -201,7 +212,7 @@ resource "aws_sfn_state_machine" "incident_workflow" {
   type     = "STANDARD"
 
   definition = jsonencode({
-    Comment = "Checkpointed incident evidence collection. Message content remains in PostgreSQL, never workflow state."
+    Comment = "Checkpointed evidence collection and AI extraction. Raw evidence and model output remain in PostgreSQL, never workflow state."
     StartAt = "CollectSlackThreadPage"
     States = {
       CollectSlackThreadPage = {
@@ -241,7 +252,7 @@ resource "aws_sfn_state_machine" "incident_workflow" {
           {
             Variable     = "$.status"
             StringEquals = "COMPLETE"
-            Next         = "SlackEvidenceCollected"
+            Next         = "AnalyzeIncidentEvidence"
           },
           {
             Variable     = "$.status"
@@ -261,8 +272,60 @@ resource "aws_sfn_state_machine" "incident_workflow" {
         SecondsPath = "$.retryAfterSeconds"
         Next        = "CollectSlackThreadPage"
       }
-      SlackEvidenceCollected = {
+      AnalyzeIncidentEvidence = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::lambda:invoke"
+        Parameters = {
+          FunctionName = aws_lambda_function.incident_analysis.arn
+          Payload = {
+            "version.$"    = "$.version"
+            "tenantId.$"   = "$.tenantId"
+            "incidentId.$" = "$.incidentId"
+            "jobId.$"      = "$.jobId"
+          }
+        }
+        OutputPath = "$.Payload"
+        Retry = [{
+          ErrorEquals     = ["States.TaskFailed"]
+          IntervalSeconds = 2
+          MaxAttempts     = 3
+          BackoffRate     = 2
+        }]
+        Next = "AnalysisStatus"
+      }
+      AnalysisStatus = {
+        Type = "Choice"
+        Choices = [
+          {
+            Variable     = "$.status"
+            StringEquals = "COMPLETE"
+            Next         = "IncidentAnalysisComplete"
+          },
+          {
+            Variable     = "$.status"
+            StringEquals = "RETRY_WAIT"
+            Next         = "WaitForAnalysisRetry"
+          },
+          {
+            Variable     = "$.status"
+            StringEquals = "FAILED"
+            Next         = "IncidentAnalysisFailed"
+          }
+        ]
+        Default = "IncidentAnalysisFailed"
+      }
+      WaitForAnalysisRetry = {
+        Type        = "Wait"
+        SecondsPath = "$.retryAfterSeconds"
+        Next        = "AnalyzeIncidentEvidence"
+      }
+      IncidentAnalysisComplete = {
         Type = "Succeed"
+      }
+      IncidentAnalysisFailed = {
+        Type  = "Fail"
+        Error = "IncidentAnalysisFailed"
+        Cause = "AI extraction reached a durable terminal failure; inspect the redacted analysis failure code."
       }
       SlackEvidenceCollectionFailed = {
         Type  = "Fail"
@@ -486,6 +549,69 @@ resource "aws_iam_role_policy" "slack_evidence_collector" {
   policy = data.aws_iam_policy_document.slack_evidence_collector.json
 }
 
+resource "aws_iam_role" "incident_analysis" {
+  name               = "${local.name_prefix}-incident-analysis-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+}
+
+data "aws_iam_policy_document" "incident_analysis" {
+  statement {
+    sid       = "WriteFunctionLogs"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.incident_analysis.arn}:*"]
+  }
+
+  dynamic "statement" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      # Lambda ENI management APIs require wildcard resources. This grant is
+      # omitted unless explicit VPC inputs attach the database-using function.
+      sid = "ManageAnalysisVpcNetworkInterfaces"
+      actions = [
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:CreateNetworkInterface",
+        "ec2:DeleteNetworkInterface",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeSubnets",
+        "ec2:UnassignPrivateIpAddresses",
+      ]
+      resources = ["*"]
+    }
+  }
+
+  statement {
+    sid       = "ReadDatabaseCredentials"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.database_secret_arn]
+  }
+
+  statement {
+    sid       = "ReadOpenAiApiKey"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.openai_api_secret_arn]
+  }
+
+  dynamic "statement" {
+    for_each = length(var.secrets_kms_key_arns) == 0 ? [] : [1]
+    content {
+      sid       = "DecryptCustomerManagedSecretKeys"
+      actions   = ["kms:Decrypt"]
+      resources = var.secrets_kms_key_arns
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+      }
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "incident_analysis" {
+  name   = "incident-analysis"
+  role   = aws_iam_role.incident_analysis.id
+  policy = data.aws_iam_policy_document.incident_analysis.json
+}
+
 # -----------------------------------------------------------------------------
 # Lambda compute. All functions use one immutable build artifact but distinct
 # composition roots, IAM roles, configuration, and concurrency budgets.
@@ -645,6 +771,80 @@ resource "aws_lambda_function" "slack_evidence_collector" {
   depends_on = [
     aws_cloudwatch_log_group.slack_evidence_collector,
     aws_iam_role_policy.slack_evidence_collector,
+  ]
+}
+
+resource "aws_lambda_function" "incident_analysis" {
+  function_name = "${local.name_prefix}-incident-analysis"
+  description   = "Extracts a bounded evidence-cited incident timeline, claims, and open questions."
+  role          = aws_iam_role.incident_analysis.arn
+  runtime       = "nodejs22.x"
+  architectures = [var.lambda_architecture]
+  handler       = var.incident_analysis_lambda_handler
+
+  filename         = var.lambda_artifact_path
+  source_code_hash = filebase64sha256(var.lambda_artifact_path)
+
+  memory_size                    = var.incident_analysis_memory_mb
+  timeout                        = var.incident_analysis_timeout_seconds
+  reserved_concurrent_executions = var.incident_analysis_reserved_concurrency
+
+  environment {
+    variables = {
+      ANALYSIS_LEASE_SECONDS              = tostring(var.analysis_lease_seconds)
+      ANALYSIS_MAX_ARTIFACTS              = tostring(var.analysis_max_artifacts)
+      ANALYSIS_MAX_ATTEMPTS               = tostring(var.analysis_max_attempts)
+      ANALYSIS_MAX_INPUT_CHARACTERS       = tostring(var.analysis_max_input_characters)
+      AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
+      DATABASE_HOST                       = var.database_host
+      DATABASE_NAME                       = var.database_name
+      DATABASE_POOL_MAX                   = tostring(var.database_pool_max)
+      DATABASE_PORT                       = tostring(var.database_port)
+      DATABASE_SECRET_ARN                 = var.database_secret_arn
+      DATABASE_SSL                        = "true"
+      LOG_LEVEL                           = var.log_level
+      NODE_ENV                            = local.node_env
+      OPENAI_API_SECRET_ARN               = var.openai_api_secret_arn
+      OPENAI_MAX_OUTPUT_TOKENS            = tostring(var.openai_max_output_tokens)
+      OPENAI_MODEL                        = var.openai_model
+      OPENAI_TIMEOUT_MS                   = tostring(var.openai_timeout_milliseconds)
+    }
+  }
+
+  tracing_config {
+    mode = "PassThrough"
+  }
+
+  dynamic "vpc_config" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      subnet_ids         = var.worker_subnet_ids
+      security_group_ids = var.worker_security_group_ids
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition = (
+        length(var.worker_subnet_ids) == 0 && length(var.worker_security_group_ids) == 0
+        ) || (
+        length(var.worker_subnet_ids) > 0 && length(var.worker_security_group_ids) > 0
+      )
+      error_message = "worker_subnet_ids and worker_security_group_ids must either both be empty or both be populated."
+    }
+    precondition {
+      condition     = var.analysis_lease_seconds > var.incident_analysis_timeout_seconds
+      error_message = "analysis_lease_seconds must outlive incident_analysis_timeout_seconds."
+    }
+    precondition {
+      condition     = var.openai_timeout_milliseconds + 5000 < var.incident_analysis_timeout_seconds * 1000
+      error_message = "incident_analysis_timeout_seconds must leave at least five seconds after the OpenAI timeout for durable persistence."
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.incident_analysis,
+    aws_iam_role_policy.incident_analysis,
   ]
 }
 

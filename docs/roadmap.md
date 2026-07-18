@@ -37,7 +37,8 @@ The current foundation establishes:
 - an `IncidentAggregate` and explicit lifecycle state machine;
 - tenant-keyed schemas for installations, incidents, source artifacts, timeline events, claims, claim-evidence links, workflow jobs, and audits, including cross-tenant composite foreign-key protection;
 - checksum-verified, advisory-lock-protected SQL migrations;
-- a vendor-neutral, Zod-validated AI-analysis contract without production model calls;
+- a vendor-neutral, Zod-validated AI-analysis contract and production OpenAI
+  Responses adapter with strict structured output and no model tools;
 - deterministic Step Functions Standard execution starts that close the
   database-commit/start retry window;
 - workspace-bound Slack status replies with separate least-privilege bot-token
@@ -50,6 +51,11 @@ The current foundation establishes:
   Step Functions retries converge without duplicate artifacts;
 - a Step Functions loop which keeps source content out of workflow state and
   delegates waits rather than billing a sleeping Lambda;
+- versioned analysis runs, immutable input-manifest hashes, expiring database
+  leases, bounded retry waits, and transactional persistence of cited timeline
+  events, claims, contradictions, and open questions;
+- explicit model/prompt/schema metadata and token usage without raw prompts or
+  model output in operational logs or Step Functions state;
 - Secrets Manager adapters and Zod-validated local/Lambda configuration plus
   strict runtime secret contracts;
 - Terraform for API Gateway, Lambda, SQS FIFO/DLQ, the initial Standard workflow,
@@ -59,10 +65,10 @@ The current foundation establishes:
 - Docker/local Compose, CI, and unit-test foundations; and
 - architecture and security documentation.
 
-This foundation proves reliable ingestion and triggering-thread collection. It
-does **not** yet claim complete channel evidence coverage, enforced expiry
-deletion, production OAuth lifecycle management, AI reporting, review, or
-publication.
+This foundation proves reliable ingestion, triggering-thread collection, and a
+bounded structured extraction path. It does **not** yet claim complete channel
+evidence coverage, enforced expiry deletion, production OAuth lifecycle
+management, measured AI quality, report generation, review, or publication.
 
 ## Stage 1 — Deploy and prove the integration foundation
 
@@ -205,7 +211,7 @@ Issue creation is intentionally deferred until the review and external-effect co
 
 ## Stage 4 — Structured AI extraction and evaluation
 
-Status: **Planned**
+Status: **In progress**
 
 ### User outcome
 
@@ -232,6 +238,33 @@ The system turns the evidence bundle into an evidence-linked timeline, claims, c
 - Prompt, schema, model, latency, token, and cost metadata.
 - Evaluation harness and labelled synthetic/anonymised incident corpus.
 - Prompt-injection, secret-leakage, malformed-output, and truncation tests.
+
+### Implemented slice
+
+- A dedicated analysis Lambda invoked after durable Slack collection, with raw
+  content kept out of Step Functions state.
+- A deterministic, character- and artifact-bounded evidence manifest and SHA-256
+  identity.
+- An OpenAI Responses adapter behind a provider-neutral port, using strict JSON
+  Schema output, `store: false`, no tools, a fixed endpoint, bounded response
+  reads, an explicit model, request timeout, and output-token limit.
+- Validation that citations reference tenant-scoped source artifacts, model keys
+  and citations are unique, non-hypothetical factual claims have support, and
+  only humans may use `HUMAN_CONFIRMED`.
+- A durable versioned run with an expiring lease, bounded explicit retries,
+  terminal handling for ambiguous network outcomes, and idempotent completed
+  invocations.
+- One database transaction for timeline events, all timeline citations,
+  unreviewed claims, supporting/contradicting evidence links, open questions,
+  provider metadata, token usage, and run completion.
+- Lifecycle progression through `NORMALIZING`, `EXTRACTING`, and `GENERATING`,
+  or to terminal `FAILED` on a durable analysis failure.
+
+Still missing are chunked analysis for evidence beyond the hard input budget,
+cross-source entity consolidation, report-section generation, a labelled
+evaluation corpus and quality/cost dashboard, provider data-processing approval,
+and human review. Passing a JSON schema is not evidence that the extracted facts
+are correct.
 
 ### Exit criteria
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  loadIncidentAnalysisLambdaEnvironment,
   loadIncidentWorkerLambdaEnvironment,
   loadSlackEvidenceCollectorLambdaEnvironment,
   loadSlackIngressLambdaEnvironment,
@@ -88,6 +89,44 @@ describe('Lambda environment configuration', () => {
       loadIncidentWorkerLambdaEnvironment({
         ...source,
         DATABASE_POOL_MAX: '11',
+      }),
+    ).toThrow();
+  });
+
+  it('loads bounded analysis budgets and requires an explicit model', () => {
+    const source = {
+      DATABASE_SECRET_ARN: 'database-secret-arn',
+      DATABASE_HOST: 'pooler.example.test',
+      DATABASE_NAME: 'postgres',
+      OPENAI_API_SECRET_ARN: 'openai-secret-arn',
+      OPENAI_MODEL: 'approved-model-snapshot',
+      ANALYSIS_MAX_ARTIFACTS: '75',
+      ANALYSIS_MAX_INPUT_CHARACTERS: '90000',
+      ANALYSIS_MAX_ATTEMPTS: '2',
+      ANALYSIS_LEASE_SECONDS: '180',
+      OPENAI_TIMEOUT_MS: '90000',
+      OPENAI_MAX_OUTPUT_TOKENS: '5000',
+    };
+
+    expect(loadIncidentAnalysisLambdaEnvironment(source)).toMatchObject({
+      OPENAI_MODEL: 'approved-model-snapshot',
+      ANALYSIS_MAX_ARTIFACTS: 75,
+      ANALYSIS_MAX_INPUT_CHARACTERS: 90000,
+      ANALYSIS_MAX_ATTEMPTS: 2,
+      ANALYSIS_LEASE_SECONDS: 180,
+      OPENAI_TIMEOUT_MS: 90000,
+      OPENAI_MAX_OUTPUT_TOKENS: 5000,
+    });
+    expect(() =>
+      loadIncidentAnalysisLambdaEnvironment({
+        ...source,
+        OPENAI_MODEL: '',
+      }),
+    ).toThrow();
+    expect(() =>
+      loadIncidentAnalysisLambdaEnvironment({
+        ...source,
+        ANALYSIS_LEASE_SECONDS: '60',
       }),
     ).toThrow();
   });
