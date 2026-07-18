@@ -7,6 +7,7 @@ import {
   parseSectionType,
   type IncidentReviewBundle,
   type ReportRevision,
+  type ReportRevisionDetail,
   type ReportRevisionSummary,
   type ReviewClaim,
   type ReviewEvidence,
@@ -123,6 +124,15 @@ interface RevisionRow {
   readonly created_at: Date | string;
   readonly approved_by_subject: string | null;
   readonly approved_at: Date | string | null;
+}
+
+interface RevisionStatementRow {
+  readonly original_report_statement_id: string;
+  readonly section_type: string;
+  readonly position: number;
+  readonly decision: string;
+  readonly statement: string | null;
+  readonly classification: string | null;
 }
 
 interface LockedReviewRow extends BundleHeaderRow {
@@ -344,6 +354,15 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
     requireBound(timelineResult.rows, MAX_TIMELINE_EVENTS, 'timeline events');
     requireBound(evidenceResult.rows, MAX_EVIDENCE, 'evidence artifacts');
     requireBound(questionResult.rows, MAX_OPEN_QUESTIONS, 'open questions');
+    const latestRevisionRow = revisionResult.rows[0];
+    const latestRevision =
+      latestRevisionRow === undefined
+        ? null
+        : await this.loadLatestRevision(
+            header,
+            latestRevisionRow,
+            statementResult.rows.length,
+          );
 
     return {
       incident: {
@@ -366,6 +385,7 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       evidence: evidenceResult.rows.map(toEvidence),
       openQuestions: questionResult.rows,
       revisions: revisionResult.rows.map(toRevisionSummary),
+      latestRevision,
     };
   }
 
@@ -907,6 +927,55 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       [header.tenant_id, header.incident_id, header.report_draft_id],
     );
   }
+
+  private async loadLatestRevision(
+    header: BundleHeaderRow,
+    revision: RevisionRow,
+    sourceStatementCount: number,
+  ): Promise<ReportRevisionDetail> {
+    const result = await this.pool.query<RevisionStatementRow>(
+      `
+        SELECT
+          original_report_statement_id,
+          section_type,
+          position,
+          decision,
+          statement,
+          classification
+        FROM report_revision_statements
+        WHERE tenant_id = $1
+          AND incident_id = $2
+          AND report_draft_id = $3
+          AND report_revision_id = $4
+        ORDER BY section_type, position, id
+        LIMIT $5
+      `,
+      [
+        header.tenant_id,
+        header.incident_id,
+        header.report_draft_id,
+        revision.id,
+        MAX_REPORT_STATEMENTS + 1,
+      ],
+    );
+    requireBound(
+      result.rows,
+      MAX_REPORT_STATEMENTS,
+      'latest revision statements',
+    );
+    if (
+      result.rows.length !== sourceStatementCount ||
+      result.rows.length !== revision.statement_count
+    ) {
+      throw new ReviewConfigurationError(
+        'Latest report revision does not contain one decision per source statement',
+      );
+    }
+    return {
+      ...toRevisionSummary(revision),
+      statements: result.rows.map(toRevisionStatement),
+    };
+  }
 }
 
 async function lockReviewContext(
@@ -1252,6 +1321,47 @@ function toRevisionSummary(row: RevisionRow): ReportRevisionSummary {
     acknowledgedContradictions: row.acknowledged_contradictions,
     acknowledgedOpenQuestions: row.acknowledged_open_questions,
   };
+}
+
+function toRevisionStatement(
+  row: RevisionStatementRow,
+): ReportRevisionDetail['statements'][number] {
+  const decision = parseReviewDecision(row.decision);
+  if (decision === 'EXCLUDE') {
+    if (row.statement !== null || row.classification !== null) {
+      throw new ReviewConfigurationError(
+        'Excluded revision statement unexpectedly contains report content',
+      );
+    }
+    return {
+      originalStatementId: row.original_report_statement_id,
+      sectionType: parseSectionType(row.section_type),
+      position: row.position,
+      decision,
+      text: null,
+      classification: null,
+    };
+  }
+  if (row.statement === null || row.classification === null) {
+    throw new ReviewConfigurationError(
+      'Included revision statement is missing report content',
+    );
+  }
+  return {
+    originalStatementId: row.original_report_statement_id,
+    sectionType: parseSectionType(row.section_type),
+    position: row.position,
+    decision,
+    text: row.statement,
+    classification: parseReviewClassification(row.classification),
+  };
+}
+
+function parseReviewDecision(value: string): 'KEEP' | 'EDIT' | 'EXCLUDE' {
+  if (value === 'KEEP' || value === 'EDIT' || value === 'EXCLUDE') {
+    return value;
+  }
+  throw new ReviewConfigurationError('Unsupported review decision');
 }
 
 function toRevision(row: RevisionRow): ReportRevision {

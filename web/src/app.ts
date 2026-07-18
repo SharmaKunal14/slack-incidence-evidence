@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import {
+  reconcileRevisionStatements,
+  type RevisionStatementView,
+} from './revision-view.js';
 import { safeSourceUrl } from './safe-source-url.js';
 
 const classificationValues = [
@@ -58,6 +62,29 @@ const statementSchema = z
     classification: z.enum(classificationValues),
     claimIds: z.array(z.string()),
     timelineEventIds: z.array(z.string()),
+  })
+  .strict();
+
+const revisionSummarySchema = z
+  .object({
+    id: z.uuid(),
+    revisionNumber: z.number().int().positive(),
+    status: z.enum(['DRAFT', 'APPROVED']),
+    createdAt: z.iso.datetime(),
+    statementCount: z.number().int().positive(),
+    acknowledgedContradictions: z.boolean(),
+    acknowledgedOpenQuestions: z.boolean(),
+  })
+  .strict();
+
+const revisionStatementSchema = z
+  .object({
+    originalStatementId: z.string(),
+    sectionType: z.string(),
+    position: z.number().int().nonnegative(),
+    decision: z.enum(['KEEP', 'EDIT', 'EXCLUDE']),
+    text: z.string().nullable(),
+    classification: z.enum(classificationValues).nullable(),
   })
   .strict();
 
@@ -129,19 +156,11 @@ const bundleSchema = z
     openQuestions: z.array(
       z.object({ id: z.string(), question: z.string() }).strict(),
     ),
-    revisions: z.array(
-      z
-        .object({
-          id: z.uuid(),
-          revisionNumber: z.number().int().positive(),
-          status: z.enum(['DRAFT', 'APPROVED']),
-          createdAt: z.iso.datetime(),
-          statementCount: z.number().int().positive(),
-          acknowledgedContradictions: z.boolean(),
-          acknowledgedOpenQuestions: z.boolean(),
-        })
-        .strict(),
-    ),
+    revisions: z.array(revisionSummarySchema).max(50),
+    latestRevision: revisionSummarySchema
+      .extend({ statements: z.array(revisionStatementSchema).max(300) })
+      .strict()
+      .nullable(),
   })
   .strict();
 
@@ -290,7 +309,9 @@ async function renderIncident(
       element(
         'span',
         'muted',
-        `AI draft ${bundle.reportDraft.draftVersion} · incident version ${bundle.incident.version}`,
+        bundle.latestRevision === null
+          ? `Viewing original AI draft ${bundle.reportDraft.draftVersion} · incident version ${bundle.incident.version}`
+          : `Viewing human revision ${bundle.latestRevision.revisionNumber} (${humanize(bundle.latestRevision.status)}) · based on AI draft ${bundle.reportDraft.draftVersion} · incident version ${bundle.incident.version}`,
       ),
     );
     shell.append(status);
@@ -306,13 +327,27 @@ async function renderIncident(
         classification: HTMLSelectElement;
       }
     >();
+    const sourceStatements = bundle.sections.flatMap(
+      (section) => section.statements,
+    );
+    const statementViews = reconcileRevisionStatements(
+      sourceStatements,
+      bundle.latestRevision?.statements ?? null,
+    );
+    const editable = bundle.incident.status === 'NEEDS_REVIEW';
     for (const section of bundle.sections) {
       const sectionElement = element('section', 'section stack');
       sectionElement.append(
         element('h2', undefined, humanize(section.sectionType)),
       );
       for (const statement of section.statements) {
-        sectionElement.append(renderStatement(statement, controls));
+        const view = statementViews.get(statement.id);
+        if (view === undefined) {
+          throw new Error('Report statement has no display decision');
+        }
+        sectionElement.append(
+          renderStatement(statement, view, editable, controls),
+        );
       }
       reportColumn.append(sectionElement);
     }
@@ -331,6 +366,8 @@ async function renderIncident(
 
 function renderStatement(
   statement: Statement,
+  view: RevisionStatementView,
+  editable: boolean,
   controls: Map<
     string,
     {
@@ -342,34 +379,36 @@ function renderStatement(
 ): HTMLElement {
   const card = element('article', 'statement stack');
   card.id = `statement-${statement.id}`;
-  card.append(badge(statement.classification));
+  card.append(badge(view.classification));
   const decision = document.createElement('select');
   for (const value of ['KEEP', 'EDIT', 'EXCLUDE'] as const) {
     const option = document.createElement('option');
     option.value = value;
     option.textContent = humanize(value);
+    option.selected = value === view.decision;
     decision.append(option);
   }
   const text = document.createElement('textarea');
-  text.value = statement.text;
-  text.disabled = true;
+  text.value = view.text;
   text.maxLength = 4_000;
   const classification = document.createElement('select');
   for (const value of classificationValues) {
     const option = document.createElement('option');
     option.value = value;
     option.textContent = humanize(value);
-    option.selected = value === statement.classification;
+    option.selected = value === view.classification;
     classification.append(option);
   }
-  classification.disabled = true;
-  decision.addEventListener('change', () => {
-    const editing = decision.value === 'EDIT';
+  const updateControlState = (): void => {
+    const editing = editable && decision.value === 'EDIT';
     const excluded = decision.value === 'EXCLUDE';
+    decision.disabled = !editable;
     text.disabled = !editing;
     classification.disabled = !editing;
     card.classList.toggle('excluded', excluded);
-  });
+  };
+  decision.addEventListener('change', updateControlState);
+  updateControlState();
   const links = element('div', 'source-links');
   for (const sourceId of [
     ...statement.claimIds,
@@ -498,6 +537,10 @@ function reviewActions(
     'I reviewed and acknowledge the open questions.',
   );
   const acknowledgements = element('div', 'acknowledgements');
+  contradictionAcknowledgement.input.checked =
+    bundle.latestRevision?.acknowledgedContradictions ?? false;
+  questionAcknowledgement.input.checked =
+    bundle.latestRevision?.acknowledgedOpenQuestions ?? false;
   acknowledgements.append(
     contradictionAcknowledgement.label,
     questionAcknowledgement.label,
@@ -509,10 +552,11 @@ function reviewActions(
   const actions = element('div', 'actions');
   const save = element('button', undefined, 'Save immutable revision');
   const approve = element('button', 'danger', 'Approve latest revision');
-  const latestDraft = bundle.revisions.find(
-    (revision) => revision.status === 'DRAFT',
-  );
-  approve.disabled = latestDraft === undefined;
+  const displayedDraft =
+    bundle.latestRevision?.status === 'DRAFT'
+      ? bundle.latestRevision
+      : undefined;
+  approve.disabled = displayedDraft === undefined;
   save.addEventListener('click', () => {
     void (async () => {
       setBusy([save, approve], true);
@@ -567,7 +611,7 @@ function reviewActions(
     })();
   });
   approve.addEventListener('click', () => {
-    if (latestDraft === undefined) {
+    if (displayedDraft === undefined) {
       return;
     }
     void (async () => {
@@ -576,12 +620,12 @@ function reviewActions(
         await apiRequest(
           configuration,
           token,
-          `/review/incidents/${encodeURIComponent(bundle.incident.id)}/revisions/${encodeURIComponent(latestDraft.id)}/approve`,
+          `/review/incidents/${encodeURIComponent(bundle.incident.id)}/revisions/${encodeURIComponent(displayedDraft.id)}/approve`,
           {
             method: 'POST',
             body: JSON.stringify({
               incidentId: bundle.incident.id,
-              revisionId: latestDraft.id,
+              revisionId: displayedDraft.id,
               expectedIncidentVersion: bundle.incident.version,
               clientRequestId: crypto.randomUUID(),
             }),

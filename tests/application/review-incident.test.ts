@@ -67,6 +67,7 @@ function bundle(): IncidentReviewBundle {
     evidence: [],
     openQuestions: [{ id: 'question-1', question: 'Which query regressed?' }],
     revisions: [],
+    latestRevision: null,
   };
 }
 
