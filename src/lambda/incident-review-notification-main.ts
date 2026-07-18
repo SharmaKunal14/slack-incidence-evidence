@@ -92,10 +92,15 @@ async function buildHandler(): Promise<IncidentReviewNotificationHandler> {
     const useCase = new NotifyIncidentReviewReady(
       new PostgresIncidentRepository(database),
       reportDrafts,
-      new SlackWebApiIncidentStatusNotifier({
-        workspaceId: slackSecret.workspaceId,
-        botToken: slackSecret.botToken,
-      }),
+      new SlackWebApiIncidentStatusNotifier(
+        {
+          workspaceId: slackSecret.workspaceId,
+          botToken: slackSecret.botToken,
+        },
+        {
+          reviewAppBaseUrl: environment.REVIEW_APP_BASE_URL,
+        },
+      ),
     );
     return createIncidentReviewNotificationHandler({
       notifier: useCase,

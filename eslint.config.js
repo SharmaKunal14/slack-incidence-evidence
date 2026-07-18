@@ -34,4 +34,14 @@ export default tseslint.config(
       'no-console': 'error',
     },
   },
+  {
+    files: ['web/src/**/*.ts'],
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
+        project: ['./tsconfig.web.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
 );

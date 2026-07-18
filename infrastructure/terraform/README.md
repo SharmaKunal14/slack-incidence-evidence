@@ -7,8 +7,8 @@ the application's at-least-once and idempotency assumptions.
 
 ## What it creates
 
-- An API Gateway HTTP API with exactly one public route:
-  `POST /integrations/slack/events`.
+- An API Gateway HTTP API with one Slack-HMAC-authenticated public route and
+  four Cognito-JWT-authorized human-review routes.
 - A short-lived Slack ingress Lambda behind that route.
 - An encrypted SQS FIFO queue, encrypted FIFO dead-letter queue, redrive policy,
   explicit redrive allow policy, and resource policies denying non-TLS access.
@@ -24,7 +24,13 @@ the application's at-least-once and idempotency assumptions.
   validates every source reference, and transactionally persists a versioned
   draft and deterministic Markdown.
 - A separate review-ready notifier Lambda which posts bounded counters to Slack
-  and has no model-provider credentials.
+  and an authenticated console link and has no model-provider credentials.
+- A bounded human-review API Lambda with a separate IAM role and, in production,
+  a required dedicated least-privilege PostgreSQL credential.
+- An admin-created Cognito reviewer pool using authorization-code + PKCE and
+  optional TOTP MFA.
+- A private, encrypted, versioned S3 bucket exposed only through an origin-
+  access-controlled CloudFront review console with restrictive response headers.
 - A Standard workflow which loops over durable Slack page checkpoints, waits on
   Slack rate-limit hints, then runs leased structured extraction with durable
   model retry waits without holding Lambda compute, then generates a leased
@@ -38,7 +44,7 @@ the application's at-least-once and idempotency assumptions.
 - Alarms for failed jobs in the DLQ, excessive source-queue age, and failed
   evidence workflows.
 
-All six functions use the same immutable ZIP artifact but have separate
+All seven functions use the same immutable ZIP artifact but have separate
 handlers, roles, environment variables, memory, timeouts, and concurrency
 limits.
 
@@ -63,6 +69,12 @@ Slack
         -> versioned report sections/statements/source links + Markdown
      -> Choice -> Wait -> retry, ready, or fail
      -> review-ready notification Lambda -> Slack Web API
+        -> authenticated CloudFront review URL
+
+Reviewer browser -> Cognito authorization code + PKCE
+                 -> API Gateway JWT authorizer
+                 -> review API Lambda
+                 -> active tenant membership + PostgreSQL review transaction
 ```
 
 API Gateway throttling is a cost and abuse guard; it is **not** Slack
@@ -136,7 +148,7 @@ addition to ingress's `app_mentions:read`. Reinstall the Slack app after adding
 a scope and update the secret if Slack issues a new bot token. The app must be
 able to access the triggering channel.
 
-Database connection secret:
+Pipeline database connection secret:
 
 ```json
 {
@@ -145,6 +157,25 @@ Database connection secret:
   "caCertificate": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
 }
 ```
+
+The review database secret has the same JSON shape. Production must use a
+different non-owner PostgreSQL login and set `review_database_secret_arn`.
+Development may omit it temporarily and reuse `database_secret_arn`; that
+fallback is explicitly rejected when `environment = "production"`.
+
+Create the login password outside source control, place that credential and the
+trusted CA in Secrets Manager, grant `CONNECT` on the target database, and apply
+the checked-in table grants as a database owner:
+
+```bash
+psql "$ADMIN_DATABASE_URL" \
+  --set=review_role=incident_review_api \
+  --file=db/security/review_api_grants.sql
+```
+
+The script cannot make an owner credential least-privileged. A real production
+deployment also needs a non-owner pipeline role; otherwise a compromised
+pipeline runtime can bypass the intended table separation.
 
 OpenAI API secret (analysis and report Lambdas only):
 
@@ -196,6 +227,7 @@ slack-evidence-collector-main.js exports handler
 incident-analysis-main.js       exports handler
 incident-report-main.js         exports handler
 incident-review-notification-main.js exports handler
+incident-review-api-main.js          exports handler
 ```
 
 The defaults are therefore:
@@ -207,6 +239,7 @@ slack_evidence_collector_lambda_handler = "slack-evidence-collector-main.handler
 incident_analysis_lambda_handler = "incident-analysis-main.handler"
 incident_report_lambda_handler = "incident-report-main.handler"
 incident_review_notification_lambda_handler = "incident-review-notification-main.handler"
+incident_review_api_lambda_handler = "incident-review-api-main.handler"
 ```
 
 Build for the selected `lambda_architecture`; the default is `arm64`. Pure
@@ -222,11 +255,12 @@ Prerequisites:
 - AWS credentials for a non-production account.
 - A `zip` command-line utility used by `npm run build:lambda`.
 - The built Lambda artifact.
+- The built review console assets (`npm run build:web`).
 - Existing Slack signing, Slack bot-token, database, and OpenAI Secrets Manager
   secret ARNs.
 - An existing PostgreSQL endpoint. For the current Supabase deployment, use the
   transaction-pooler hostname, port 6543, and empty VPC input lists.
-- Database migrations through `0004_incident_report_drafts.sql` applied before the
+- Database migrations through `0005_human_review.sql` applied before the
   updated workflow is deployed or invoked.
 
 Create an ignored variable file:
@@ -234,14 +268,18 @@ Create an ignored variable file:
 ```bash
 cd infrastructure/terraform
 cp terraform.tfvars.example terraform.tfvars
+cd ../..
 ```
 
 Replace all example account IDs, ARNs, artifact paths, and hostnames. Never put
 secret values in `terraform.tfvars`.
 
-Then run:
+Build both deployable artifacts, then run:
 
 ```bash
+npm run build:lambda
+npm run build:web
+cd infrastructure/terraform
 terraform init
 terraform fmt -check -recursive
 terraform validate
@@ -285,18 +323,69 @@ order by d.finished_at desc
 limit 1;
 ```
 
-The expected terminal workflow state is success, the analysis run is
+The expected workflow state before review is success, the analysis run is
 `COMPLETE`, generated claims remain `UNREVIEWED`, the report draft is
 `NEEDS_REVIEW`, and the incident advances to `NEEDS_REVIEW`. The draft is not
-approved or published.
+published. After an authorized reviewer approves a revision, the revision and
+incident become `APPROVED`; publication remains a separate unimplemented stage.
 
 After apply, obtain the Slack URL:
 
 ```bash
 terraform output -raw slack_events_url
+terraform output -raw review_console_url
+terraform output -raw reviewer_user_pool_id
 ```
 
 Configure that value as the Slack app's Events API request URL.
+
+Create a development reviewer in Cognito, obtain its immutable `sub`, and add
+an active membership for the Slack workspace tenant. This is an operator action;
+the review API intentionally cannot grant its own access:
+
+```bash
+USER_POOL_ID="$(terraform output -raw reviewer_user_pool_id)"
+aws cognito-idp admin-create-user \
+  --user-pool-id "$USER_POOL_ID" \
+  --username reviewer@example.com \
+  --user-attributes Name=email,Value=reviewer@example.com Name=email_verified,Value=true
+
+aws cognito-idp admin-get-user \
+  --user-pool-id "$USER_POOL_ID" \
+  --username reviewer@example.com
+```
+
+Use the returned `sub` in a parameterized SQL statement (the literal below is
+illustrative, not shell interpolation):
+
+```sql
+insert into reviewer_memberships (
+  tenant_id, cognito_subject, role, status
+) values (
+  'T0123456789', '<cognito-sub-uuid>', 'REVIEWER', 'ACTIVE'
+)
+on conflict (tenant_id, cognito_subject) do update
+set role = excluded.role,
+    status = 'ACTIVE',
+    revoked_at = null,
+    updated_at = statement_timestamp();
+```
+
+Open `review_console_url`, complete the temporary-password flow, open an
+incident, save one immutable revision, and approve it. Verify the durable result:
+
+```sql
+select id, incident_id, revision_number, status, created_by_subject,
+       approved_by_subject, created_at, approved_at
+from report_revisions
+order by created_at desc
+limit 5;
+
+select incident_id, report_revision_id, approved_by_subject, approved_at
+from report_approvals
+order by approved_at desc
+limit 5;
+```
 
 ## Production state and CI/CD
 

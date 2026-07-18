@@ -28,6 +28,7 @@ await build({
   entryPoints: {
     'incident-analysis-main': 'src/lambda/incident-analysis-main.ts',
     'incident-report-main': 'src/lambda/incident-report-main.ts',
+    'incident-review-api-main': 'src/lambda/incident-review-api-main.ts',
     'incident-review-notification-main':
       'src/lambda/incident-review-notification-main.ts',
     'incident-worker-main': 'src/lambda/incident-worker-main.ts',
@@ -58,6 +59,7 @@ const bundleFiles = (await readdir(stagingDirectory)).sort();
 const expectedBundleFiles = [
   'incident-analysis-main.js',
   'incident-report-main.js',
+  'incident-review-api-main.js',
   'incident-review-notification-main.js',
   'incident-worker-main.js',
   'package.json',
@@ -76,7 +78,7 @@ await executeFile(
   process.execPath,
   [
     '-e',
-    "const ingress = require('./slack-ingress-main.js'); const worker = require('./incident-worker-main.js'); const collector = require('./slack-evidence-collector-main.js'); const analysis = require('./incident-analysis-main.js'); const report = require('./incident-report-main.js'); const notification = require('./incident-review-notification-main.js'); if (typeof ingress.handler !== 'function' || typeof worker.handler !== 'function' || typeof collector.handler !== 'function' || typeof analysis.handler !== 'function' || typeof report.handler !== 'function' || typeof notification.handler !== 'function') throw new Error('Lambda handler export missing');",
+    "const ingress = require('./slack-ingress-main.js'); const worker = require('./incident-worker-main.js'); const collector = require('./slack-evidence-collector-main.js'); const analysis = require('./incident-analysis-main.js'); const report = require('./incident-report-main.js'); const reviewApi = require('./incident-review-api-main.js'); const notification = require('./incident-review-notification-main.js'); if (typeof ingress.handler !== 'function' || typeof worker.handler !== 'function' || typeof collector.handler !== 'function' || typeof analysis.handler !== 'function' || typeof report.handler !== 'function' || typeof reviewApi.handler !== 'function' || typeof notification.handler !== 'function') throw new Error('Lambda handler export missing');",
   ],
   {
     cwd: stagingDirectory,
@@ -91,6 +93,7 @@ await executeFile(
       OPENAI_TIMEOUT_MS: '90000',
       OPENAI_REPORT_TIMEOUT_MS: '90000',
       REPORT_LEASE_SECONDS: '180',
+      REVIEW_APP_BASE_URL: 'https://review.example.test',
       EVIDENCE_RETENTION_DAYS: '30',
       INCIDENT_QUEUE_URL: 'https://sqs.example.test/incident-jobs.fifo',
       INCIDENT_WORKFLOW_STATE_MACHINE_ARN: 'test-state-machine',

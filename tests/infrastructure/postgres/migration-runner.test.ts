@@ -52,6 +52,7 @@ describe('runMigrations', () => {
         '0002_slack_thread_collection.sql',
         '0003_incident_analysis.sql',
         '0004_incident_report_drafts.sql',
+        '0005_human_review.sql',
       ],
       alreadyApplied: 0,
     });
@@ -71,6 +72,9 @@ describe('runMigrations', () => {
     );
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('CREATE TABLE incident_report_drafts'),
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE TABLE reviewer_memberships'),
     );
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO schema_migrations'),

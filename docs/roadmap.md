@@ -329,7 +329,7 @@ Targets must be set after baseline evaluation. Inventing impressive percentages 
 
 ## Stage 5 — Evidence review console
 
-Status: **Planned**
+Status: **In progress — first end-to-end review and approval slice implemented**
 
 ### User outcome
 
@@ -349,12 +349,42 @@ A reviewer can inspect and correct the incident without reading an opaque genera
 - Source-access revalidation.
 - Entry from the already implemented Slack review-ready notification.
 
+### Implemented slice
+
+- A private S3/CloudFront single-page console with a restrictive browser
+  security-header policy and no embedded credentials or incident content.
+- Cognito admin-created users with authorization-code + PKCE, short-lived access
+  tokens, optional TOTP MFA, and a JWT authorizer on every review API route.
+- Active `reviewer_memberships` in PostgreSQL as the tenant authorization source
+  of truth; UUID knowledge alone never grants a read.
+- A bounded review inbox and evidence bundle containing generated statements,
+  claims, timeline events, open questions, referenced Slack evidence, and source
+  permalinks.
+- Keep, edit, and exclude decisions for every generated report statement, with
+  explicit uncertainty reclassification. Certainty cannot be strengthened
+  silently; a human must choose `human_confirmed`.
+- Explicit acknowledgement gates when contradictions or open questions exist.
+- Immutable revisions with deterministic Markdown, SHA-256 identities, original
+  statement links, claim/timeline provenance, reviewer subject, and audit event.
+- Idempotent revision creation and a PostgreSQL-locked, optimistic, atomic
+  approval transition. Only the newest revision can be approved, and only one
+  approved revision may exist per incident.
+- A content-free Slack deep link into the incident review route.
+- Separate review API IAM and optional dedicated least-privilege PostgreSQL
+  credentials (mandatory for production Terraform deployments).
+
+Still missing are claim-level dispute controls independent of statement edits,
+timestamp correction, answered-question records, per-evidence sensitivity
+exclusion, source-access revalidation against Slack at review time, reviewer
+metrics, and real-user validation. The current console is an evidence review
+workflow, not a general document editor.
+
 ### Exit criteria
 
 - Model output cannot create a human decision record.
 - Every review read and mutation is tenant scoped.
 - A reviewer can complete the workflow without developer tools.
-- A claim correction produces a new revision and preserves audit history.
+- A statement correction produces a new revision and preserves audit history.
 - No external publication exists yet without an approved draft version.
 - Real reviewers report lower effort than the manual baseline.
 
