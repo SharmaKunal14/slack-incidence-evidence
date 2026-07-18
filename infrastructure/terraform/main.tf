@@ -1321,6 +1321,11 @@ resource "aws_apigatewayv2_stage" "default" {
       detailed_metrics_enabled = true
     }
   }
+
+  # API Gateway rejects per-route settings until every referenced route exists.
+  # The settings above use stable string keys, so Terraform cannot infer this
+  # dependency from attribute references alone.
+  depends_on = [aws_apigatewayv2_route.incident_review]
 }
 
 resource "aws_lambda_permission" "api_gateway_ingress" {
