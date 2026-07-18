@@ -20,9 +20,15 @@ the application's at-least-once and idempotency assumptions.
   triggering-thread page per invocation.
 - An incident analysis Lambda which loads a bounded evidence manifest, calls the
   OpenAI Responses API, and transactionally persists structured cited output.
+- An incident report Lambda which writes only from structured analysis sources,
+  validates every source reference, and transactionally persists a versioned
+  draft and deterministic Markdown.
+- A separate review-ready notifier Lambda which posts bounded counters to Slack
+  and has no model-provider credentials.
 - A Standard workflow which loops over durable Slack page checkpoints, waits on
   Slack rate-limit hints, then runs leased structured extraction with durable
-  model retry waits without holding Lambda compute.
+  model retry waits without holding Lambda compute, then generates a leased
+  report draft and posts a content-free review notification.
 - Resource-scoped IAM policies for queue and secret access and for starting the
   workflow. The Step Functions logging APIs are the documented exception that
   require wildcard resources.
@@ -32,7 +38,7 @@ the application's at-least-once and idempotency assumptions.
 - Alarms for failed jobs in the DLQ, excessive source-queue age, and failed
   evidence workflows.
 
-All four functions use the same immutable ZIP artifact but have separate
+All six functions use the same immutable ZIP artifact but have separate
 handlers, roles, environment variables, memory, timeouts, and concurrency
 limits.
 
@@ -52,6 +58,11 @@ Slack
         -> PostgreSQL lease/evidence + OpenAI Responses API
         -> PostgreSQL timeline/claims/citations/questions
      -> Choice -> Wait -> retry, complete, or fail
+     -> incident report Lambda
+        -> PostgreSQL structured sources + OpenAI Responses API
+        -> versioned report sections/statements/source links + Markdown
+     -> Choice -> Wait -> retry, ready, or fail
+     -> review-ready notification Lambda -> Slack Web API
 ```
 
 API Gateway throttling is a cost and abuse guard; it is **not** Slack
@@ -135,7 +146,7 @@ Database connection secret:
 }
 ```
 
-OpenAI API secret (analysis Lambda access only):
+OpenAI API secret (analysis and report Lambdas only):
 
 ```json
 {
@@ -183,6 +194,8 @@ slack-ingress-main.js        exports handler
 incident-worker-main.js      exports handler
 slack-evidence-collector-main.js exports handler
 incident-analysis-main.js       exports handler
+incident-report-main.js         exports handler
+incident-review-notification-main.js exports handler
 ```
 
 The defaults are therefore:
@@ -192,6 +205,8 @@ ingress_lambda_handler = "slack-ingress-main.handler"
 worker_lambda_handler  = "incident-worker-main.handler"
 slack_evidence_collector_lambda_handler = "slack-evidence-collector-main.handler"
 incident_analysis_lambda_handler = "incident-analysis-main.handler"
+incident_report_lambda_handler = "incident-report-main.handler"
+incident_review_notification_lambda_handler = "incident-review-notification-main.handler"
 ```
 
 Build for the selected `lambda_architecture`; the default is `arm64`. Pure
@@ -211,7 +226,7 @@ Prerequisites:
   secret ARNs.
 - An existing PostgreSQL endpoint. For the current Supabase deployment, use the
   transaction-pooler hostname, port 6543, and empty VPC input lists.
-- Database migrations through `0003_incident_analysis.sql` applied before the
+- Database migrations through `0004_incident_report_drafts.sql` applied before the
   updated workflow is deployed or invoked.
 
 Create an ignored variable file:
@@ -241,8 +256,7 @@ the transaction pooler on port 6543 used by Lambda. An incident created before
 migration 0002 has no triggering message timestamp; create a new Slack trigger
 instead of attempting to collect that old record.
 
-After a new Slack trigger completes, verify durable analysis without exposing
-message content:
+After a new Slack trigger completes, verify durable analysis and report state:
 
 ```sql
 select id, status, model_name, attempt_count,
@@ -256,12 +270,25 @@ select incident_id, count(*) as generated_claims
 from claims
 where analysis_run_id is not null
 group by incident_id;
+
+select id, incident_id, analysis_run_id, status, model_name,
+       attempt_count, section_count, statement_count,
+       input_tokens, output_tokens, finished_at
+from incident_report_drafts
+order by started_at desc
+limit 5;
+
+select d.id, d.status, d.rendered_markdown
+from incident_report_drafts d
+where d.status = 'NEEDS_REVIEW'
+order by d.finished_at desc
+limit 1;
 ```
 
 The expected terminal workflow state is success, the analysis run is
-`COMPLETE`, generated claims remain `UNREVIEWED`, and the incident advances to
-`GENERATING`. That status means extraction is ready for the next report-writing
-stage; it does not mean a postmortem document already exists.
+`COMPLETE`, generated claims remain `UNREVIEWED`, the report draft is
+`NEEDS_REVIEW`, and the incident advances to `NEEDS_REVIEW`. The draft is not
+approved or published.
 
 After apply, obtain the Slack URL:
 
@@ -293,7 +320,7 @@ Deploy immutable artifacts by commit SHA:
 
 - API Gateway and all Lambdas charge primarily when used; no ALB or ECS tasks
   remain running while the project is idle.
-- Ingress, worker, collector, and analysis concurrency are independent and
+- Ingress, worker, collector, analysis, report, and notification concurrency are independent and
   explicitly capped.
 - The SQS event source's maximum concurrency equals the worker's reserved
   concurrency, preventing the poller from creating avoidable Lambda throttles.
@@ -313,6 +340,8 @@ Deploy immutable artifacts by commit SHA:
 - Analysis has independent artifact, character, output-token, timeout, attempt,
   lease, and reserved-concurrency budgets. A completed analysis version is a
   database no-op on retry; active duplicates wait behind the persisted lease.
+- Report generation has separate source, character, output-token, timeout,
+  attempt, lease, and concurrency budgets. It never receives raw Slack evidence.
 - Standard workflows are appropriate for durable, auditable, human-scale
   incident processing. Model requests and large evidence must live in S3 or
   PostgreSQL, not in workflow state.
@@ -330,7 +359,7 @@ Pass one or more SNS topic ARNs through `alarm_action_arns` to route alerts.
 - **DLQ visible messages:** alarms immediately when any job exhausts retries.
 - **Oldest source message:** alarms after two consecutive periods above the
   configured age threshold.
-- **Failed workflow:** alarms when collection or analysis reaches a terminal
+- **Failed workflow:** alarms when collection, analysis, or report generation reaches a terminal
   failure or exhausts infrastructure retries.
 
 The configured evidence-retention period sets `retention_expires_at`; this

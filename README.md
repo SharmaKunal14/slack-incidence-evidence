@@ -7,10 +7,10 @@ and evidence references are represented as separate domain concepts so later AI
 stages cannot silently turn speculation into fact.
 
 The current release establishes secure ingestion, collects the triggering
-public Slack thread, and extracts an evidence-cited draft timeline, claims, and
-open questions through a bounded AI workflow. Selected-channel collection,
-GitHub retrieval, evaluation, report generation, and the human review console
-remain later vertical increments.
+public Slack thread, extracts an evidence-cited timeline, claims, and open
+questions, and produces a versioned source-linked postmortem draft which is
+explicitly gated on human review. Selected-channel collection, GitHub retrieval,
+the human review console, and publication remain later vertical increments.
 
 ## Implemented
 
@@ -43,8 +43,18 @@ remain later vertical increments.
 - Application validation which rejects fabricated evidence references,
   duplicate model keys, unsupported factual claims, and model attempts to mark
   content as human-confirmed.
+- Evidence-constrained report generation from structured claims and timeline
+  events rather than raw Slack text, with uncertainty preservation, URL/HTML
+  rejection, contradiction coverage, and deterministic Markdown rendering.
+- Versioned report drafts with expiring leases, bounded retries, transactional
+  statement/source links, idempotent completion, and an explicit
+  `NEEDS_REVIEW` terminal product state.
+- A ten-incident synthetic evaluation corpus with deterministic offline safety
+  metrics and an explicitly cost-gated live OpenAI evaluation mode.
+- A separate least-privilege Slack notifier which posts only bounded counters
+  after the persisted draft is ready for review.
 - Secrets Manager runtime loading with narrow, validated JSON secret contracts.
-- Terraform for API Gateway, four independently scaled Lambdas, encrypted SQS
+- Terraform for API Gateway, six independently scaled Lambdas, encrypted SQS
   FIFO/DLQ, a checkpointed Standard workflow, least-privilege IAM, bounded
   logs, concurrency controls, and queue/workflow alarms.
 - Incident aggregate with explicit, validated lifecycle transitions.
@@ -73,7 +83,12 @@ flowchart LR
     SFN --> Analyzer["AI extraction Lambda"]
     Analyzer --> OpenAI["OpenAI Responses API"]
     Analyzer --> Postgres
-    SFN -. "next" .-> Future["Review and report stages"]
+    SFN --> Reporter["Report generation Lambda"]
+    Reporter --> OpenAI
+    Reporter --> Postgres
+    SFN --> Notifier["Review-ready notifier"]
+    Notifier --> SlackAPI
+    SFN -. "next" .-> Future["Human review console"]
 ```
 
 Production uses serverless protocol adapters; local development retains the
@@ -142,6 +157,7 @@ artifacts, and checkpoints progress after every page.
 
 ```bash
 npm run check
+npm run eval:offline
 ```
 
 The command runs formatting verification, ESLint with type-aware rules, strict
@@ -157,10 +173,11 @@ npm run build:lambda
 ```
 
 This produces the ignored artifact
-`artifacts/incident-copilot-lambda.zip`, containing four composition roots:
+`artifacts/incident-copilot-lambda.zip`, containing six composition roots:
 `slack-ingress-main.handler`, `incident-worker-main.handler`, and
 `slack-evidence-collector-main.handler`, and
-`incident-analysis-main.handler`. Terraform instructions, required
+`incident-analysis-main.handler`, `incident-report-main.handler`, and
+`incident-review-notification-main.handler`. Terraform instructions, required
 secret shapes, networking assumptions, cost controls, and deployment gates are in
 [infrastructure/terraform/README.md](infrastructure/terraform/README.md).
 
@@ -170,8 +187,9 @@ current hosted path uses an existing Supabase transaction pooler with its CA
 certificate verified by each database-using Lambda. Those inputs and an OpenAI
 API secret must exist before the AWS path can process a real incident. The
 current Step Functions definition collects and analyzes only the triggering
-Slack thread; selected-channel discovery, evaluation, review, report generation,
-and publication are not implemented yet.
+Slack thread, generates an internal draft, and notifies Slack that human review
+is required. Selected-channel discovery, the review UI, approval, and publication
+are not implemented yet.
 
 ## Security posture
 
@@ -196,9 +214,10 @@ The next product increments are:
 2. Enforce retention expiry with a deletion processor and handle Slack
    revocation/uninstall events.
 3. Integrate a GitHub App for deployments, commits, pull requests, and workflows.
-4. Build an evaluation corpus and measure citation, unsupported-claim,
-   contradiction, latency, and cost behavior for the implemented extraction.
-5. Render an evidence-linked review rather than publishing automatically.
+4. Expand the labelled evaluation corpus and calibrate semantic quality with
+   human review rather than treating structural coverage as accuracy.
+5. Build the authenticated evidence-review console and immutable human decision
+   history before enabling any publication.
 
 The project intentionally excludes Kubernetes, Kafka, a vector database, a graph
 database, autonomous root-cause claims, private-channel ingestion, and automated
