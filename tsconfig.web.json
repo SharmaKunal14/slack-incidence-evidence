@@ -14,8 +14,9 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "ES2023",
-    "types": [],
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
     "useUnknownInCatchVariables": true
   },
-  "include": ["web/src/**/*.ts"]
+  "include": ["web/src/**/*.ts", "web/src/**/*.tsx"]
 }
