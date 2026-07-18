@@ -164,6 +164,22 @@ The command runs formatting verification, ESLint with type-aware rules, strict
 TypeScript checking, the test suite, the Node.js build, and a reproducible Lambda
 ZIP build.
 
+Live evaluation is deliberately billable and retrieves the OpenAI key directly
+from AWS Secrets Manager through the active AWS identity. The secret must use
+the existing strict JSON contract `{ "apiKey": "..." }`; do not export the key
+itself:
+
+```bash
+export AWS_REGION=ap-southeast-2
+export OPENAI_API_SECRET_ARN='arn:aws:secretsmanager:REGION:ACCOUNT:secret:NAME'
+export OPENAI_MODEL='<approved model>'
+EVAL_ALLOW_LIVE_PROVIDER=true npm run eval:live
+```
+
+The caller needs `secretsmanager:GetSecretValue` on that exact ARN and, for a
+customer-managed secret key, scoped `kms:Decrypt`. Offline evaluation never
+constructs an AWS client or reads a secret.
+
 ## AWS deployment foundation
 
 Build the shared Lambda artifact:

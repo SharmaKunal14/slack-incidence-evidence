@@ -163,6 +163,48 @@ const incidentReportLambdaEnvironmentSchema =
       },
     );
 
+const liveEvaluationEnvironmentSchema = z
+  .object({
+    EVAL_ALLOW_LIVE_PROVIDER: z.literal('true'),
+    AWS_REGION: z.string().trim().min(1).default('ap-southeast-2'),
+    OPENAI_API_SECRET_ARN: z
+      .string()
+      .trim()
+      .max(2_048)
+      .regex(
+        /^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$/,
+      ),
+    OPENAI_MODEL: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/),
+    OPENAI_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(300_000)
+      .default(90_000),
+    OPENAI_MAX_OUTPUT_TOKENS: z.coerce
+      .number()
+      .int()
+      .min(256)
+      .max(32_768)
+      .default(6_000),
+    OPENAI_REPORT_MAX_OUTPUT_TOKENS: z.coerce
+      .number()
+      .int()
+      .min(256)
+      .max(32_768)
+      .default(8_000),
+  })
+  .refine(
+    (value) => value.OPENAI_API_SECRET_ARN.split(':')[3] === value.AWS_REGION,
+    {
+      message: 'OpenAI secret ARN region must match AWS_REGION',
+      path: ['OPENAI_API_SECRET_ARN'],
+    },
+  );
+
 export type ApiEnvironment = z.infer<typeof apiEnvironmentSchema>;
 export type WorkerEnvironment = z.infer<typeof workerEnvironmentSchema>;
 export type SlackIngressLambdaEnvironment = z.infer<
@@ -182,6 +224,9 @@ export type IncidentAnalysisLambdaEnvironment = z.infer<
 >;
 export type IncidentReportLambdaEnvironment = z.infer<
   typeof incidentReportLambdaEnvironmentSchema
+>;
+export type LiveEvaluationEnvironment = z.infer<
+  typeof liveEvaluationEnvironmentSchema
 >;
 
 export function loadApiEnvironment(
@@ -230,4 +275,10 @@ export function loadIncidentReportLambdaEnvironment(
   source: NodeJS.ProcessEnv = process.env,
 ): IncidentReportLambdaEnvironment {
   return incidentReportLambdaEnvironmentSchema.parse(source);
+}
+
+export function loadLiveEvaluationEnvironment(
+  source: NodeJS.ProcessEnv = process.env,
+): LiveEvaluationEnvironment {
+  return liveEvaluationEnvironmentSchema.parse(source);
 }
