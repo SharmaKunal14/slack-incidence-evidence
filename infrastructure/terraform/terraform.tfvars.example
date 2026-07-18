@@ -10,6 +10,11 @@ lambda_artifact_path = "../../artifacts/incident-copilot-lambda.zip"
 slack_signing_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-AbCdEf"
 slack_bot_token_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-bot-IjKlMn"
 database_secret_arn      = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/database-GhIjKl"
+openai_api_secret_arn    = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/openai-MnOpQr"
+
+# Pin this deliberately in staging/production. A model alias is convenient for
+# development but can change behaviour without a source-code deployment.
+openai_model = "replace-with-an-approved-model-or-snapshot"
 
 # Lambda is IPv4-only by default, so use Supabase's transaction pooler rather
 # than the direct IPv6 database endpoint. Supply only the hostname, never the

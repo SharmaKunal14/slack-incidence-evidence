@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   InvalidRuntimeSecretError,
   parseDatabaseConnectionSecret,
+  parseOpenAiApiSecret,
   parseSlackBotTokenSecret,
   parseSlackSigningSecret,
 } from '../../src/config/runtime-secrets.js';
@@ -37,6 +38,9 @@ describe('runtime secret contracts', () => {
       password: 'database-secret',
       caCertificate: databaseCa,
     });
+    expect(
+      parseOpenAiApiSecret(JSON.stringify({ apiKey: 'openai-key' })),
+    ).toEqual({ apiKey: 'openai-key' });
   });
 
   it('rejects unexpected fields to catch a miswired secret', () => {
@@ -53,6 +57,12 @@ describe('runtime secret contracts', () => {
           botToken: 'xoxb-secret',
           signingSecret: 'wrong-boundary',
         }),
+      ),
+    ).toThrow(InvalidRuntimeSecretError);
+
+    expect(() =>
+      parseOpenAiApiSecret(
+        JSON.stringify({ apiKey: 'value', botToken: 'wrong-boundary' }),
       ),
     ).toThrow(InvalidRuntimeSecretError);
   });

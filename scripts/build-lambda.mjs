@@ -26,6 +26,7 @@ await build({
   absWorkingDir: projectRoot,
   bundle: true,
   entryPoints: {
+    'incident-analysis-main': 'src/lambda/incident-analysis-main.ts',
     'incident-worker-main': 'src/lambda/incident-worker-main.ts',
     'slack-evidence-collector-main':
       'src/lambda/slack-evidence-collector-main.ts',
@@ -52,6 +53,7 @@ await writeFile(
 
 const bundleFiles = (await readdir(stagingDirectory)).sort();
 const expectedBundleFiles = [
+  'incident-analysis-main.js',
   'incident-worker-main.js',
   'package.json',
   'slack-evidence-collector-main.js',
@@ -69,7 +71,7 @@ await executeFile(
   process.execPath,
   [
     '-e',
-    "const ingress = require('./slack-ingress-main.js'); const worker = require('./incident-worker-main.js'); const collector = require('./slack-evidence-collector-main.js'); if (typeof ingress.handler !== 'function' || typeof worker.handler !== 'function' || typeof collector.handler !== 'function') throw new Error('Lambda handler export missing');",
+    "const ingress = require('./slack-ingress-main.js'); const worker = require('./incident-worker-main.js'); const collector = require('./slack-evidence-collector-main.js'); const analysis = require('./incident-analysis-main.js'); if (typeof ingress.handler !== 'function' || typeof worker.handler !== 'function' || typeof collector.handler !== 'function' || typeof analysis.handler !== 'function') throw new Error('Lambda handler export missing');",
   ],
   {
     cwd: stagingDirectory,
@@ -78,6 +80,10 @@ await executeFile(
       DATABASE_HOST: 'database.example.test',
       DATABASE_NAME: 'incident_copilot',
       DATABASE_SECRET_ARN: 'test-database-secret',
+      ANALYSIS_LEASE_SECONDS: '180',
+      OPENAI_API_SECRET_ARN: 'test-openai-secret',
+      OPENAI_MODEL: 'test-model',
+      OPENAI_TIMEOUT_MS: '90000',
       EVIDENCE_RETENTION_DAYS: '30',
       INCIDENT_QUEUE_URL: 'https://sqs.example.test/incident-jobs.fifo',
       INCIDENT_WORKFLOW_STATE_MACHINE_ARN: 'test-state-machine',

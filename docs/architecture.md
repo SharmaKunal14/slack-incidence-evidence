@@ -1,6 +1,6 @@
 # Incident Evidence Copilot architecture
 
-Status: triggering-thread collection implemented
+Status: triggering-thread collection and structured AI extraction implemented
 Last updated: 2026-07-18
 
 ## Purpose
@@ -70,6 +70,14 @@ Explicitly out of scope:
 - Tenant-keyed PostgreSQL schemas for installations, incidents, source artifacts, timeline events, claims, evidence links, workflow jobs, and audits, with composite foreign keys preventing cross-tenant associations.
 - An incident repository whose every query carries tenant scope, plus checksum-verified, advisory-lock-protected SQL migrations.
 - A vendor-neutral, Zod-validated incident-analysis contract; no model SDK is coupled to domain logic.
+- A production OpenAI Responses adapter with strict structured output,
+  `store: false`, no tools, bounded request/response budgets, and a fixed
+  provider endpoint.
+- A deterministic evidence manifest plus durable, versioned analysis leases
+  which prevent concurrent model calls for one incident analysis version.
+- Transactional persistence of timeline events, all citations, unreviewed
+  claims, supporting/contradicting links, open questions, provider metadata, and
+  token usage.
 - Zod-validated, process-specific environment configuration.
 - Liveness and readiness endpoints.
 - Structured Pino logging with request logging disabled and sensitive-field redaction.
@@ -89,8 +97,8 @@ Explicitly out of scope:
 - Explicitly selected Slack channel-history collection beyond the triggering
   thread.
 - GitHub App evidence collection.
-- Production AI extraction, claim generation, or report writing.
-- Evidence comparison and contradiction detection.
+- Report writing and a measured AI evaluation harness.
+- Semantic evidence comparison beyond explicit model-supplied contradictions.
 - The reviewer web application.
 - Publication to an external document system.
 - Action-item creation.
@@ -99,7 +107,7 @@ Explicitly out of scope:
 - A provisioned AWS account or completed deployment.
 - RDS/RDS Proxy, VPC/subnets/endpoints or NAT, database backups, and remote
   Terraform state.
-- Extraction, review, and publication tasks after Slack collection.
+- Review, report-generation, and publication tasks after extraction.
 
 The roadmap is tracked in [roadmap.md](./roadmap.md). Threats that become relevant as these capabilities are introduced are tracked in [threat-model.md](./threat-model.md).
 
@@ -148,8 +156,10 @@ flowchart LR
     SFN --> EC["Slack collector Lambda"]
     EC --> SA["Slack Web API"]
     EC --> PG
+    SFN --> AX["Analysis Lambda"]
+    AX --> AI["OpenAI Responses API"]
+    AX --> PG
     SFN -. "roadmap" .-> GH["GitHub App API"]
-    SFN -. "roadmap" .-> AI["Approved model provider"]
     PG -. "roadmap" .-> UI["Reviewer web app"]
     UI -. "human-approved" .-> PUB["Publisher / action tracker"]
 ```
@@ -170,6 +180,8 @@ sequenceDiagram
     participant SFN as Step Functions
     participant Collector as Collector Lambda
     participant WebAPI as Slack Web API
+    participant Analysis as Analysis Lambda
+    participant Model as OpenAI Responses API
 
     Slack->>Gateway: Raw signed HTTP request
     Gateway->>API: Payload v2 body + base64 flag
@@ -192,6 +204,12 @@ sequenceDiagram
             Collector->>DB: Upsert artifacts + advance cursor atomically
             Collector-->>SFN: status + counts only
         end
+        SFN->>Analysis: tenant + incident + job IDs
+        Analysis->>DB: Load bounded evidence + acquire versioned lease
+        Analysis->>Model: Strict structured extraction, no tools
+        Model-->>Analysis: Timeline + claims + citations + questions
+        Analysis->>DB: Atomically persist output, usage, and completion
+        Analysis-->>SFN: status + IDs + counts only
         Worker-->>FIFO: Report success
     else duplicate or terminal job
         Worker->>DB: Read existing outcome
@@ -287,11 +305,11 @@ Responsibilities:
 - on a FIFO failure, report the failed and all unprocessed records for
   redelivery.
 
-The triggering-thread collector already separates provider throttling,
-retryable dependency failures, and terminal Slack authorization failures.
-Roadmap responsibilities include selected-channel collection, structured AI
-extraction, validation, and reviewer notification. Those steps must also be
-checkpointed so a retry does not repeat completed external side effects.
+The triggering-thread collector and analysis stage separate provider
+throttling, retryable dependency failures, and terminal safe failures. Roadmap
+responsibilities include selected-channel collection, report generation, and
+reviewer notification. Those steps must also be checkpointed so a retry does
+not repeat completed external side effects.
 
 ### PostgreSQL
 
@@ -315,17 +333,22 @@ before claiming an enforced retention policy.
 
 ### AI gateway
 
-The foundation exposes provider-neutral interfaces but intentionally has no production model behavior. The gateway will later own:
+The implemented OpenAI adapter sits behind provider-neutral interfaces and owns:
 
 - model selection;
 - schema-constrained request and response translation;
 - timeouts and retry budgets;
 - prompt and schema versioning;
-- usage and cost metadata;
+- usage metadata;
 - sensitive-data policy; and
 - provider-specific error normalisation.
 
-The gateway does not own claim truth, permissions, or publication decisions. Its output is untrusted until domain validation and human review.
+It uses a fixed Responses API endpoint, sends no tools, disables provider-side
+response storage for the request, and validates the returned structure and every
+evidence reference in the application. The gateway does not own claim truth,
+permissions, or publication decisions. Its output remains untrusted until human
+review. Provider contractual retention/training behavior must still be reviewed;
+`store: false` is not a complete data-governance policy.
 
 ## Module boundaries and dependency direction
 
@@ -354,7 +377,9 @@ The rationale is recorded in [ADR 0001](./adr/0001-modular-monolith.md).
 
 ## Incident state model
 
-The implemented `IncidentAggregate` owns the end-to-end lifecycle vocabulary, even though the current worker advances only from `DISCOVERED` to `COLLECTING`:
+The implemented `IncidentAggregate` owns the end-to-end lifecycle vocabulary.
+The worker advances to `COLLECTING`; analysis advances through `NORMALIZING` and
+`EXTRACTING`, then to `GENERATING` after durable extraction:
 
 ```mermaid
 stateDiagram-v2
@@ -393,18 +418,20 @@ Rules:
 
 ### Foundation records and schemas
 
-| Record              | Purpose                                                                   | Sensitive fields                                        | Current status                                          |
-| ------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------- |
-| Tenant              | Isolation root and lifecycle                                              | organisation identity                                   | schema implemented                                      |
-| Slack installation  | Workspace grant and encrypted bot-token metadata                          | token ciphertext, scopes, installing user               | schema implemented; OAuth flow is roadmap               |
-| Incident            | Stable idempotency, tenant/source identity, lifecycle, optimistic version | Slack identifiers and requested title                   | schema and repository implemented                       |
-| Source artifact     | Tenant-safe source metadata and optional snapshot                         | restricted Slack content                                | triggering-thread collection implemented                |
-| Slack collection    | Durable page cursor, counts, state, and safe failure code                 | Slack source identifiers                                | schema and repository implemented                       |
-| Timeline event      | Normalised event/report time and classification                           | generated incident detail                               | schema implemented; extraction is roadmap               |
-| Claim               | Structured incident statement, classification, and review state           | generated or human-authored incident detail             | schema implemented; model generation and review roadmap |
-| Claim-evidence link | Support, contradiction, or context relation                               | relationship rationale                                  | schema implemented; population is roadmap               |
-| Workflow job        | Durable attempt, lock, retry, and result metadata                         | payload/result fields must follow restricted-data rules | schema implemented; current SQS path keys on incidents  |
-| Audit event         | Append-oriented security/business event                                   | actor and target metadata                               | schema implemented; complete audit emission is roadmap  |
+| Record              | Purpose                                                                   | Sensitive fields                                        | Current status                                         |
+| ------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------ |
+| Tenant              | Isolation root and lifecycle                                              | organisation identity                                   | schema implemented                                     |
+| Slack installation  | Workspace grant and encrypted bot-token metadata                          | token ciphertext, scopes, installing user               | schema implemented; OAuth flow is roadmap              |
+| Incident            | Stable idempotency, tenant/source identity, lifecycle, optimistic version | Slack identifiers and requested title                   | schema and repository implemented                      |
+| Source artifact     | Tenant-safe source metadata and optional snapshot                         | restricted Slack content                                | triggering-thread collection implemented               |
+| Slack collection    | Durable page cursor, counts, state, and safe failure code                 | Slack source identifiers                                | schema and repository implemented                      |
+| Analysis run        | Immutable manifest, lease, attempts, model/usage, and outcome             | provider request metadata                               | schema and repository implemented                      |
+| Timeline event      | Normalised event/report time, classification, and citations               | generated incident detail                               | structured model extraction implemented                |
+| Claim               | Structured incident statement, classification, and review state           | generated or human-authored incident detail             | model generation implemented; review roadmap           |
+| Claim-evidence link | Support, contradiction, or context relation                               | relationship rationale                                  | supporting/contradicting population implemented        |
+| Open question       | Material uncertainty the evidence does not resolve                        | generated incident detail                               | structured model extraction implemented                |
+| Workflow job        | Durable attempt, lock, retry, and result metadata                         | payload/result fields must follow restricted-data rules | schema implemented; current SQS path keys on incidents |
+| Audit event         | Append-oriented security/business event                                   | actor and target metadata                               | schema implemented; complete audit emission is roadmap |
 
 The schema uses `(tenant_id, incident_id, ...)` composite foreign keys so evidence, timeline events, claims, and links cannot be associated across tenants even if application code supplies mismatched IDs. The repository also includes `tenant_id` in every incident read and write. Row-level security remains a later defence-in-depth requirement for multi-tenant production.
 
@@ -434,7 +461,9 @@ Only operational metadata is allowed in standard logs. Identifiers should be has
    each artifact retains its canonical source identity and permalink. The
    current single-workspace secret is not a replacement for a production OAuth
    installation lifecycle.
-6. **Worker to model provider (roadmap):** restricted data leaves the product boundary under an explicit tenant and provider policy.
+6. **Analysis Lambda to model provider:** restricted triggering-thread data
+   leaves the product boundary using a dedicated secret and fixed endpoint. A
+   production tenant/provider policy and data-processing review remain required.
 7. **Review to publication (roadmap):** a human decision plus an audience policy changes a draft into an external artifact.
 
 ## Idempotency and consistency
@@ -446,6 +475,20 @@ slack-event:{workspace_id}:{event_id}
 ```
 
 The database uniqueness constraint is authoritative. The implementation should insert-or-read atomically and must not use a check-then-insert sequence.
+
+AI extraction uses a unique `(tenant, incident, analysis_version)` run plus an
+immutable manifest hash. An expiring database lease suppresses concurrent model
+calls, and a completed run returns its stored counters without calling the
+provider again. The OpenAI client request ID is diagnostic correlation only; it
+is not treated as an idempotency guarantee.
+
+There is no distributed transaction between a model provider and PostgreSQL. A
+network failure with an unknown provider outcome is therefore terminal rather
+than blindly retried. A rarer failure after a successful model response but
+before the database transaction commits may cause a second billable request
+after lease expiry. Avoiding that residual cost ambiguity would require a
+provider-supported idempotency/retrieval contract or durable encrypted response
+staging, neither of which this slice claims.
 
 For future external effects:
 
@@ -461,16 +504,17 @@ The system offers eventual consistency between Slack acknowledgement, background
 
 Errors are categorised rather than retried uniformly:
 
-| Category             | Examples                                               | Behavior                                     |
-| -------------------- | ------------------------------------------------------ | -------------------------------------------- |
-| Invalid input        | bad schema, unsupported event type, private channel    | reject or terminal failure; no retry         |
-| Authentication       | invalid signature, expired timestamp                   | reject at ingress; security metric           |
-| Authorization        | source not permitted, tenant mismatch                  | fail closed; audit                           |
-| Throttling           | Slack or provider rate limit                           | honour retry hint, add jitter, retry         |
-| Transient dependency | timeout, connection reset, temporary database failover | bounded exponential backoff                  |
-| Permanent dependency | revoked token, deleted repository                      | terminal or wait for operator action         |
-| Model contract       | malformed structured output                            | bounded repair/retry, then quarantine        |
-| Programming defect   | invariant violation                                    | fail safely, alert, do not loop indefinitely |
+| Category             | Examples                                             | Behavior                                      |
+| -------------------- | ---------------------------------------------------- | --------------------------------------------- |
+| Invalid input        | bad schema, unsupported event type, private channel  | reject or terminal failure; no retry          |
+| Authentication       | invalid signature, expired timestamp                 | reject at ingress; security metric            |
+| Authorization        | source not permitted, tenant mismatch                | fail closed; audit                            |
+| Throttling           | Slack or provider rate limit                         | honour retry hint, add jitter, retry          |
+| Transient dependency | temporary database failover or explicit provider 5xx | bounded exponential backoff                   |
+| Ambiguous model call | timeout or connection reset after request send       | terminal; do not blindly duplicate model cost |
+| Permanent dependency | revoked token, deleted repository                    | terminal or wait for operator action          |
+| Model contract       | malformed structured output                          | bounded repair/retry, then quarantine         |
+| Programming defect   | invariant violation                                  | fail safely, alert, do not loop indefinitely  |
 
 Retries require a budget. A dead-lettered message is an operational incident to inspect, not an alternative long-term queue.
 
@@ -514,18 +558,21 @@ The first AWS topology is:
 - a worker Lambda with bounded concurrency, database access, and
   `states:StartExecution` permission;
 - a Step Functions Standard workflow that invokes one bounded Slack thread page
-  per task and owns pagination/rate-limit waits;
+  per task, owns pagination/rate-limit waits, and then invokes structured
+  extraction;
 - a Slack evidence collector Lambda with bounded concurrency, database access,
   and workspace-bound Slack bot-token access;
+- an analysis Lambda with a separate role, database/OpenAI secret access,
+  independent concurrency and cost budgets, and no Slack credential;
 - existing Supabase PostgreSQL through its IPv4 transaction pooler;
 - Secrets Manager for credentials;
 - bounded-retention CloudWatch logs and queue alarms; and
 - Terraform-managed infrastructure.
 
-All three Lambdas use one immutable ZIP but different composition roots, roles,
+All four Lambdas use one immutable ZIP but different composition roots, roles,
 configuration, timeouts, memory, and concurrency. The database-using functions
 remain outside a VPC so they can reach Supabase's public IPv4 pooler, Secrets
-Manager, Step Functions, and Slack without a NAT gateway. PostgreSQL connections
+Manager, Step Functions, Slack, and OpenAI without a NAT gateway. PostgreSQL connections
 verify the Supabase CA and pooler hostname. The Terraform root deliberately does
 not provision Supabase, secrets, artifact registry, or remote state.
 
@@ -595,10 +642,11 @@ connection hazard if concurrency is left unbounded. Fargate remains a valid
 measured migration target for sustained workloads or stages that do not fit
 Lambda; it is not needed merely to make the diagram look more conventional.
 
-The current Step Functions machine performs only triggering-thread collection.
-Its task input/output is bounded and source content stays in PostgreSQL. Each
-future state must likewise arrive with a bounded contract, retry policy,
-idempotency boundary, and implemented stage rather than a decorative graph.
+The current Step Functions machine performs triggering-thread collection and
+structured extraction. Its task input/output is bounded and source/model content
+stays in PostgreSQL. Each future state must likewise arrive with a bounded
+contract, retry policy, idempotency boundary, and implemented stage rather than
+a decorative graph.
 
 ### Public channels only
 
@@ -606,9 +654,13 @@ The implemented foundation uses Slack's channel-ID prefix as a narrow first guar
 
 Restricting the initial path meaningfully reduces permission-composition risk, but public workspace channels can still contain secrets or customer information. “Public” is an access scope, not a data classification. Sensitive-data controls and retention still apply.
 
-### AI adapter without AI behavior
+### Structured extraction is not verified truth
 
-The foundation proves integration seams, not model quality. This is intentional. A production provider should be connected only after an evaluation corpus and structured-output contract exist.
+The production adapter and structured-output contract are implemented, but no
+labelled evaluation corpus has established factual quality. JSON validity and
+citation existence do not prove that a citation entails a claim or that the
+evidence set is complete. Generated records remain `UNREVIEWED`, and the model
+cannot emit `HUMAN_CONFIRMED`.
 
 ### Human review later
 
