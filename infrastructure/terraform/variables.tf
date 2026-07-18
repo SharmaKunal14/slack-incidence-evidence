@@ -55,6 +55,18 @@ variable "incident_analysis_lambda_handler" {
   default     = "incident-analysis-main.handler"
 }
 
+variable "incident_report_lambda_handler" {
+  description = "Incident report handler exported at the root of the shared Lambda artifact."
+  type        = string
+  default     = "incident-report-main.handler"
+}
+
+variable "incident_review_notification_lambda_handler" {
+  description = "Review-ready Slack notification handler exported at the root of the shared Lambda artifact."
+  type        = string
+  default     = "incident-review-notification-main.handler"
+}
+
 variable "lambda_architecture" {
   description = "Lambda CPU architecture. arm64 is cost-efficient for this pure Node.js workload."
   type        = string
@@ -439,6 +451,138 @@ variable "openai_max_output_tokens" {
   validation {
     condition     = var.openai_max_output_tokens >= 256 && var.openai_max_output_tokens <= 32768
     error_message = "openai_max_output_tokens must be between 256 and 32768."
+  }
+}
+
+variable "incident_report_memory_mb" {
+  description = "Memory assigned to evidence-constrained incident report generation."
+  type        = number
+  default     = 512
+
+  validation {
+    condition     = var.incident_report_memory_mb >= 128 && var.incident_report_memory_mb <= 10240
+    error_message = "incident_report_memory_mb must be between 128 and 10240 MB."
+  }
+}
+
+variable "incident_report_timeout_seconds" {
+  description = "End-to-end timeout for one report-generation attempt, including durable persistence."
+  type        = number
+  default     = 120
+
+  validation {
+    condition     = var.incident_report_timeout_seconds >= 30 && var.incident_report_timeout_seconds <= 900
+    error_message = "incident_report_timeout_seconds must be between 30 and 900 seconds."
+  }
+}
+
+variable "incident_report_reserved_concurrency" {
+  description = "Hard concurrency boundary protecting model spend and PostgreSQL during report generation."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.incident_report_reserved_concurrency >= 1
+    error_message = "incident_report_reserved_concurrency must be at least 1."
+  }
+}
+
+variable "report_max_sources" {
+  description = "Maximum combined claims and timeline events submitted in one report request."
+  type        = number
+  default     = 200
+
+  validation {
+    condition     = var.report_max_sources >= 1 && var.report_max_sources <= 500
+    error_message = "report_max_sources must be between 1 and 500."
+  }
+}
+
+variable "report_max_input_characters" {
+  description = "Maximum serialized structured report-manifest characters submitted in one model request."
+  type        = number
+  default     = 100000
+
+  validation {
+    condition     = var.report_max_input_characters >= 1000 && var.report_max_input_characters <= 1000000
+    error_message = "report_max_input_characters must be between 1000 and 1000000."
+  }
+}
+
+variable "report_max_attempts" {
+  description = "Maximum leased report-generation attempts after explicit retryable provider outcomes."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.report_max_attempts >= 1 && var.report_max_attempts <= 5
+    error_message = "report_max_attempts must be between 1 and 5."
+  }
+}
+
+variable "report_lease_seconds" {
+  description = "Database lease preventing concurrent model requests for one report version."
+  type        = number
+  default     = 180
+
+  validation {
+    condition     = var.report_lease_seconds >= 30 && var.report_lease_seconds <= 900
+    error_message = "report_lease_seconds must be between 30 and 900."
+  }
+}
+
+variable "openai_report_timeout_milliseconds" {
+  description = "Timeout for one OpenAI report-generation request."
+  type        = number
+  default     = 90000
+
+  validation {
+    condition     = var.openai_report_timeout_milliseconds >= 1000 && var.openai_report_timeout_milliseconds <= 300000
+    error_message = "openai_report_timeout_milliseconds must be between 1000 and 300000."
+  }
+}
+
+variable "openai_report_max_output_tokens" {
+  description = "Hard output-token budget for one structured report-generation request."
+  type        = number
+  default     = 8000
+
+  validation {
+    condition     = var.openai_report_max_output_tokens >= 256 && var.openai_report_max_output_tokens <= 32768
+    error_message = "openai_report_max_output_tokens must be between 256 and 32768."
+  }
+}
+
+variable "review_notification_memory_mb" {
+  description = "Memory assigned to the content-free Slack review-ready notifier."
+  type        = number
+  default     = 256
+
+  validation {
+    condition     = var.review_notification_memory_mb >= 128 && var.review_notification_memory_mb <= 10240
+    error_message = "review_notification_memory_mb must be between 128 and 10240 MB."
+  }
+}
+
+variable "review_notification_timeout_seconds" {
+  description = "Timeout for one review-ready Slack status notification."
+  type        = number
+  default     = 15
+
+  validation {
+    condition     = var.review_notification_timeout_seconds >= 5 && var.review_notification_timeout_seconds <= 60
+    error_message = "review_notification_timeout_seconds must be between 5 and 60 seconds."
+  }
+}
+
+variable "review_notification_reserved_concurrency" {
+  description = "Hard concurrency boundary protecting Slack and PostgreSQL during completion notification."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.review_notification_reserved_concurrency >= 1
+    error_message = "review_notification_reserved_concurrency must be at least 1."
   }
 }
 

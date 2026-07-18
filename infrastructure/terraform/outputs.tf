@@ -48,6 +48,16 @@ output "incident_analysis_lambda_name" {
   value       = aws_lambda_function.incident_analysis.function_name
 }
 
+output "incident_report_lambda_name" {
+  description = "Evidence-constrained incident report Lambda function name."
+  value       = aws_lambda_function.incident_report.function_name
+}
+
+output "incident_review_notification_lambda_name" {
+  description = "Review-ready Slack notification Lambda function name."
+  value       = aws_lambda_function.incident_review_notification.function_name
+}
+
 output "incident_workflow_arn" {
   description = "ARN of the Standard Step Functions incident workflow."
   value       = aws_sfn_state_machine.incident_workflow.arn
@@ -56,11 +66,13 @@ output "incident_workflow_arn" {
 output "cloudwatch_log_groups" {
   description = "Log groups created with bounded retention."
   value = {
-    analysis  = aws_cloudwatch_log_group.incident_analysis.name
-    api       = aws_cloudwatch_log_group.api.name
-    ingress   = aws_cloudwatch_log_group.ingress.name
-    collector = aws_cloudwatch_log_group.slack_evidence_collector.name
-    worker    = aws_cloudwatch_log_group.worker.name
-    workflow  = aws_cloudwatch_log_group.workflow.name
+    analysis            = aws_cloudwatch_log_group.incident_analysis.name
+    api                 = aws_cloudwatch_log_group.api.name
+    ingress             = aws_cloudwatch_log_group.ingress.name
+    report              = aws_cloudwatch_log_group.incident_report.name
+    review_notification = aws_cloudwatch_log_group.incident_review_notification.name
+    collector           = aws_cloudwatch_log_group.slack_evidence_collector.name
+    worker              = aws_cloudwatch_log_group.worker.name
+    workflow            = aws_cloudwatch_log_group.workflow.name
   }
 }

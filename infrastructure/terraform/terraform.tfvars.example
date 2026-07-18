@@ -2,8 +2,8 @@ aws_region  = "ap-southeast-2"
 environment = "development"
 
 # Produce this ZIP from the application build before running terraform plan.
-# It must contain slack-ingress-main.handler, incident-worker-main.handler, and
-# slack-evidence-collector-main.handler, plus all production dependencies.
+# It must contain all six composition roots documented in README.md, plus all
+# production dependencies.
 lambda_artifact_path = "../../artifacts/incident-copilot-lambda.zip"
 
 # Only ARNs enter Terraform. Do not put secret values in this file.

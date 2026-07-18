@@ -1,20 +1,23 @@
 # Incident Evidence Copilot architecture
 
-Status: triggering-thread collection and structured AI extraction implemented
+Status: triggering-thread collection, structured AI extraction, and review-ready draft generation implemented
 Last updated: 2026-07-18
 
 ## Purpose
 
 Incident Evidence Copilot turns an explicitly triggered Slack incident conversation into a durable, reviewable incident-processing job. The product will eventually combine Slack and operational evidence, extract structured claims, and prepare a source-linked postmortem for human approval.
 
-The foundation deliberately solves the ingestion and reliability problem before the generative-AI problem:
+The implementation deliberately builds each generative step on durable evidence and
+reliability boundaries:
 
 1. authenticate the caller;
 2. accept the event quickly;
 3. enqueue one durable unit of work;
 4. process it idempotently;
-5. persist an auditable state transition; and
-6. keep source content out of operational logs.
+5. persist an auditable state transition;
+6. extract and render only source-linked incident statements;
+7. stop at a human-review boundary; and
+8. keep source content out of operational logs.
 
 This document describes both the implemented foundation and the intended product architecture. A component marked **roadmap** is not part of the current security or reliability claim.
 
@@ -78,6 +81,20 @@ Explicitly out of scope:
 - Transactional persistence of timeline events, all citations, unreviewed
   claims, supporting/contradicting links, open questions, provider metadata, and
   token usage.
+- A second versioned OpenAI contract which produces evidence-constrained report
+  sections from persisted claims, timeline events, and open questions rather
+  than raw Slack content.
+- Application validation that rejects fabricated source IDs, missing disputed
+  claims, causal overstatement, URLs, HTML, and secret-like output before a
+  report can be persisted.
+- Deterministic Markdown rendering, transactional storage of report sections,
+  statements, source links, manifest identity, model metadata, and token usage,
+  followed by an explicit `NEEDS_REVIEW` lifecycle state.
+- A content-free, retry-safe Slack notification when a draft is ready for human
+  review. Notification failure does not discard or regenerate a completed draft.
+- A deterministic offline evaluation harness with ten versioned synthetic
+  fixtures and explicit structural, contradiction, ordering, source-coverage,
+  overstatement, and leakage checks. These checks do not claim semantic truth.
 - Zod-validated, process-specific environment configuration.
 - Liveness and readiness endpoints.
 - Structured Pino logging with request logging disabled and sensitive-field redaction.
@@ -97,7 +114,8 @@ Explicitly out of scope:
 - Explicitly selected Slack channel-history collection beyond the triggering
   thread.
 - GitHub App evidence collection.
-- Report writing and a measured AI evaluation harness.
+- A human-labelled semantic evaluation corpus, provider quality baselines, and
+  a quality/cost dashboard.
 - Semantic evidence comparison beyond explicit model-supplied contradictions.
 - The reviewer web application.
 - Publication to an external document system.
@@ -107,7 +125,7 @@ Explicitly out of scope:
 - A provisioned AWS account or completed deployment.
 - RDS/RDS Proxy, VPC/subnets/endpoints or NAT, database backups, and remote
   Terraform state.
-- Review, report-generation, and publication tasks after extraction.
+- Review, approval, and publication tasks after draft generation.
 
 The roadmap is tracked in [roadmap.md](./roadmap.md). Threats that become relevant as these capabilities are introduced are tracked in [threat-model.md](./threat-model.md).
 
@@ -159,6 +177,12 @@ flowchart LR
     SFN --> AX["Analysis Lambda"]
     AX --> AI["OpenAI Responses API"]
     AX --> PG
+    SFN --> RG["Report Lambda"]
+    RG --> AI
+    RG --> PG
+    SFN --> RN["Review notification Lambda"]
+    RN --> SL
+    RN --> PG
     SFN -. "roadmap" .-> GH["GitHub App API"]
     PG -. "roadmap" .-> UI["Reviewer web app"]
     UI -. "human-approved" .-> PUB["Publisher / action tracker"]
@@ -181,6 +205,8 @@ sequenceDiagram
     participant Collector as Collector Lambda
     participant WebAPI as Slack Web API
     participant Analysis as Analysis Lambda
+    participant Report as Report Lambda
+    participant Notify as Notification Lambda
     participant Model as OpenAI Responses API
 
     Slack->>Gateway: Raw signed HTTP request
@@ -210,6 +236,18 @@ sequenceDiagram
         Model-->>Analysis: Timeline + claims + citations + questions
         Analysis->>DB: Atomically persist output, usage, and completion
         Analysis-->>SFN: status + IDs + counts only
+        SFN->>Report: tenant + incident + analysis IDs/counts
+        Report->>DB: Load structured evidence + acquire versioned lease
+        Report->>Model: Strict source-linked report contract, no tools
+        Model-->>Report: Sections + statements + source IDs
+        Report->>Report: Validate provenance and classification strength
+        Report->>DB: Atomically persist draft, links, usage, and Markdown
+        Report->>DB: Transition GENERATING -> VERIFYING -> NEEDS_REVIEW
+        Report-->>SFN: status + draft ID + counts only
+        SFN->>Notify: tenant + incident + draft ID/counts
+        Notify->>DB: Authorize workspace incident and ready state
+        Notify->>Slack: Content-free review-ready thread reply
+        Notify-->>SFN: notification outcome; no report content
         Worker-->>FIFO: Report success
     else duplicate or terminal job
         Worker->>DB: Read existing outcome
@@ -305,11 +343,11 @@ Responsibilities:
 - on a FIFO failure, report the failed and all unprocessed records for
   redelivery.
 
-The triggering-thread collector and analysis stage separate provider
+The triggering-thread collector, analysis, report, and notification stages separate provider
 throttling, retryable dependency failures, and terminal safe failures. Roadmap
-responsibilities include selected-channel collection, report generation, and
-reviewer notification. Those steps must also be checkpointed so a retry does
-not repeat completed external side effects.
+responsibilities include selected-channel collection, reviewer authorization,
+approval, and publication. Those steps must also be checkpointed so a retry
+does not repeat completed external side effects.
 
 ### PostgreSQL
 
@@ -331,9 +369,16 @@ workflow state or a generic job JSON column. The current release records expiry
 but does not yet delete expired content; the deletion processor remains required
 before claiming an enforced retention policy.
 
+Structured report drafts are stored separately from extraction runs. A report
+version has one immutable input-manifest hash, one durable lease, bounded
+attempts, source-linked statements, and deterministic Markdown. The database
+does not treat a model response as complete until all sections, statements,
+claim/timeline links, usage, and final status commit in one transaction.
+
 ### AI gateway
 
-The implemented OpenAI adapter sits behind provider-neutral interfaces and owns:
+The implemented analysis and report OpenAI adapters sit behind provider-neutral
+interfaces and own:
 
 - model selection;
 - schema-constrained request and response translation;
@@ -348,7 +393,9 @@ response storage for the request, and validates the returned structure and every
 evidence reference in the application. The gateway does not own claim truth,
 permissions, or publication decisions. Its output remains untrusted until human
 review. Provider contractual retention/training behavior must still be reviewed;
-`store: false` is not a complete data-governance policy.
+`store: false` is not a complete data-governance policy. The report adapter sees
+the already structured incident record, not the raw Slack transcript, reducing
+but not eliminating disclosure and prompt-injection risk.
 
 ## Module boundaries and dependency direction
 
@@ -379,7 +426,8 @@ The rationale is recorded in [ADR 0001](./adr/0001-modular-monolith.md).
 
 The implemented `IncidentAggregate` owns the end-to-end lifecycle vocabulary.
 The worker advances to `COLLECTING`; analysis advances through `NORMALIZING` and
-`EXTRACTING`, then to `GENERATING` after durable extraction:
+`EXTRACTING`, report generation owns `GENERATING` and `VERIFYING`, and a valid
+persisted draft stops at `NEEDS_REVIEW`:
 
 ```mermaid
 stateDiagram-v2
@@ -430,6 +478,10 @@ Rules:
 | Claim               | Structured incident statement, classification, and review state           | generated or human-authored incident detail             | model generation implemented; review roadmap           |
 | Claim-evidence link | Support, contradiction, or context relation                               | relationship rationale                                  | supporting/contradicting population implemented        |
 | Open question       | Material uncertainty the evidence does not resolve                        | generated incident detail                               | structured model extraction implemented                |
+| Report draft        | Versioned generation lease, manifest, model usage, and rendered Markdown  | generated incident narrative                            | generation and `NEEDS_REVIEW` gate implemented         |
+| Report section      | Ordered fixed report structure                                            | generated incident narrative                            | transactional persistence implemented                  |
+| Report statement    | Typed claim/timeline statement with classification                        | generated incident narrative                            | source validation and persistence implemented          |
+| Report source link  | Claim or timeline provenance for one report statement                     | evidence relationship                                   | composite tenant-safe links implemented                |
 | Workflow job        | Durable attempt, lock, retry, and result metadata                         | payload/result fields must follow restricted-data rules | schema implemented; current SQS path keys on incidents |
 | Audit event         | Append-oriented security/business event                                   | actor and target metadata                               | schema implemented; complete audit emission is roadmap |
 
@@ -464,7 +516,13 @@ Only operational metadata is allowed in standard logs. Identifiers should be has
 6. **Analysis Lambda to model provider:** restricted triggering-thread data
    leaves the product boundary using a dedicated secret and fixed endpoint. A
    production tenant/provider policy and data-processing review remain required.
-7. **Review to publication (roadmap):** a human decision plus an audience policy changes a draft into an external artifact.
+7. **Report Lambda to model provider:** restricted structured claims, timeline,
+   and questions leave the product boundary; raw transcript content is not sent
+   by this stage. Every returned source ID is checked against the immutable
+   manifest before persistence.
+8. **Notification Lambda to Slack:** a workspace-bound token may send only a
+   fixed, content-free readiness message to the incident's original thread.
+9. **Review to publication (roadmap):** a human decision plus an audience policy changes a draft into an external artifact.
 
 ## Idempotency and consistency
 
@@ -489,6 +547,12 @@ before the database transaction commits may cause a second billable request
 after lease expiry. Avoiding that residual cost ambiguity would require a
 provider-supported idempotency/retrieval contract or durable encrypted response
 staging, neither of which this slice claims.
+
+Report generation uses the same pattern with a unique
+`(tenant, incident, report_version)` run and immutable structured-evidence
+manifest. A completed version is a no-op. Slack notification uses the persisted
+draft ID as its stable client message ID. A terminal notification failure leaves
+the draft in `NEEDS_REVIEW`; it must never trigger a second report generation.
 
 For future external effects:
 
@@ -530,8 +594,8 @@ Every accepted trigger receives an internal correlation ID. Metrics and traces s
 - idempotency conflicts and duplicate suppression;
 - job counts by state;
 - dependency latency and throttling by provider;
-- AI token, cost, latency, and schema-failure metrics when enabled; and
-- time from trigger to review-ready draft when that workflow exists.
+- analysis/report token, cost, latency, and schema-failure metrics; and
+- time from trigger to review-ready draft.
 
 Safe structured log example:
 
@@ -564,12 +628,16 @@ The first AWS topology is:
   and workspace-bound Slack bot-token access;
 - an analysis Lambda with a separate role, database/OpenAI secret access,
   independent concurrency and cost budgets, and no Slack credential;
+- a report Lambda with its own role, database/OpenAI secret access, independent
+  input/output/timeout/concurrency budgets, and no Slack credential;
+- a review-notification Lambda with database/Slack token access, no OpenAI
+  credential, and no report content in its request or message;
 - existing Supabase PostgreSQL through its IPv4 transaction pooler;
 - Secrets Manager for credentials;
 - bounded-retention CloudWatch logs and queue alarms; and
 - Terraform-managed infrastructure.
 
-All four Lambdas use one immutable ZIP but different composition roots, roles,
+All six Lambdas use one immutable ZIP but different composition roots, roles,
 configuration, timeouts, memory, and concurrency. The database-using functions
 remain outside a VPC so they can reach Supabase's public IPv4 pooler, Secrets
 Manager, Step Functions, Slack, and OpenAI without a NAT gateway. PostgreSQL connections
@@ -656,15 +724,19 @@ Restricting the initial path meaningfully reduces permission-composition risk, b
 
 ### Structured extraction is not verified truth
 
-The production adapter and structured-output contract are implemented, but no
-labelled evaluation corpus has established factual quality. JSON validity and
-citation existence do not prove that a citation entails a claim or that the
-evidence set is complete. Generated records remain `UNREVIEWED`, and the model
-cannot emit `HUMAN_CONFIRMED`.
+The production adapters, structured-output contracts, and deterministic
+synthetic evaluation harness are implemented, but no human-labelled corpus has
+established factual quality. The offline harness measures structural invariants,
+contradiction coverage, source coverage, ordering, overstatement, and obvious
+leakage; it cannot prove semantic entailment or completeness. Generated records
+remain `UNREVIEWED`, and the model cannot emit `HUMAN_CONFIRMED`.
 
 ### Human review later
 
-Until the review experience exists, no generated incident report should be described as authoritative or published automatically. The lack of publication is a safety property, not a missing shortcut.
+The generated Markdown is a draft explicitly marked for human review. Until the
+review experience exists, it must not be described as authoritative or
+published automatically. The lack of publication is a safety property, not a
+missing shortcut.
 
 ## Architecture fitness checks
 
@@ -679,6 +751,10 @@ The following checks should become CI or deployment gates:
 - repository methods require a tenant/workspace scope;
 - migrations apply to an empty and a representative existing database;
 - AI adapter contract tests use schema-invalid and prompt-injection fixtures;
+- report tests reject unknown sources, causal overstatement, hidden disputed
+  claims, URLs, HTML, and secret-like output;
+- the offline evaluation fixture set and thresholds run as a deterministic CI
+  gate, while live-provider evaluation remains a separately authorized job;
 - publication tests prove an unreviewed draft cannot leave the system;
 - production collection tests prove conversation visibility from authorized Slack metadata rather than relying only on an ID prefix; and
 - threat-model review is required when adding a source or destination connector.

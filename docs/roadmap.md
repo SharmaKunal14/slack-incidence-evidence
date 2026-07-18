@@ -56,6 +56,13 @@ The current foundation establishes:
   events, claims, contradictions, and open questions;
 - explicit model/prompt/schema metadata and token usage without raw prompts or
   model output in operational logs or Step Functions state;
+- versioned, leased report generation from persisted claims/timeline/questions,
+  with strict source-reference and classification-strength validation;
+- transactional report-section, statement, provenance-link, usage, and
+  deterministic Markdown persistence followed by a `NEEDS_REVIEW` gate;
+- a retry-safe, content-free Slack notification when the draft is ready; and
+- a versioned offline evaluation harness with ten synthetic fixtures and
+  deterministic structural/safety metrics;
 - Secrets Manager adapters and Zod-validated local/Lambda configuration plus
   strict runtime secret contracts;
 - Terraform for API Gateway, Lambda, SQS FIFO/DLQ, the initial Standard workflow,
@@ -65,10 +72,11 @@ The current foundation establishes:
 - Docker/local Compose, CI, and unit-test foundations; and
 - architecture and security documentation.
 
-This foundation proves reliable ingestion, triggering-thread collection, and a
-bounded structured extraction path. It does **not** yet claim complete channel
-evidence coverage, enforced expiry deletion, production OAuth lifecycle
-management, measured AI quality, report generation, review, or publication.
+This foundation proves reliable ingestion, triggering-thread collection, a
+bounded structured extraction path, and an evidence-constrained draft path. It
+does **not** yet claim complete channel evidence coverage, enforced expiry
+deletion, production OAuth lifecycle management, human-measured semantic AI
+quality, review, approval, or publication.
 
 ## Stage 1 — Deploy and prove the integration foundation
 
@@ -259,12 +267,33 @@ The system turns the evidence bundle into an evidence-linked timeline, claims, c
   provider metadata, token usage, and run completion.
 - Lifecycle progression through `NORMALIZING`, `EXTRACTING`, and `GENERATING`,
   or to terminal `FAILED` on a durable analysis failure.
+- A dedicated report Lambda which reads only the persisted structured incident
+  record, acquires a versioned lease, and invokes a second strict no-tools model
+  contract with its own timeout, token, source, character, and attempt budgets.
+- Validation that every narrative statement maps to known claim IDs, every
+  timeline bullet maps to known timeline-event IDs, classification strength
+  does not exceed its sources, and disputed/contradicted claims remain visible.
+- Rejection of model-generated URLs, HTML, and secret-like tokens before report
+  persistence.
+- Fixed, deterministic Markdown rendering with explicit uncertainty labels,
+  source identifiers, open questions, and a human-review warning.
+- Transactional persistence of the report draft, sections, statements,
+  provenance links, manifest identity, model metadata, usage, and lifecycle
+  transition through `VERIFYING` to `NEEDS_REVIEW`.
+- A separate least-privilege notification Lambda which sends a fixed,
+  content-free, retry-safe reply in the original Slack thread and cannot access
+  the OpenAI credential.
+- A deterministic offline evaluation runner with ten versioned synthetic
+  incidents covering contradictions, unknown causes, prompt injection,
+  secret-like content, missing impact, correlation, timestamp ambiguity, and
+  noisy conversation. A separately guarded live mode calls the real provider
+  sequentially and emits aggregate metrics only.
 
 Still missing are chunked analysis for evidence beyond the hard input budget,
-cross-source entity consolidation, report-section generation, a labelled
-evaluation corpus and quality/cost dashboard, provider data-processing approval,
-and human review. Passing a JSON schema is not evidence that the extracted facts
-are correct.
+cross-source entity consolidation, a human-labelled semantic evaluation corpus,
+entailment scoring, a quality/cost dashboard, provider data-processing approval,
+and human review. The synthetic harness proves contract and policy behavior; it
+does not establish that model claims are factually correct.
 
 ### Exit criteria
 
@@ -318,7 +347,7 @@ A reviewer can inspect and correct the incident without reading an opaque genera
 - Immutable human decision records.
 - Draft revision history.
 - Source-access revalidation.
-- Slack notification when a draft is ready.
+- Entry from the already implemented Slack review-ready notification.
 
 ### Exit criteria
 

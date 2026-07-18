@@ -1,6 +1,6 @@
 # Threat model
 
-Status: active; triggering-thread collection and AI extraction controls implemented
+Status: active; collection, AI extraction, and review-ready draft controls implemented
 Last updated: 2026-07-18
 
 ## Scope
@@ -8,10 +8,11 @@ Last updated: 2026-07-18
 This threat model covers the Incident Evidence Copilot foundation:
 
 ```text
-Slack signed request -> API Gateway -> ingress Lambda -> SQS FIFO -> worker Lambda -> PostgreSQL + Step Functions -> Slack collector + analysis Lambda -> Slack/OpenAI APIs + PostgreSQL
+Slack signed request -> API Gateway -> ingress Lambda -> SQS FIFO -> worker Lambda -> PostgreSQL + Step Functions -> collector + analysis + report + notification Lambdas -> Slack/OpenAI APIs + PostgreSQL
 ```
 
-Triggering-thread history collection and structured model extraction are
+Triggering-thread history collection, structured model extraction,
+evidence-constrained draft generation, and a content-free ready notification are
 implemented. This model also anticipates selected-channel Slack collection,
 GitHub evidence, a reviewer UI, publication, and follow-up issue creation.
 Planned controls are not credited as current protection.
@@ -101,11 +102,17 @@ flowchart LR
         Secrets["Secrets Manager / KMS"]
         Workflow["Step Functions"]
         Collector["Slack collector"]
+        Analysis["Analysis"]
+        Report["Report generator"]
+        Notify["Review notifier"]
     end
 
-    subgraph Future["External processors and destinations — roadmap"]
-        GitHub["GitHub API"]
+    subgraph External["External processors"]
         Model["Model provider"]
+    end
+
+    subgraph Future["External destinations — roadmap"]
+        GitHub["GitHub API"]
         Review["Reviewer browser"]
         Publish["Document / issue destination"]
     end
@@ -123,8 +130,16 @@ flowchart LR
     Secrets -->|"runtime credentials"| Collector
     Collector -->|"restricted evidence"| SlackAPI
     Collector -->|"tenant-scoped artifacts"| DB
+    Workflow -->|"ID/count-only task input"| Analysis
+    Analysis -->|"restricted evidence"| Model
+    Analysis -->|"structured incident record"| DB
+    Workflow -->|"ID/count-only task input"| Report
+    Report -->|"restricted structured incident"| Model
+    Report -->|"source-linked review draft"| DB
+    Workflow -->|"ID/count-only task input"| Notify
+    Notify -->|"content-free ready message"| SlackAPI
+    Notify -->|"tenant-scoped readiness check"| DB
     Worker -. "roadmap" .-> GitHub
-    Worker -. "restricted prompt" .-> Model
     DB -. "review data" .-> Review
     Review -. "human-approved command" .-> Publish
 ```
@@ -382,10 +397,16 @@ Implemented controls:
 - schema-constrained output with strict parsing;
 - never execute commands, URLs, SQL, or instructions emitted by a model;
 - use application-owned fixed provider/source endpoints rather than model-selected
-  URLs.
+  URLs;
+- report generation consumes validated structured claims, timeline events, and
+  questions rather than raw Slack text;
+- report output rejects URLs, HTML, secret-like tokens, and unknown source IDs;
+  and
+- neither model adapter has Slack, approval, publication, or tool authority.
 
-Adversarial unit fixtures exist, but a labelled prompt-injection evaluation
-corpus remains a release gap.
+Adversarial unit fixtures and a ten-case versioned synthetic offline evaluation
+corpus exist. A human-labelled corpus and live-provider adversarial baseline
+remain release gaps.
 
 Prompt text is a weak control by itself. Tool and publication authority must be absent from the model runtime.
 
@@ -401,11 +422,17 @@ Implemented controls:
 - classifications distinguish observation, assertion, hypothesis, inference, dispute, unknown, and human-confirmed cause;
 - supporting and contradicting references are kept separate;
 - unknowns remain visible; and
-- model output cannot use the human-confirmed classification.
+- model output cannot use the human-confirmed classification;
+- report statements must reference known claims or timeline events, may not use
+  a stronger classification than their sources, and must surface every
+  disputed or contradicted claim;
+- deterministic rendering adds explicit uncertainty and source labels; and
+- report completion and all provenance links commit atomically before the
+  incident reaches `NEEDS_REVIEW`.
 
-Entailment validation, deterministic report rendering, evaluation, and human
-review are not implemented. Therefore a cited claim can still misrepresent its
-source, and no generated result is authoritative.
+Deterministic structural evaluation is implemented, but semantic entailment
+validation and human review are not. Therefore a cited claim can still
+misrepresent its source, and no generated result is authoritative.
 
 Numeric confidence scores must not be exposed unless calibrated against a labelled corpus.
 
@@ -444,6 +471,25 @@ Required controls:
 - block or route high-sensitivity incidents to a customer-approved deployment.
 
 Secret detection is probabilistic and cannot be represented as a complete guarantee.
+
+### Draft notification leakage or duplication
+
+Threat: a ready notification discloses incident content, posts into the wrong
+workspace/thread, or repeats after a retry.
+
+Implemented controls:
+
+- the notifier reloads the tenant-scoped incident and exact tenant/incident/draft
+  row and requires both to be `NEEDS_REVIEW` before sending;
+- destination workspace, channel, and thread are taken from the stored incident,
+  not trusted from workflow input;
+- displayed counts are taken from the stored draft, not workflow input;
+- the message is application-owned and content-free; and
+- the durable report draft ID is used as Slack's stable client message ID.
+
+A terminal Slack notification failure does not roll back or regenerate the
+draft. The current system has no reviewer URL, so the notification is an
+operational readiness signal rather than an authorization mechanism.
 
 ## Review and publication threats (roadmap)
 
@@ -563,9 +609,12 @@ Required controls:
 
 ### AI release gates
 
-- Labelled incident evaluation corpus.
-- Prompt-injection and schema-confusion fixtures.
-- Evidence-entailment and unsupported-claim measurements.
+- Deterministic synthetic prompt-injection and schema-confusion fixtures
+  (implemented; keep versioned in CI).
+- Report source-coverage, contradiction, ordering, causal-overstatement, and
+  forbidden-output measurements (implemented structurally).
+- Human-labelled incident evaluation corpus and evidence-entailment baseline
+  (still required before factual-quality claims).
 - Sensitive-data leakage tests.
 - Provider retention and region review.
 - Kill-switch exercise.
@@ -586,6 +635,10 @@ Required controls:
 - HMAC replay windows reduce but do not remove replay attempts; idempotency limits their effect.
 - Content classifiers and secret scanners have false negatives and false positives.
 - Evidence support does not prove objective causality.
+- Passing the offline synthetic harness does not prove semantic accuracy or
+  real-world completeness.
+- Report notification failure can leave a valid draft ready without a Slack
+  signal; operators need a metric/alarm or a later review inbox.
 - A compromised application runtime can access data available to its role; infrastructure hardening and detection remain necessary.
 - Human reviewers can make mistakes or intentionally approve an unsafe report.
 - External publication creates a new copy governed by the destination system.

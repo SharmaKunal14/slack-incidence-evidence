@@ -3,6 +3,10 @@ import type {
   IncidentAcceptedNotification,
   IncidentStatusNotifier,
 } from '../../application/ports/incident-status-notifier.js';
+import type {
+  IncidentReviewReadyNotification,
+  IncidentReviewReadyNotifier,
+} from '../../application/ports/incident-review-ready-notifier.js';
 
 const SLACK_POST_MESSAGE_URL = 'https://slack.com/api/chat.postMessage';
 const MAX_RESPONSE_BYTES = 64 * 1024;
@@ -14,6 +18,19 @@ const notificationSchema = z
     incidentId: z.uuid(),
     channelId: z.string().regex(/^C[A-Z0-9]{1,63}$/),
     threadTs: slackTimestampSchema,
+  })
+  .strict();
+
+const readyNotificationSchema = z
+  .object({
+    workspaceId: z.string().regex(/^T[A-Z0-9]{1,63}$/),
+    incidentId: z.uuid(),
+    reportDraftId: z.uuid(),
+    channelId: z.string().regex(/^C[A-Z0-9]{1,63}$/),
+    threadTs: slackTimestampSchema,
+    timelineEventCount: z.number().int().nonnegative().max(100_000),
+    claimCount: z.number().int().nonnegative().max(100_000),
+    openQuestionCount: z.number().int().nonnegative().max(100_000),
   })
   .strict();
 
@@ -51,7 +68,9 @@ export interface SlackWebApiIncidentStatusNotifierOptions {
  * SQS redelivery, so an ambiguous HTTP timeout can be retried without creating
  * a second logical message. It is an idempotency identifier, not a secret.
  */
-export class SlackWebApiIncidentStatusNotifier implements IncidentStatusNotifier {
+export class SlackWebApiIncidentStatusNotifier
+  implements IncidentStatusNotifier, IncidentReviewReadyNotifier
+{
   private readonly request: typeof fetch;
   private readonly timeoutMs: number;
 
@@ -84,6 +103,50 @@ export class SlackWebApiIncidentStatusNotifier implements IncidentStatusNotifier
       throw new SlackWebApiError('SLACK_WORKSPACE_MISMATCH');
     }
 
+    await this.postStatus({
+      channelId: input.channelId,
+      threadTs: input.threadTs,
+      clientMessageId: input.incidentId,
+      incidentId: input.incidentId,
+      text: [
+        'Incident review accepted.',
+        `Reference: ${input.incidentId}`,
+        'Status: collecting evidence.',
+      ].join('\n'),
+    });
+  }
+
+  public async notifyReviewReady(
+    notification: IncidentReviewReadyNotification,
+  ): Promise<void> {
+    const input = readyNotificationSchema.parse(notification);
+    if (input.workspaceId !== this.installation.workspaceId) {
+      throw new SlackWebApiError('SLACK_WORKSPACE_MISMATCH');
+    }
+
+    await this.postStatus({
+      channelId: input.channelId,
+      threadTs: input.threadTs,
+      clientMessageId: input.reportDraftId,
+      incidentId: input.incidentId,
+      text: [
+        'Incident analysis and postmortem draft are ready.',
+        `Reference: ${input.incidentId}`,
+        `Timeline events: ${input.timelineEventCount}`,
+        `Claims: ${input.claimCount}`,
+        `Open questions: ${input.openQuestionCount}`,
+        'Status: human review required.',
+      ].join('\n'),
+    });
+  }
+
+  private async postStatus(input: {
+    readonly channelId: string;
+    readonly threadTs: string;
+    readonly clientMessageId: string;
+    readonly incidentId: string;
+    readonly text: string;
+  }): Promise<void> {
     let response: Response;
     try {
       response = await this.request(SLACK_POST_MESSAGE_URL, {
@@ -96,12 +159,8 @@ export class SlackWebApiIncidentStatusNotifier implements IncidentStatusNotifier
         body: JSON.stringify({
           channel: input.channelId,
           thread_ts: input.threadTs,
-          client_msg_id: input.incidentId,
-          text: [
-            'Incident review accepted.',
-            `Reference: ${input.incidentId}`,
-            'Status: collecting evidence.',
-          ].join('\n'),
+          client_msg_id: input.clientMessageId,
+          text: input.text,
           mrkdwn: false,
           unfurl_links: false,
           unfurl_media: false,

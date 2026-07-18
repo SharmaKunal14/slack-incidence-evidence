@@ -129,6 +129,16 @@ resource "aws_cloudwatch_log_group" "incident_analysis" {
   retention_in_days = var.log_retention_days
 }
 
+resource "aws_cloudwatch_log_group" "incident_report" {
+  name              = "/aws/lambda/${local.name_prefix}-incident-report"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_cloudwatch_log_group" "incident_review_notification" {
+  name              = "/aws/lambda/${local.name_prefix}-incident-review-notification"
+  retention_in_days = var.log_retention_days
+}
+
 resource "aws_cloudwatch_log_group" "api" {
   name              = "/aws/apigateway/${local.name_prefix}"
   retention_in_days = var.log_retention_days
@@ -198,6 +208,18 @@ data "aws_iam_policy_document" "step_functions_tasks" {
     actions   = ["lambda:InvokeFunction"]
     resources = [aws_lambda_function.incident_analysis.arn]
   }
+
+  statement {
+    sid       = "InvokeIncidentReport"
+    actions   = ["lambda:InvokeFunction"]
+    resources = [aws_lambda_function.incident_report.arn]
+  }
+
+  statement {
+    sid       = "InvokeIncidentReviewNotification"
+    actions   = ["lambda:InvokeFunction"]
+    resources = [aws_lambda_function.incident_review_notification.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "step_functions_tasks" {
@@ -212,7 +234,7 @@ resource "aws_sfn_state_machine" "incident_workflow" {
   type     = "STANDARD"
 
   definition = jsonencode({
-    Comment = "Checkpointed evidence collection and AI extraction. Raw evidence and model output remain in PostgreSQL, never workflow state."
+    Comment = "Checkpointed evidence collection, AI extraction, report generation, and content-free review notification. Raw evidence and model output remain in PostgreSQL, never workflow state."
     StartAt = "CollectSlackThreadPage"
     States = {
       CollectSlackThreadPage = {
@@ -299,7 +321,7 @@ resource "aws_sfn_state_machine" "incident_workflow" {
           {
             Variable     = "$.status"
             StringEquals = "COMPLETE"
-            Next         = "IncidentAnalysisComplete"
+            Next         = "GenerateIncidentReport"
           },
           {
             Variable     = "$.status"
@@ -319,13 +341,124 @@ resource "aws_sfn_state_machine" "incident_workflow" {
         SecondsPath = "$.retryAfterSeconds"
         Next        = "AnalyzeIncidentEvidence"
       }
-      IncidentAnalysisComplete = {
+      GenerateIncidentReport = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::lambda:invoke"
+        Parameters = {
+          FunctionName = aws_lambda_function.incident_report.arn
+          Payload = {
+            "version.$"            = "$.version"
+            "tenantId.$"           = "$.tenantId"
+            "incidentId.$"         = "$.incidentId"
+            "jobId.$"              = "$.jobId"
+            "analysisRunId.$"      = "$.analysisRunId"
+            "timelineEventCount.$" = "$.timelineEventCount"
+            "claimCount.$"         = "$.claimCount"
+            "openQuestionCount.$"  = "$.openQuestionCount"
+          }
+        }
+        OutputPath = "$.Payload"
+        Retry = [{
+          ErrorEquals     = ["States.TaskFailed"]
+          IntervalSeconds = 2
+          MaxAttempts     = 3
+          BackoffRate     = 2
+        }]
+        Next = "ReportStatus"
+      }
+      ReportStatus = {
+        Type = "Choice"
+        Choices = [
+          {
+            Variable     = "$.status"
+            StringEquals = "NEEDS_REVIEW"
+            Next         = "NotifyIncidentReviewReady"
+          },
+          {
+            Variable     = "$.status"
+            StringEquals = "RETRY_WAIT"
+            Next         = "WaitForReportRetry"
+          },
+          {
+            Variable     = "$.status"
+            StringEquals = "FAILED"
+            Next         = "IncidentReportFailed"
+          }
+        ]
+        Default = "IncidentReportFailed"
+      }
+      WaitForReportRetry = {
+        Type        = "Wait"
+        SecondsPath = "$.retryAfterSeconds"
+        Next        = "GenerateIncidentReport"
+      }
+      NotifyIncidentReviewReady = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::lambda:invoke"
+        Parameters = {
+          FunctionName = aws_lambda_function.incident_review_notification.arn
+          Payload = {
+            "version.$"            = "$.version"
+            "tenantId.$"           = "$.tenantId"
+            "incidentId.$"         = "$.incidentId"
+            "jobId.$"              = "$.jobId"
+            "analysisRunId.$"      = "$.analysisRunId"
+            "reportDraftId.$"      = "$.reportDraftId"
+            "timelineEventCount.$" = "$.timelineEventCount"
+            "claimCount.$"         = "$.claimCount"
+            "openQuestionCount.$"  = "$.openQuestionCount"
+          }
+        }
+        OutputPath = "$.Payload"
+        Retry = [{
+          ErrorEquals     = ["States.TaskFailed"]
+          IntervalSeconds = 2
+          MaxAttempts     = 3
+          BackoffRate     = 2
+        }]
+        Next = "NotificationStatus"
+      }
+      NotificationStatus = {
+        Type = "Choice"
+        Choices = [
+          {
+            Variable     = "$.status"
+            StringEquals = "NOTIFIED"
+            Next         = "IncidentReviewReady"
+          },
+          {
+            Variable     = "$.status"
+            StringEquals = "RETRY_WAIT"
+            Next         = "WaitForNotificationRetry"
+          },
+          {
+            Variable     = "$.status"
+            StringEquals = "FAILED"
+            Next         = "IncidentReviewReadyNotificationSkipped"
+          }
+        ]
+        Default = "IncidentReviewReadyNotificationSkipped"
+      }
+      WaitForNotificationRetry = {
+        Type        = "Wait"
+        SecondsPath = "$.retryAfterSeconds"
+        Next        = "NotifyIncidentReviewReady"
+      }
+      IncidentReviewReady = {
+        Type = "Succeed"
+      }
+      IncidentReviewReadyNotificationSkipped = {
         Type = "Succeed"
       }
       IncidentAnalysisFailed = {
         Type  = "Fail"
         Error = "IncidentAnalysisFailed"
         Cause = "AI extraction reached a durable terminal failure; inspect the redacted analysis failure code."
+      }
+      IncidentReportFailed = {
+        Type  = "Fail"
+        Error = "IncidentReportFailed"
+        Cause = "Evidence-constrained report generation reached a durable terminal failure; inspect the redacted report failure code."
       }
       SlackEvidenceCollectionFailed = {
         Type  = "Fail"
@@ -612,6 +745,132 @@ resource "aws_iam_role_policy" "incident_analysis" {
   policy = data.aws_iam_policy_document.incident_analysis.json
 }
 
+resource "aws_iam_role" "incident_report" {
+  name               = "${local.name_prefix}-incident-report-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+}
+
+data "aws_iam_policy_document" "incident_report" {
+  statement {
+    sid       = "WriteFunctionLogs"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.incident_report.arn}:*"]
+  }
+
+  dynamic "statement" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      # Lambda ENI management APIs require wildcard resources. This grant is
+      # omitted unless explicit VPC inputs attach the database-using function.
+      sid = "ManageReportVpcNetworkInterfaces"
+      actions = [
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:CreateNetworkInterface",
+        "ec2:DeleteNetworkInterface",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeSubnets",
+        "ec2:UnassignPrivateIpAddresses",
+      ]
+      resources = ["*"]
+    }
+  }
+
+  statement {
+    sid       = "ReadDatabaseCredentials"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.database_secret_arn]
+  }
+
+  statement {
+    sid       = "ReadOpenAiApiKey"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.openai_api_secret_arn]
+  }
+
+  dynamic "statement" {
+    for_each = length(var.secrets_kms_key_arns) == 0 ? [] : [1]
+    content {
+      sid       = "DecryptCustomerManagedSecretKeys"
+      actions   = ["kms:Decrypt"]
+      resources = var.secrets_kms_key_arns
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+      }
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "incident_report" {
+  name   = "incident-report"
+  role   = aws_iam_role.incident_report.id
+  policy = data.aws_iam_policy_document.incident_report.json
+}
+
+resource "aws_iam_role" "incident_review_notification" {
+  name               = "${local.name_prefix}-incident-review-notification-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+}
+
+data "aws_iam_policy_document" "incident_review_notification" {
+  statement {
+    sid       = "WriteFunctionLogs"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.incident_review_notification.arn}:*"]
+  }
+
+  dynamic "statement" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      # Lambda ENI management APIs require wildcard resources. This grant is
+      # omitted unless explicit VPC inputs attach the database-using function.
+      sid = "ManageReviewNotificationVpcNetworkInterfaces"
+      actions = [
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:CreateNetworkInterface",
+        "ec2:DeleteNetworkInterface",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeSubnets",
+        "ec2:UnassignPrivateIpAddresses",
+      ]
+      resources = ["*"]
+    }
+  }
+
+  statement {
+    sid       = "ReadDatabaseCredentials"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.database_secret_arn]
+  }
+
+  statement {
+    sid       = "ReadSlackBotToken"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.slack_bot_token_secret_arn]
+  }
+
+  dynamic "statement" {
+    for_each = length(var.secrets_kms_key_arns) == 0 ? [] : [1]
+    content {
+      sid       = "DecryptCustomerManagedSecretKeys"
+      actions   = ["kms:Decrypt"]
+      resources = var.secrets_kms_key_arns
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+      }
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "incident_review_notification" {
+  name   = "incident-review-notification"
+  role   = aws_iam_role.incident_review_notification.id
+  policy = data.aws_iam_policy_document.incident_review_notification.json
+}
+
 # -----------------------------------------------------------------------------
 # Lambda compute. All functions use one immutable build artifact but distinct
 # composition roots, IAM roles, configuration, and concurrency budgets.
@@ -845,6 +1104,139 @@ resource "aws_lambda_function" "incident_analysis" {
   depends_on = [
     aws_cloudwatch_log_group.incident_analysis,
     aws_iam_role_policy.incident_analysis,
+  ]
+}
+
+resource "aws_lambda_function" "incident_report" {
+  function_name = "${local.name_prefix}-incident-report"
+  description   = "Generates and transactionally persists a source-linked, human-review-gated incident report draft."
+  role          = aws_iam_role.incident_report.arn
+  runtime       = "nodejs22.x"
+  architectures = [var.lambda_architecture]
+  handler       = var.incident_report_lambda_handler
+
+  filename         = var.lambda_artifact_path
+  source_code_hash = filebase64sha256(var.lambda_artifact_path)
+
+  memory_size                    = var.incident_report_memory_mb
+  timeout                        = var.incident_report_timeout_seconds
+  reserved_concurrent_executions = var.incident_report_reserved_concurrency
+
+  environment {
+    variables = {
+      AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
+      DATABASE_HOST                       = var.database_host
+      DATABASE_NAME                       = var.database_name
+      DATABASE_POOL_MAX                   = tostring(var.database_pool_max)
+      DATABASE_PORT                       = tostring(var.database_port)
+      DATABASE_SECRET_ARN                 = var.database_secret_arn
+      DATABASE_SSL                        = "true"
+      LOG_LEVEL                           = var.log_level
+      NODE_ENV                            = local.node_env
+      OPENAI_API_SECRET_ARN               = var.openai_api_secret_arn
+      OPENAI_MODEL                        = var.openai_model
+      OPENAI_REPORT_MAX_OUTPUT_TOKENS     = tostring(var.openai_report_max_output_tokens)
+      OPENAI_REPORT_TIMEOUT_MS            = tostring(var.openai_report_timeout_milliseconds)
+      REPORT_LEASE_SECONDS                = tostring(var.report_lease_seconds)
+      REPORT_MAX_ATTEMPTS                 = tostring(var.report_max_attempts)
+      REPORT_MAX_INPUT_CHARACTERS         = tostring(var.report_max_input_characters)
+      REPORT_MAX_SOURCES                  = tostring(var.report_max_sources)
+    }
+  }
+
+  tracing_config {
+    mode = "PassThrough"
+  }
+
+  dynamic "vpc_config" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      subnet_ids         = var.worker_subnet_ids
+      security_group_ids = var.worker_security_group_ids
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition = (
+        length(var.worker_subnet_ids) == 0 && length(var.worker_security_group_ids) == 0
+        ) || (
+        length(var.worker_subnet_ids) > 0 && length(var.worker_security_group_ids) > 0
+      )
+      error_message = "worker_subnet_ids and worker_security_group_ids must either both be empty or both be populated."
+    }
+    precondition {
+      condition     = var.report_lease_seconds > var.incident_report_timeout_seconds
+      error_message = "report_lease_seconds must outlive incident_report_timeout_seconds."
+    }
+    precondition {
+      condition     = var.openai_report_timeout_milliseconds + 5000 < var.incident_report_timeout_seconds * 1000
+      error_message = "incident_report_timeout_seconds must leave at least five seconds after the OpenAI timeout for durable persistence."
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.incident_report,
+    aws_iam_role_policy.incident_report,
+  ]
+}
+
+resource "aws_lambda_function" "incident_review_notification" {
+  function_name = "${local.name_prefix}-incident-review-notification"
+  description   = "Posts a bounded, content-free Slack status after a report draft reaches human review."
+  role          = aws_iam_role.incident_review_notification.arn
+  runtime       = "nodejs22.x"
+  architectures = [var.lambda_architecture]
+  handler       = var.incident_review_notification_lambda_handler
+
+  filename         = var.lambda_artifact_path
+  source_code_hash = filebase64sha256(var.lambda_artifact_path)
+
+  memory_size                    = var.review_notification_memory_mb
+  timeout                        = var.review_notification_timeout_seconds
+  reserved_concurrent_executions = var.review_notification_reserved_concurrency
+
+  environment {
+    variables = {
+      AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
+      DATABASE_HOST                       = var.database_host
+      DATABASE_NAME                       = var.database_name
+      DATABASE_POOL_MAX                   = tostring(var.database_pool_max)
+      DATABASE_PORT                       = tostring(var.database_port)
+      DATABASE_SECRET_ARN                 = var.database_secret_arn
+      DATABASE_SSL                        = "true"
+      LOG_LEVEL                           = var.log_level
+      NODE_ENV                            = local.node_env
+      SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
+    }
+  }
+
+  tracing_config {
+    mode = "PassThrough"
+  }
+
+  dynamic "vpc_config" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      subnet_ids         = var.worker_subnet_ids
+      security_group_ids = var.worker_security_group_ids
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition = (
+        length(var.worker_subnet_ids) == 0 && length(var.worker_security_group_ids) == 0
+        ) || (
+        length(var.worker_subnet_ids) > 0 && length(var.worker_security_group_ids) > 0
+      )
+      error_message = "worker_subnet_ids and worker_security_group_ids must either both be empty or both be populated."
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.incident_review_notification,
+    aws_iam_role_policy.incident_review_notification,
   ]
 }
 

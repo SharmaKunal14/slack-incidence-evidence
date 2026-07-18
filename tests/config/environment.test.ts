@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   loadIncidentAnalysisLambdaEnvironment,
+  loadIncidentReportLambdaEnvironment,
   loadIncidentWorkerLambdaEnvironment,
   loadSlackEvidenceCollectorLambdaEnvironment,
   loadSlackIngressLambdaEnvironment,
@@ -127,6 +128,37 @@ describe('Lambda environment configuration', () => {
       loadIncidentAnalysisLambdaEnvironment({
         ...source,
         ANALYSIS_LEASE_SECONDS: '60',
+      }),
+    ).toThrow();
+  });
+
+  it('loads independent bounded report-generation budgets', () => {
+    const source = {
+      DATABASE_SECRET_ARN: 'database-secret-arn',
+      DATABASE_HOST: 'pooler.example.test',
+      DATABASE_NAME: 'postgres',
+      OPENAI_API_SECRET_ARN: 'openai-secret-arn',
+      OPENAI_MODEL: 'approved-model-snapshot',
+      REPORT_MAX_SOURCES: '150',
+      REPORT_MAX_INPUT_CHARACTERS: '80000',
+      REPORT_MAX_ATTEMPTS: '2',
+      REPORT_LEASE_SECONDS: '180',
+      OPENAI_REPORT_TIMEOUT_MS: '90000',
+      OPENAI_REPORT_MAX_OUTPUT_TOKENS: '7000',
+    };
+
+    expect(loadIncidentReportLambdaEnvironment(source)).toMatchObject({
+      REPORT_MAX_SOURCES: 150,
+      REPORT_MAX_INPUT_CHARACTERS: 80000,
+      REPORT_MAX_ATTEMPTS: 2,
+      REPORT_LEASE_SECONDS: 180,
+      OPENAI_REPORT_TIMEOUT_MS: 90000,
+      OPENAI_REPORT_MAX_OUTPUT_TOKENS: 7000,
+    });
+    expect(() =>
+      loadIncidentReportLambdaEnvironment({
+        ...source,
+        REPORT_LEASE_SECONDS: '60',
       }),
     ).toThrow();
   });
