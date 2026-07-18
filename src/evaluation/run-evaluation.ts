@@ -1,3 +1,4 @@
+import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import process from 'node:process';
@@ -14,8 +15,8 @@ import {
   type IncidentReport,
   type IncidentReportManifest,
 } from '../application/report/incident-report.js';
-import { ResponsesIncidentAnalyzer } from '../integrations/openai/responses-incident-analyzer.js';
-import { ResponsesIncidentReportGenerator } from '../integrations/openai/responses-incident-report-generator.js';
+import { loadLiveEvaluationEnvironment } from '../config/environment.js';
+import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import {
   parseEvaluationFixtureFile,
   type IncidentEvaluationFixture,
@@ -24,6 +25,10 @@ import {
   evaluateIncidentOutput,
   type IncidentEvaluationResult,
 } from './evaluate-incident-output.js';
+import {
+  createLiveEvaluationProviders,
+  type LiveEvaluationProviders,
+} from './live-evaluation-providers.js';
 
 const FIXTURE_FILE = fileURLToPath(
   new URL('../../evals/fixtures/v1.json', import.meta.url),
@@ -46,7 +51,7 @@ interface EvaluationSummary {
 async function main(): Promise<void> {
   const mode = parseMode(process.argv[2]);
   const fixtures = await loadFixtures();
-  const providers = mode === 'live' ? liveProviders() : null;
+  const providers = mode === 'live' ? await liveProviders() : null;
   const evaluated: EvaluatedFixture[] = [];
   const failures: { readonly fixtureId: string; readonly code: string }[] = [];
 
@@ -193,41 +198,17 @@ function referenceReport(manifest: IncidentReportManifest): IncidentReport {
   };
 }
 
-function liveProviders(): {
-  readonly analyzer: IncidentAnalyzer;
-  readonly generator: IncidentReportGenerator;
-} {
-  if (process.env['EVAL_ALLOW_LIVE_PROVIDER'] !== 'true') {
-    throw new Error(
-      'Set EVAL_ALLOW_LIVE_PROVIDER=true to acknowledge live model cost',
+async function liveProviders(): Promise<LiveEvaluationProviders> {
+  const environment = loadLiveEvaluationEnvironment();
+  const secrets = new SecretsManagerClient({ region: environment.AWS_REGION });
+  try {
+    return await createLiveEvaluationProviders(
+      environment,
+      new SecretsManagerSecretReader(secrets),
     );
+  } finally {
+    secrets.destroy();
   }
-  const apiKey = requiredEnvironment('OPENAI_API_KEY');
-  const model = requiredEnvironment('OPENAI_MODEL');
-  const timeoutMilliseconds = optionalIntegerEnvironment(
-    'OPENAI_TIMEOUT_MS',
-    90_000,
-  );
-  return {
-    analyzer: new ResponsesIncidentAnalyzer({
-      apiKey,
-      model,
-      timeoutMilliseconds,
-      maxOutputTokens: optionalIntegerEnvironment(
-        'OPENAI_MAX_OUTPUT_TOKENS',
-        6_000,
-      ),
-    }),
-    generator: new ResponsesIncidentReportGenerator({
-      apiKey,
-      model,
-      timeoutMilliseconds,
-      maxOutputTokens: optionalIntegerEnvironment(
-        'OPENAI_REPORT_MAX_OUTPUT_TOKENS',
-        8_000,
-      ),
-    }),
-  };
 }
 
 function summarize(
@@ -321,26 +302,6 @@ function parseMode(value: string | undefined): EvaluationMode {
     return value;
   }
   throw new Error('Evaluation mode must be offline or live');
-}
-
-function requiredEnvironment(name: string): string {
-  const value = process.env[name];
-  if (value === undefined || value.trim().length === 0) {
-    throw new Error(`${name} is required for live evaluation`);
-  }
-  return value;
-}
-
-function optionalIntegerEnvironment(name: string, fallback: number): number {
-  const value = process.env[name];
-  if (value === undefined) {
-    return fallback;
-  }
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 1) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return parsed;
 }
 
 function safeErrorCode(error: unknown): string {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   loadIncidentAnalysisLambdaEnvironment,
   loadIncidentReportLambdaEnvironment,
+  loadLiveEvaluationEnvironment,
   loadIncidentWorkerLambdaEnvironment,
   loadSlackEvidenceCollectorLambdaEnvironment,
   loadSlackIngressLambdaEnvironment,
@@ -159,6 +160,52 @@ describe('Lambda environment configuration', () => {
       loadIncidentReportLambdaEnvironment({
         ...source,
         REPORT_LEASE_SECONDS: '60',
+      }),
+    ).toThrow();
+  });
+
+  it('loads live evaluation configuration without a plaintext API key', () => {
+    const environment = loadLiveEvaluationEnvironment({
+      EVAL_ALLOW_LIVE_PROVIDER: 'true',
+      AWS_REGION: 'ap-southeast-2',
+      OPENAI_API_SECRET_ARN:
+        'arn:aws:secretsmanager:ap-southeast-2:393209814365:secret:incident-copilot/development/openai-AbCdEf',
+      OPENAI_MODEL: 'approved-model-snapshot',
+    });
+
+    expect(environment).toMatchObject({
+      EVAL_ALLOW_LIVE_PROVIDER: 'true',
+      AWS_REGION: 'ap-southeast-2',
+      OPENAI_MODEL: 'approved-model-snapshot',
+      OPENAI_TIMEOUT_MS: 90_000,
+      OPENAI_MAX_OUTPUT_TOKENS: 6_000,
+      OPENAI_REPORT_MAX_OUTPUT_TOKENS: 8_000,
+    });
+    expect(environment).not.toHaveProperty('OPENAI_API_KEY');
+  });
+
+  it('requires explicit live-evaluation consent and a Secrets Manager ARN', () => {
+    const source = {
+      AWS_REGION: 'ap-southeast-2',
+      OPENAI_API_SECRET_ARN:
+        'arn:aws:secretsmanager:ap-southeast-2:393209814365:secret:incident-copilot/development/openai-AbCdEf',
+      OPENAI_MODEL: 'approved-model-snapshot',
+    };
+
+    expect(() => loadLiveEvaluationEnvironment(source)).toThrow();
+    expect(() =>
+      loadLiveEvaluationEnvironment({
+        ...source,
+        EVAL_ALLOW_LIVE_PROVIDER: 'true',
+        OPENAI_API_SECRET_ARN: 'not-a-secrets-manager-arn',
+        OPENAI_API_KEY: 'must-not-be-used',
+      }),
+    ).toThrow();
+    expect(() =>
+      loadLiveEvaluationEnvironment({
+        ...source,
+        EVAL_ALLOW_LIVE_PROVIDER: 'true',
+        AWS_REGION: 'us-east-1',
       }),
     ).toThrow();
   });
