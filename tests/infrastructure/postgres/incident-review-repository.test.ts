@@ -1,6 +1,9 @@
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { describe, expect, it, vi } from 'vitest';
-import { ReviewConflictError } from '../../../src/application/review/incident-review.js';
+import {
+  ReviewConfigurationError,
+  ReviewConflictError,
+} from '../../../src/application/review/incident-review.js';
 import type { ApproveReportRevisionInput } from '../../../src/application/ports/incident-review-repository.js';
 import { PostgresIncidentReviewRepository } from '../../../src/infrastructure/postgres/incident-review-repository.js';
 
@@ -8,6 +11,7 @@ const now = new Date('2026-07-18T01:00:00.000Z');
 const incidentId = '2c6a2f4a-f762-41e9-9620-a07abdaa5c48';
 const revisionId = '617b5728-8404-4934-a616-1a319ba72b7f';
 const subject = '9f218e92-36a8-455d-869c-a76e27b399df';
+const reportDraftId = '7df1bcac-5583-4cd6-91db-981989f4c482';
 
 function result<Row extends QueryResultRow>(
   rows: Row[],
@@ -38,7 +42,7 @@ function revisionRow(status: 'DRAFT' | 'APPROVED' = 'DRAFT'): {
     id: revisionId,
     tenant_id: 'tenant-1',
     incident_id: incidentId,
-    report_draft_id: '7df1bcac-5583-4cd6-91db-981989f4c482',
+    report_draft_id: reportDraftId,
     revision_number: 2,
     status,
     created_by_subject: subject,
@@ -167,5 +171,132 @@ describe('PostgresIncidentReviewRepository approval', () => {
     expect(query).toHaveBeenCalledWith('ROLLBACK');
     expect(query).not.toHaveBeenCalledWith('COMMIT');
     expect(release).toHaveBeenCalledOnce();
+  });
+});
+
+function reviewReadPool(revisionStatementRows: readonly QueryResultRow[]): {
+  readonly pool: Pool;
+  readonly query: ReturnType<typeof vi.fn>;
+} {
+  const query = vi.fn((sql: string, parameters?: readonly unknown[]) => {
+    if (sql.includes('FROM incidents i')) {
+      return Promise.resolve(
+        result([
+          {
+            tenant_id: 'tenant-1',
+            incident_id: incidentId,
+            title: 'Checkout outage',
+            severity: 'SEV1',
+            incident_status: 'NEEDS_REVIEW',
+            incident_version: 4,
+            incident_created_at: now,
+            incident_updated_at: now,
+            report_draft_id: reportDraftId,
+            draft_version: 1,
+            rendered_markdown: '# AI draft',
+            analysis_run_id: 'analysis-1',
+          },
+        ]),
+      );
+    }
+    if (sql.includes('FROM incident_report_sections section')) {
+      return Promise.resolve(
+        result([
+          {
+            id: 'statement-1',
+            section_type: 'ROOT_CAUSE',
+            section_position: 0,
+            statement_position: 0,
+            statement_type: 'CLAIM',
+            statement: 'A deploy may have exhausted the connection pool.',
+            classification: 'HYPOTHESIS',
+            claim_ids: ['claim-1'],
+            timeline_event_ids: [],
+          },
+        ]),
+      );
+    }
+    if (sql.includes('FROM claims claim')) {
+      return Promise.resolve(result([]));
+    }
+    if (sql.includes('FROM timeline_events event')) {
+      return Promise.resolve(result([]));
+    }
+    if (sql.includes('FROM source_artifacts artifact')) {
+      return Promise.resolve(result([]));
+    }
+    if (sql.includes('FROM analysis_open_questions')) {
+      return Promise.resolve(result([]));
+    }
+    if (sql.includes('FROM report_revision_statements')) {
+      expect(parameters).toEqual([
+        'tenant-1',
+        incidentId,
+        reportDraftId,
+        revisionId,
+        301,
+      ]);
+      return Promise.resolve(result([...revisionStatementRows]));
+    }
+    if (sql.includes('FROM report_revisions')) {
+      return Promise.resolve(
+        result([
+          { ...revisionRow(), statement_count: revisionStatementRows.length },
+        ]),
+      );
+    }
+    return Promise.reject(new Error(`Unexpected query: ${sql}`));
+  });
+  return { pool: { query } as unknown as Pool, query };
+}
+
+describe('PostgresIncidentReviewRepository review bundle', () => {
+  it('loads the complete newest immutable revision using tenant-scoped keys', async () => {
+    const { pool, query } = reviewReadPool([
+      {
+        original_report_statement_id: 'statement-1',
+        section_type: 'ROOT_CAUSE',
+        position: 0,
+        decision: 'EDIT',
+        statement: 'The deploy exhausted the database connection pool.',
+        classification: 'HUMAN_CONFIRMED',
+      },
+    ]);
+
+    const bundle = await new PostgresIncidentReviewRepository(pool).loadBundle(
+      { subject },
+      incidentId,
+    );
+
+    expect(bundle?.latestRevision).toMatchObject({
+      id: revisionId,
+      revisionNumber: 2,
+      status: 'DRAFT',
+      statements: [
+        {
+          originalStatementId: 'statement-1',
+          sectionType: 'root_cause',
+          position: 0,
+          decision: 'EDIT',
+          text: 'The deploy exhausted the database connection pool.',
+          classification: 'human_confirmed',
+        },
+      ],
+    });
+    expect(query).toHaveBeenCalledWith(expect.any(String), [
+      subject,
+      incidentId,
+    ]);
+  });
+
+  it('rejects an incomplete immutable revision instead of displaying it', async () => {
+    const { pool } = reviewReadPool([]);
+
+    await expect(
+      new PostgresIncidentReviewRepository(pool).loadBundle(
+        { subject },
+        incidentId,
+      ),
+    ).rejects.toBeInstanceOf(ReviewConfigurationError);
   });
 });

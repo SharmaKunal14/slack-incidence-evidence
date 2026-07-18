@@ -104,6 +104,19 @@ export interface ReportRevisionSummary {
   readonly acknowledgedOpenQuestions: boolean;
 }
 
+export interface ReviewRevisionStatement {
+  readonly originalStatementId: string;
+  readonly sectionType: IncidentReportSectionType;
+  readonly position: number;
+  readonly decision: ReviewDecision;
+  readonly text: string | null;
+  readonly classification: ReviewClassification | null;
+}
+
+export interface ReportRevisionDetail extends ReportRevisionSummary {
+  readonly statements: readonly ReviewRevisionStatement[];
+}
+
 export interface IncidentReviewBundle {
   readonly incident: {
     readonly id: string;
@@ -128,6 +141,7 @@ export interface IncidentReviewBundle {
     readonly question: string;
   }[];
   readonly revisions: readonly ReportRevisionSummary[];
+  readonly latestRevision: ReportRevisionDetail | null;
 }
 
 export interface ReviewStatementDecisionInput {
