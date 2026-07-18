@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   loadIncidentAnalysisLambdaEnvironment,
+  loadIncidentReviewApiLambdaEnvironment,
+  loadIncidentReviewNotificationLambdaEnvironment,
   loadIncidentReportLambdaEnvironment,
   loadLiveEvaluationEnvironment,
   loadIncidentWorkerLambdaEnvironment,
@@ -160,6 +162,42 @@ describe('Lambda environment configuration', () => {
       loadIncidentReportLambdaEnvironment({
         ...source,
         REPORT_LEASE_SECONDS: '60',
+      }),
+    ).toThrow();
+  });
+
+  it('loads bounded review API and plain HTTPS review-link configuration', () => {
+    const database = {
+      DATABASE_SECRET_ARN: 'database-secret-arn',
+      DATABASE_HOST: 'pooler.example.test',
+      DATABASE_NAME: 'postgres',
+    };
+
+    expect(
+      loadIncidentReviewApiLambdaEnvironment({
+        ...database,
+        REVIEW_API_MAX_BODY_BYTES: '262144',
+      }).REVIEW_API_MAX_BODY_BYTES,
+    ).toBe(262_144);
+    expect(() =>
+      loadIncidentReviewApiLambdaEnvironment({
+        ...database,
+        REVIEW_API_MAX_BODY_BYTES: '1048577',
+      }),
+    ).toThrow();
+
+    expect(
+      loadIncidentReviewNotificationLambdaEnvironment({
+        ...database,
+        SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
+        REVIEW_APP_BASE_URL: 'https://review.example.test',
+      }).REVIEW_APP_BASE_URL,
+    ).toBe('https://review.example.test');
+    expect(() =>
+      loadIncidentReviewNotificationLambdaEnvironment({
+        ...database,
+        SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
+        REVIEW_APP_BASE_URL: 'https://user@review.example.test?secret=value',
       }),
     ).toThrow();
   });

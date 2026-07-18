@@ -67,6 +67,18 @@ variable "incident_review_notification_lambda_handler" {
   default     = "incident-review-notification-main.handler"
 }
 
+variable "incident_review_api_lambda_handler" {
+  description = "Authenticated human-review API handler exported at the root of the shared Lambda artifact."
+  type        = string
+  default     = "incident-review-api-main.handler"
+}
+
+variable "review_web_artifact_directory" {
+  description = "Directory containing the built review console assets. Run npm run build:web before Terraform planning."
+  type        = string
+  default     = "../../artifacts/review-web"
+}
+
 variable "lambda_architecture" {
   description = "Lambda CPU architecture. arm64 is cost-efficient for this pure Node.js workload."
   type        = string
@@ -105,6 +117,21 @@ variable "database_secret_arn" {
   validation {
     condition     = can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.database_secret_arn))
     error_message = "database_secret_arn must be a Secrets Manager secret ARN."
+  }
+}
+
+variable "review_database_secret_arn" {
+  description = "Optional development override and required production ARN for a dedicated least-privilege review API database user. Terraform never reads its value."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = (
+      var.review_database_secret_arn == null ||
+      can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.review_database_secret_arn))
+    )
+    error_message = "review_database_secret_arn must be null or a Secrets Manager secret ARN."
   }
 }
 
@@ -583,6 +610,72 @@ variable "review_notification_reserved_concurrency" {
   validation {
     condition     = var.review_notification_reserved_concurrency >= 1
     error_message = "review_notification_reserved_concurrency must be at least 1."
+  }
+}
+
+variable "review_api_memory_mb" {
+  description = "Memory assigned to the authenticated human-review API Lambda."
+  type        = number
+  default     = 512
+
+  validation {
+    condition     = var.review_api_memory_mb >= 128 && var.review_api_memory_mb <= 10240
+    error_message = "review_api_memory_mb must be between 128 and 10240 MB."
+  }
+}
+
+variable "review_api_timeout_seconds" {
+  description = "Timeout for one authenticated review API operation, including a PostgreSQL transaction."
+  type        = number
+  default     = 20
+
+  validation {
+    condition     = var.review_api_timeout_seconds >= 15 && var.review_api_timeout_seconds <= 29
+    error_message = "review_api_timeout_seconds must be between 15 and 29 seconds so bounded database work can finish first."
+  }
+}
+
+variable "review_api_reserved_concurrency" {
+  description = "Hard concurrency boundary protecting PostgreSQL from review API bursts."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.review_api_reserved_concurrency >= 1 && var.review_api_reserved_concurrency <= 100
+    error_message = "review_api_reserved_concurrency must be between 1 and 100."
+  }
+}
+
+variable "review_api_max_body_bytes" {
+  description = "Maximum decoded JSON body accepted by the review API."
+  type        = number
+  default     = 524288
+
+  validation {
+    condition     = var.review_api_max_body_bytes >= 1024 && var.review_api_max_body_bytes <= 1048576
+    error_message = "review_api_max_body_bytes must be between 1 KiB and 1 MiB."
+  }
+}
+
+variable "review_api_throttle_rate_limit" {
+  description = "Steady authenticated review requests per second."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.review_api_throttle_rate_limit > 0
+    error_message = "review_api_throttle_rate_limit must be greater than zero."
+  }
+}
+
+variable "review_api_throttle_burst_limit" {
+  description = "Short authenticated review request burst accepted by API Gateway."
+  type        = number
+  default     = 20
+
+  validation {
+    condition     = var.review_api_throttle_burst_limit >= 1
+    error_message = "review_api_throttle_burst_limit must be at least one."
   }
 }
 

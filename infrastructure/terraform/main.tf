@@ -1207,6 +1207,7 @@ resource "aws_lambda_function" "incident_review_notification" {
       DATABASE_SSL                        = "true"
       LOG_LEVEL                           = var.log_level
       NODE_ENV                            = local.node_env
+      REVIEW_APP_BASE_URL                 = "https://${aws_cloudfront_distribution.review.domain_name}"
       SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
     }
   }
@@ -1262,6 +1263,14 @@ resource "aws_apigatewayv2_api" "public" {
   name          = "${local.name_prefix}-api"
   protocol_type = "HTTP"
   description   = "Public integration API for Incident Evidence Copilot"
+
+  cors_configuration {
+    allow_credentials = false
+    allow_headers     = ["authorization", "content-type"]
+    allow_methods     = ["GET", "POST", "OPTIONS"]
+    allow_origins     = ["https://${aws_cloudfront_distribution.review.domain_name}"]
+    max_age           = 300
+  }
 }
 
 resource "aws_apigatewayv2_integration" "slack_ingress" {
@@ -1301,6 +1310,16 @@ resource "aws_apigatewayv2_stage" "default" {
   default_route_settings {
     throttling_burst_limit = var.api_throttle_burst_limit
     throttling_rate_limit  = var.api_throttle_rate_limit
+  }
+
+  dynamic "route_settings" {
+    for_each = local.review_api_routes
+    content {
+      route_key                = route_settings.value
+      throttling_burst_limit   = var.review_api_throttle_burst_limit
+      throttling_rate_limit    = var.review_api_throttle_rate_limit
+      detailed_metrics_enabled = true
+    }
   }
 }
 

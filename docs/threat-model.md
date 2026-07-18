@@ -1,6 +1,6 @@
 # Threat model
 
-Status: active; collection, AI extraction, and review-ready draft controls implemented
+Status: active; collection, AI extraction, human revision, and approval controls implemented
 Last updated: 2026-07-18
 
 ## Scope
@@ -8,13 +8,14 @@ Last updated: 2026-07-18
 This threat model covers the Incident Evidence Copilot foundation:
 
 ```text
-Slack signed request -> API Gateway -> ingress Lambda -> SQS FIFO -> worker Lambda -> PostgreSQL + Step Functions -> collector + analysis + report + notification Lambdas -> Slack/OpenAI APIs + PostgreSQL
+Slack signed request -> API Gateway -> ingress Lambda -> SQS FIFO -> worker Lambda -> PostgreSQL + Step Functions -> collector + analysis + report + notification Lambdas -> Slack/OpenAI APIs + PostgreSQL -> Cognito-authenticated review console/API
 ```
 
 Triggering-thread history collection, structured model extraction,
-evidence-constrained draft generation, and a content-free ready notification are
-implemented. This model also anticipates selected-channel Slack collection,
-GitHub evidence, a reviewer UI, publication, and follow-up issue creation.
+evidence-constrained draft generation, a content-free ready notification, and
+tenant-authorized human revision/approval are implemented. This model also
+anticipates selected-channel Slack collection, GitHub evidence, publication,
+and follow-up issue creation.
 Planned controls are not credited as current protection.
 
 This is an engineering threat model, not a compliance certification or penetration-test result.
@@ -70,6 +71,9 @@ Known design assumptions:
 - The initial Slack trigger policy accepts public channels only.
 - No model output is published automatically.
 - The model runtime has no tools and cannot create a human-confirmed record.
+- Review API production deployments use a dedicated non-owner PostgreSQL role;
+  the Terraform development fallback to a shared database secret is not a
+  production isolation control.
 
 Unproven assumptions that must be validated during deployment:
 
@@ -111,9 +115,14 @@ flowchart LR
         Model["Model provider"]
     end
 
+    subgraph Human["Human review boundary"]
+        Cognito["Cognito"]
+        Review["Reviewer browser"]
+        ReviewAPI["Review API Lambda"]
+    end
+
     subgraph Future["External destinations — roadmap"]
         GitHub["GitHub API"]
-        Review["Reviewer browser"]
         Publish["Document / issue destination"]
     end
 
@@ -140,7 +149,10 @@ flowchart LR
     Notify -->|"content-free ready message"| SlackAPI
     Notify -->|"tenant-scoped readiness check"| DB
     Worker -. "roadmap" .-> GitHub
-    DB -. "review data" .-> Review
+    Notify -->|"content-free HTTPS link"| Review
+    Review -->|"authorization code + PKCE"| Cognito
+    Review -->|"access-token request"| ReviewAPI
+    ReviewAPI -->|"membership-scoped review transaction"| DB
     Review -. "human-approved command" .-> Publish
 ```
 
@@ -488,10 +500,11 @@ Implemented controls:
 - the durable report draft ID is used as Slack's stable client message ID.
 
 A terminal Slack notification failure does not roll back or regenerate the
-draft. The current system has no reviewer URL, so the notification is an
-operational readiness signal rather than an authorization mechanism.
+draft. The message now includes an HTTPS review-console link containing only the
+opaque incident UUID. The link is navigation, not authorization; Cognito plus
+active tenant membership still gates every read.
 
-## Review and publication threats (roadmap)
+## Review and publication threats
 
 ### Permission laundering
 
@@ -503,7 +516,7 @@ Required invariant:
 permitted_report_readers <= intersection(permitted_readers(each included source))
 ```
 
-Required controls:
+Publication controls still required:
 
 - retain source visibility metadata with every evidence link;
 - publish first into a restricted review area;
@@ -520,10 +533,11 @@ Paraphrasing private evidence does not make it public.
 
 Threat: generated text, injected content, or a forged API call marks a cause as confirmed or publishes a document.
 
-Required controls:
+Implemented controls:
 
 - human decisions are a distinct record type created only from an authenticated review action;
-- anti-CSRF protection and short-lived sessions;
+- OAuth state and PKCE, a short-lived access token kept in session storage, and
+  no ambient cookie credential on review mutations;
 - server-side authorisation on every review mutation;
 - immutable decision actor and timestamp;
 - no model adapter has a publication or approval port; and
@@ -533,20 +547,30 @@ Required controls:
 
 Threat: changing an incident, evidence, or publication ID in the review UI exposes another tenant's data.
 
-Required controls:
+Implemented controls:
 
 - derive tenant context from authenticated membership;
 - tenant-scope every query;
 - opaque IDs are convenience, not security;
-- row-level defence in depth;
-- signed, short-lived attachment access; and
-- automated cross-tenant negative tests.
+- indistinguishable not-found responses for unauthorized incident IDs; and
+- focused negative API and repository tests.
+
+Still required before external multi-tenant production are PostgreSQL row-level
+defence in depth, signed short-lived attachment access if file evidence is
+introduced, and a full cross-tenant integration suite against a real database.
 
 ### SSRF and malicious links
 
 Threat: source messages include URLs to cloud metadata, localhost, internal admin services, or malicious redirects.
 
-Required controls:
+Implemented review-link controls:
+
+- the browser never fetches source URLs through the application;
+- displayed links are limited to HTTPS Slack and GitHub origins with no
+  credentials or alternate ports; and
+- all untrusted content is rendered through `textContent`, never HTML.
+
+Controls required before arbitrary-link collection:
 
 - do not fetch arbitrary URLs;
 - use source-specific APIs and allowlisted hosts;
@@ -621,10 +645,14 @@ Required controls:
 
 ### Review/publication release gates
 
-- Cross-tenant authorization test suite.
-- CSRF/session and browser security review.
+- Focused JWT, tenant-membership, ID-mismatch, body-boundary, stale-version, and
+  atomic-rollback tests (implemented); a real-database cross-tenant suite is
+  still required.
+- OAuth state/PKCE and restrictive browser response headers are implemented;
+  an independent browser security review is still required.
 - Source-to-destination ACL policy tests.
-- Model cannot create human decision records.
+- Model cannot create human decision records (implemented at the application
+  port/schema boundary; production database-role isolation must be verified).
 - Ambiguous-timeout and duplicate-publication tests.
 - External artifact deletion and revocation runbook.
 
@@ -638,7 +666,14 @@ Required controls:
 - Passing the offline synthetic harness does not prove semantic accuracy or
   real-world completeness.
 - Report notification failure can leave a valid draft ready without a Slack
-  signal; operators need a metric/alarm or a later review inbox.
+  signal; the review inbox still exposes it, but operators need notification
+  failure telemetry.
+- Development may reuse the pipeline PostgreSQL credential for the review API.
+  That is convenient, not least privilege. Production Terraform rejects this
+  fallback, and operators must also ensure the pipeline credential is not a
+  database owner capable of bypassing table grants.
+- Browser access tokens are exposed to any successful same-origin XSS. A strict
+  CSP and `textContent` rendering reduce this risk but do not eliminate it.
 - A compromised application runtime can access data available to its role; infrastructure hardening and detection remain necessary.
 - Human reviewers can make mistakes or intentionally approve an unsafe report.
 - External publication creates a new copy governed by the destination system.

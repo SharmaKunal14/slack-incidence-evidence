@@ -59,6 +59,7 @@ export interface SlackWebApiIncidentStatusNotifierOptions {
   readonly installation: SlackBotInstallation;
   readonly request?: typeof fetch;
   readonly timeoutMs?: number;
+  readonly reviewAppBaseUrl?: string;
 }
 
 /**
@@ -73,6 +74,7 @@ export class SlackWebApiIncidentStatusNotifier
 {
   private readonly request: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly reviewAppBaseUrl: URL | null;
 
   public constructor(
     private readonly installation: SlackBotInstallation,
@@ -93,6 +95,7 @@ export class SlackWebApiIncidentStatusNotifier
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 1) {
       throw new Error('Slack request timeout must be a positive integer');
     }
+    this.reviewAppBaseUrl = parseReviewAppBaseUrl(options.reviewAppBaseUrl);
   }
 
   public async notifyAccepted(
@@ -124,6 +127,14 @@ export class SlackWebApiIncidentStatusNotifier
       throw new SlackWebApiError('SLACK_WORKSPACE_MISMATCH');
     }
 
+    const reviewUrl =
+      this.reviewAppBaseUrl === null
+        ? null
+        : new URL(
+            `/#/incidents/${encodeURIComponent(input.incidentId)}`,
+            this.reviewAppBaseUrl,
+          ).toString();
+
     await this.postStatus({
       channelId: input.channelId,
       threadTs: input.threadTs,
@@ -136,6 +147,7 @@ export class SlackWebApiIncidentStatusNotifier
         `Claims: ${input.claimCount}`,
         `Open questions: ${input.openQuestionCount}`,
         'Status: human review required.',
+        ...(reviewUrl === null ? [] : [`Review: ${reviewUrl}`]),
       ].join('\n'),
     });
   }
@@ -195,6 +207,28 @@ export class SlackWebApiIncidentStatusNotifier
       throw new SlackWebApiError('SLACK_RESPONSE_CHANNEL_MISMATCH');
     }
   }
+}
+
+function parseReviewAppBaseUrl(value: string | undefined): URL | null {
+  if (value === undefined) {
+    return null;
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('Review application URL is invalid');
+  }
+  if (
+    url.protocol !== 'https:' ||
+    url.username !== '' ||
+    url.password !== '' ||
+    url.search !== '' ||
+    url.hash !== ''
+  ) {
+    throw new Error('Review application URL must be a plain HTTPS origin');
+  }
+  return url;
 }
 
 export class SlackWebApiError extends Error {

@@ -1,6 +1,6 @@
 # Incident Evidence Copilot architecture
 
-Status: triggering-thread collection, structured AI extraction, and review-ready draft generation implemented
+Status: triggering-thread collection, structured AI extraction, review-ready draft generation, and human revision/approval implemented
 Last updated: 2026-07-18
 
 ## Purpose
@@ -92,6 +92,10 @@ Explicitly out of scope:
   followed by an explicit `NEEDS_REVIEW` lifecycle state.
 - A content-free, retry-safe Slack notification when a draft is ready for human
   review. Notification failure does not discard or regenerate a completed draft.
+- A Cognito-authenticated review console and JWT-authorized API whose PostgreSQL
+  read model checks active tenant membership on every incident access.
+- Immutable source-linked human revisions and a transactionally locked approval
+  transition with idempotency, optimistic concurrency, and content-free audits.
 - A deterministic offline evaluation harness with ten versioned synthetic
   fixtures and explicit structural, contradiction, ordering, source-coverage,
   overstatement, and leakage checks. These checks do not claim semantic truth.
@@ -101,8 +105,9 @@ Explicitly out of scope:
 - Docker/local Compose, CI, deterministic Lambda packaging, and unit-test foundations.
 - Terraform for API Gateway HTTP API, Lambda ingress and worker functions, SQS
   FIFO/DLQ, the Slack evidence collector Lambda, a checkpointed Standard state
-  machine, least-privilege IAM, log retention, concurrency limits, and queue and
-  workflow health alarms.
+  machine, the review API, Cognito, private S3/CloudFront console hosting,
+  least-privilege IAM, log retention, concurrency limits, and queue/workflow/API
+  health alarms.
 - Bounded retrieval of the triggering public Slack thread, stable source
   permalinks, canonical artifact identities, retention deadlines, durable page
   checkpoints, and explicit Slack rate-limit waits.
@@ -117,7 +122,6 @@ Explicitly out of scope:
 - A human-labelled semantic evaluation corpus, provider quality baselines, and
   a quality/cost dashboard.
 - Semantic evidence comparison beyond explicit model-supplied contradictions.
-- The reviewer web application.
 - Publication to an external document system.
 - Action-item creation.
 - Private-channel or direct-message processing.
@@ -125,7 +129,7 @@ Explicitly out of scope:
 - A provisioned AWS account or completed deployment.
 - RDS/RDS Proxy, VPC/subnets/endpoints or NAT, database backups, and remote
   Terraform state.
-- Review, approval, and publication tasks after draft generation.
+- Publication tasks after human approval.
 
 The roadmap is tracked in [roadmap.md](./roadmap.md). Threats that become relevant as these capabilities are introduced are tracked in [threat-model.md](./threat-model.md).
 
@@ -183,8 +187,11 @@ flowchart LR
     SFN --> RN["Review notification Lambda"]
     RN --> SL
     RN --> PG
+    RN --> UI["CloudFront review console"]
+    UI --> COG["Cognito authorization code + PKCE"]
+    UI --> RA["JWT-authorized review API Lambda"]
+    RA --> PG
     SFN -. "roadmap" .-> GH["GitHub App API"]
-    PG -. "roadmap" .-> UI["Reviewer web app"]
     UI -. "human-approved" .-> PUB["Publisher / action tracker"]
 ```
 
@@ -710,9 +717,10 @@ connection hazard if concurrency is left unbounded. Fargate remains a valid
 measured migration target for sustained workloads or stages that do not fit
 Lambda; it is not needed merely to make the diagram look more conventional.
 
-The current Step Functions machine performs triggering-thread collection and
-structured extraction. Its task input/output is bounded and source/model content
-stays in PostgreSQL. Each future state must likewise arrive with a bounded
+The current Step Functions machine performs triggering-thread collection,
+structured extraction, report generation, and review-ready notification. Its
+task input/output is bounded and source/model content stays in PostgreSQL. Each
+future state must likewise arrive with a bounded
 contract, retry policy, idempotency boundary, and implemented stage rather than
 a decorative graph.
 
@@ -731,12 +739,15 @@ contradiction coverage, source coverage, ordering, overstatement, and obvious
 leakage; it cannot prove semantic entailment or completeness. Generated records
 remain `UNREVIEWED`, and the model cannot emit `HUMAN_CONFIRMED`.
 
-### Human review later
+### Human review is not publication
 
-The generated Markdown is a draft explicitly marked for human review. Until the
-review experience exists, it must not be described as authoritative or
-published automatically. The lack of publication is a safety property, not a
-missing shortcut.
+The generated Markdown remains non-authoritative until an authenticated user
+with an active tenant membership creates and approves an immutable revision.
+The review API validates every statement decision, preserves source links,
+requires acknowledgement of known contradictions and open questions, and
+atomically records approval with the incident transition. An approved revision
+still cannot leave the system: publication is a later, separately authorized
+external effect. This separation is an implemented safety property.
 
 ## Architecture fitness checks
 

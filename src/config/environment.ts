@@ -53,7 +53,33 @@ const incidentWorkerLambdaEnvironmentSchema =
   });
 
 const incidentReviewNotificationLambdaEnvironmentSchema =
-  lambdaPostgresEnvironmentSchema;
+  lambdaPostgresEnvironmentSchema.extend({
+    REVIEW_APP_BASE_URL: z.url().superRefine((value, context) => {
+      const url = new URL(value);
+      if (
+        url.protocol !== 'https:' ||
+        url.username !== '' ||
+        url.password !== '' ||
+        url.search !== '' ||
+        url.hash !== ''
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Review application URL must be a plain HTTPS origin',
+        });
+      }
+    }),
+  });
+
+const incidentReviewApiLambdaEnvironmentSchema =
+  lambdaPostgresBaseEnvironmentSchema.extend({
+    REVIEW_API_MAX_BODY_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1_024)
+      .max(1_048_576)
+      .default(524_288),
+  });
 
 const slackEvidenceCollectorLambdaEnvironmentSchema =
   lambdaPostgresEnvironmentSchema.extend({
@@ -216,6 +242,9 @@ export type IncidentWorkerLambdaEnvironment = z.infer<
 export type IncidentReviewNotificationLambdaEnvironment = z.infer<
   typeof incidentReviewNotificationLambdaEnvironmentSchema
 >;
+export type IncidentReviewApiLambdaEnvironment = z.infer<
+  typeof incidentReviewApiLambdaEnvironmentSchema
+>;
 export type SlackEvidenceCollectorLambdaEnvironment = z.infer<
   typeof slackEvidenceCollectorLambdaEnvironmentSchema
 >;
@@ -257,6 +286,12 @@ export function loadIncidentReviewNotificationLambdaEnvironment(
   source: NodeJS.ProcessEnv = process.env,
 ): IncidentReviewNotificationLambdaEnvironment {
   return incidentReviewNotificationLambdaEnvironmentSchema.parse(source);
+}
+
+export function loadIncidentReviewApiLambdaEnvironment(
+  source: NodeJS.ProcessEnv = process.env,
+): IncidentReviewApiLambdaEnvironment {
+  return incidentReviewApiLambdaEnvironmentSchema.parse(source);
 }
 
 export function loadSlackEvidenceCollectorLambdaEnvironment(

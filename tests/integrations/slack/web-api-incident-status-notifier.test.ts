@@ -25,7 +25,7 @@ describe('SlackWebApiIncidentStatusNotifier', () => {
       );
     const notifier = new SlackWebApiIncidentStatusNotifier(
       { workspaceId: 'T001', botToken },
-      { request },
+      { request, reviewAppBaseUrl: 'https://review.example.test' },
     );
     const reportDraftId = '7df1bcac-5583-4cd6-91db-981989f4c482';
 
@@ -58,7 +58,20 @@ describe('SlackWebApiIncidentStatusNotifier', () => {
       mrkdwn: false,
     });
     expect(parsedBody.text).toContain('human review required');
+    expect(parsedBody.text).toContain(
+      `Review: https://review.example.test/#/incidents/${incidentId}`,
+    );
     expect(body).not.toContain(botToken);
+  });
+
+  it('rejects review links that are not plain HTTPS origins', () => {
+    expect(
+      () =>
+        new SlackWebApiIncidentStatusNotifier(
+          { workspaceId: 'T001', botToken },
+          { reviewAppBaseUrl: 'http://review.example.test?token=unsafe' },
+        ),
+    ).toThrow('plain HTTPS origin');
   });
 
   it('posts a plain-text thread reply with a stable idempotency ID', async () => {

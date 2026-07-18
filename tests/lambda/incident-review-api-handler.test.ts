@@ -1,0 +1,222 @@
+import type {
+  APIGatewayProxyEventV2WithJWTAuthorizer,
+  APIGatewayProxyResultV2,
+  APIGatewayProxyStructuredResultV2,
+} from 'aws-lambda';
+import pino from 'pino';
+import { describe, expect, it, vi } from 'vitest';
+import { ReviewConflictError } from '../../src/application/review/incident-review.js';
+import {
+  createIncidentReviewApiHandler,
+  type IncidentReviewApiDependencies,
+} from '../../src/lambda/incident-review-api-handler.js';
+
+const incidentId = '2c6a2f4a-f762-41e9-9620-a07abdaa5c48';
+const revisionId = '617b5728-8404-4934-a616-1a319ba72b7f';
+const subject = '9f218e92-36a8-455d-869c-a76e27b399df';
+
+function dependencies(
+  overrides: Partial<IncidentReviewApiDependencies> = {},
+): IncidentReviewApiDependencies {
+  return {
+    listReviews: {
+      execute: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    },
+    getReview: {
+      execute: vi.fn().mockResolvedValue({ incident: { id: incidentId } }),
+    },
+    createRevision: {
+      execute: vi.fn().mockResolvedValue({
+        id: revisionId,
+        createdAt: new Date('2026-07-18T01:00:00.000Z'),
+        approvedAt: null,
+      }),
+    },
+    approveRevision: {
+      execute: vi.fn().mockResolvedValue({
+        id: revisionId,
+        createdAt: new Date('2026-07-18T01:00:00.000Z'),
+        approvedAt: new Date('2026-07-18T01:05:00.000Z'),
+      }),
+    },
+    logger: pino({ level: 'silent' }),
+    maxBodyBytes: 524_288,
+    ...overrides,
+  };
+}
+
+function eventFor(input: {
+  readonly routeKey: string;
+  readonly path?: string;
+  readonly pathParameters?: Record<string, string>;
+  readonly body?: string;
+  readonly tokenUse?: string;
+  readonly subject?: string;
+}): APIGatewayProxyEventV2WithJWTAuthorizer {
+  return {
+    version: '2.0',
+    routeKey: input.routeKey,
+    rawPath: input.path ?? '/review/incidents',
+    rawQueryString: '',
+    headers: {},
+    requestContext: {
+      accountId: '123456789012',
+      apiId: 'api-id',
+      authorizer: {
+        integrationLatency: 0,
+        jwt: {
+          claims: {
+            sub: input.subject ?? subject,
+            token_use: input.tokenUse ?? 'access',
+          },
+          scopes: [],
+        },
+        principalId: subject,
+      },
+      domainName: 'example.execute-api.ap-southeast-2.amazonaws.com',
+      domainPrefix: 'example',
+      http: {
+        method: input.routeKey.split(' ')[0] ?? 'GET',
+        path: input.path ?? '/review/incidents',
+        protocol: 'HTTP/1.1',
+        sourceIp: '203.0.113.1',
+        userAgent: 'test',
+      },
+      requestId: 'request-id',
+      routeKey: input.routeKey,
+      stage: '$default',
+      time: '18/Jul/2026:01:00:00 +0000',
+      timeEpoch: 1_784_336_400_000,
+    },
+    ...(input.pathParameters === undefined
+      ? {}
+      : { pathParameters: input.pathParameters }),
+    ...(input.body === undefined ? {} : { body: input.body }),
+    isBase64Encoded: false,
+  };
+}
+
+function structured(
+  response: APIGatewayProxyResultV2,
+): APIGatewayProxyStructuredResultV2 {
+  if (typeof response === 'string') {
+    throw new Error('Expected structured API response');
+  }
+  return response;
+}
+
+function parsed(response: APIGatewayProxyResultV2): unknown {
+  return JSON.parse(structured(response).body ?? '') as unknown;
+}
+
+describe('incident review API boundary', () => {
+  it('accepts only Cognito access tokens with UUID subjects', async () => {
+    const deps = dependencies();
+    const handler = createIncidentReviewApiHandler(deps);
+
+    const idTokenResponse = await handler(
+      eventFor({ routeKey: 'GET /review/incidents', tokenUse: 'id' }),
+    );
+    const invalidSubjectResponse = await handler(
+      eventFor({
+        routeKey: 'GET /review/incidents',
+        subject: 'not-a-cognito-uuid',
+      }),
+    );
+
+    expect(structured(idTokenResponse).statusCode).toBe(401);
+    expect(structured(invalidSubjectResponse).statusCode).toBe(401);
+    expect(deps.listReviews.execute).not.toHaveBeenCalled();
+  });
+
+  it('uses the JWT subject for server-side review authorization', async () => {
+    const deps = dependencies();
+    const handler = createIncidentReviewApiHandler(deps);
+
+    const response = await handler(
+      eventFor({ routeKey: 'GET /review/incidents' }),
+    );
+
+    expect(structured(response).statusCode).toBe(200);
+    expect(deps.listReviews.execute).toHaveBeenCalledWith({
+      reviewer: { subject },
+      limit: 20,
+      cursor: null,
+    });
+    expect(structured(response).headers).toMatchObject({
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+    });
+  });
+
+  it('rejects mismatched path and body IDs before mutation', async () => {
+    const deps = dependencies();
+    const handler = createIncidentReviewApiHandler(deps);
+    const otherIncident = '939d3fc4-9557-4d7b-aada-bc2d28e096bf';
+
+    const response = await handler(
+      eventFor({
+        routeKey: 'POST /review/incidents/{incidentId}/revisions',
+        pathParameters: { incidentId },
+        body: JSON.stringify({
+          incidentId: otherIncident,
+          reportDraftId: '7df1bcac-5583-4cd6-91db-981989f4c482',
+          expectedIncidentVersion: 4,
+          clientRequestId: 'd61ad8d8-5111-4ce0-a044-1addc5bf0414',
+          acknowledgedContradictions: true,
+          acknowledgedOpenQuestions: true,
+          decisions: [{ statementId: 'statement-1', decision: 'KEEP' }],
+        }),
+      }),
+    );
+
+    expect(structured(response).statusCode).toBe(400);
+    expect(parsed(response)).toEqual({ error: 'invalid_request' });
+    expect(deps.createRevision.execute).not.toHaveBeenCalled();
+  });
+
+  it('returns a stable conflict without exposing internal error details', async () => {
+    const deps = dependencies({
+      approveRevision: {
+        execute: vi
+          .fn()
+          .mockRejectedValue(new ReviewConflictError('private database state')),
+      },
+    });
+    const handler = createIncidentReviewApiHandler(deps);
+
+    const response = await handler(
+      eventFor({
+        routeKey:
+          'POST /review/incidents/{incidentId}/revisions/{revisionId}/approve',
+        pathParameters: { incidentId, revisionId },
+        body: JSON.stringify({
+          incidentId,
+          revisionId,
+          expectedIncidentVersion: 4,
+          clientRequestId: 'd61ad8d8-5111-4ce0-a044-1addc5bf0414',
+        }),
+      }),
+    );
+
+    expect(structured(response).statusCode).toBe(409);
+    expect(parsed(response)).toEqual({ error: 'review_conflict' });
+    expect(structured(response).body).not.toContain('private database state');
+  });
+
+  it('rejects oversized JSON bodies without parsing or mutation', async () => {
+    const deps = dependencies({ maxBodyBytes: 1_024 });
+    const handler = createIncidentReviewApiHandler(deps);
+
+    const response = await handler(
+      eventFor({
+        routeKey: 'POST /review/incidents/{incidentId}/revisions',
+        pathParameters: { incidentId },
+        body: JSON.stringify({ payload: 'x'.repeat(2_000) }),
+      }),
+    );
+
+    expect(structured(response).statusCode).toBe(400);
+    expect(deps.createRevision.execute).not.toHaveBeenCalled();
+  });
+});

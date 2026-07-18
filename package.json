@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:lambda": "node scripts/build-lambda.mjs",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run build:lambda",
+    "build:web": "node scripts/build-review-web.mjs",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run build:lambda && npm run build:web",
     "db:migrate": "tsx src/infrastructure/postgres/migrate-cli.ts",
     "dev:api": "tsx watch src/api/main.ts",
     "dev:worker": "tsx watch src/worker/main.ts",
@@ -23,7 +24,7 @@
     "start:worker": "node dist/worker/main.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.web.json"
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1089.0",
