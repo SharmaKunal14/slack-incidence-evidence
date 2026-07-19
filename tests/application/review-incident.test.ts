@@ -3,6 +3,7 @@ import type { IncidentReviewRepository } from '../../src/application/ports/incid
 import {
   ApproveReportRevision,
   CreateReportRevision,
+  GetReportRevision,
   ListIncidentReviews,
 } from '../../src/application/review-incident.js';
 import {
@@ -78,6 +79,9 @@ function repository(): {
   readonly loadBundle: ReturnType<
     typeof vi.fn<IncidentReviewRepository['loadBundle']>
   >;
+  readonly loadRevision: ReturnType<
+    typeof vi.fn<IncidentReviewRepository['loadRevision']>
+  >;
   readonly createRevision: ReturnType<
     typeof vi.fn<IncidentReviewRepository['createRevision']>
   >;
@@ -112,6 +116,9 @@ function repository(): {
     loadBundle: vi
       .fn<IncidentReviewRepository['loadBundle']>()
       .mockResolvedValue(bundle()),
+    loadRevision: vi
+      .fn<IncidentReviewRepository['loadRevision']>()
+      .mockResolvedValue(null),
     createRevision: vi
       .fn<IncidentReviewRepository['createRevision']>()
       .mockResolvedValue(createdRevision),
@@ -144,6 +151,42 @@ function createCommand(): {
 }
 
 describe('human incident review', () => {
+  it('loads a specifically requested immutable revision', async () => {
+    const reviews = repository();
+    reviews.loadRevision.mockResolvedValueOnce({
+      id: revisionId,
+      revisionNumber: 1,
+      status: 'APPROVED',
+      createdAt: now.toISOString(),
+      statementCount: 1,
+      acknowledgedContradictions: true,
+      acknowledgedOpenQuestions: true,
+      statements: [
+        {
+          originalStatementId: 'statement-1',
+          sectionType: 'root_cause',
+          position: 0,
+          decision: 'KEEP',
+          text: 'A deploy probably increased database latency.',
+          classification: 'hypothesis',
+        },
+      ],
+    });
+
+    await expect(
+      new GetReportRevision(reviews).execute({
+        reviewer,
+        incidentId,
+        revisionId,
+      }),
+    ).resolves.toMatchObject({ id: revisionId, status: 'APPROVED' });
+    expect(reviews.loadRevision).toHaveBeenCalledWith(
+      reviewer,
+      incidentId,
+      revisionId,
+    );
+  });
+
   it('denies an identity without an active tenant membership', async () => {
     const reviews = repository();
     reviews.listInbox.mockResolvedValueOnce({

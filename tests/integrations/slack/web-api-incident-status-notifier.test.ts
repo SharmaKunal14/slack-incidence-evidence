@@ -17,6 +17,60 @@ function jsonResponse(value: unknown, status = 200): Response {
 }
 
 describe('SlackWebApiIncidentStatusNotifier', () => {
+  it('posts the final Notion link with the revision idempotency ID', async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        jsonResponse({ ok: true, channel: 'C001', ts: '1721178002.000300' }),
+      );
+    const notifier = new SlackWebApiIncidentStatusNotifier(
+      { workspaceId: 'T001', botToken },
+      { request },
+    );
+    const revisionId = '617b5728-8404-4934-a616-1a319ba72b7f';
+
+    await expect(
+      notifier.notifyReportPublished({
+        workspaceId: 'T001',
+        incidentId,
+        revisionId,
+        channelId: 'C001',
+        threadTs: '1721178000.000100',
+        notionPageUrl:
+          'https://www.notion.so/Incident-report-0123456789abcdef0123456789abcdef',
+      }),
+    ).resolves.toEqual({ messageTs: '1721178002.000300' });
+
+    const body = request.mock.calls[0]?.[1]?.body;
+    if (typeof body !== 'string') {
+      throw new Error('Expected Slack request body');
+    }
+    const parsedBody = JSON.parse(body) as Record<string, unknown>;
+    expect(parsedBody['client_msg_id']).toBe(revisionId);
+    expect(parsedBody['text']).toContain('Final incident report approved');
+    expect(parsedBody['text']).toContain('https://www.notion.so/');
+  });
+
+  it('rejects a non-Notion publication URL before calling Slack', async () => {
+    const request = vi.fn<typeof fetch>();
+    const notifier = new SlackWebApiIncidentStatusNotifier(
+      { workspaceId: 'T001', botToken },
+      { request },
+    );
+
+    await expect(
+      notifier.notifyReportPublished({
+        workspaceId: 'T001',
+        incidentId,
+        revisionId: '617b5728-8404-4934-a616-1a319ba72b7f',
+        channelId: 'C001',
+        threadTs: '1721178000.000100',
+        notionPageUrl: 'https://attacker.example/report',
+      }),
+    ).rejects.toBeInstanceOf(z.ZodError);
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('posts a content-free review-ready status with the draft idempotency ID', async () => {
     const request = vi
       .fn<typeof fetch>()

@@ -122,14 +122,12 @@ Explicitly out of scope:
 - A human-labelled semantic evaluation corpus, provider quality baselines, and
   a quality/cost dashboard.
 - Semantic evidence comparison beyond explicit model-supplied contradictions.
-- Publication to an external document system.
 - Action-item creation.
 - Private-channel or direct-message processing.
 - Automatic source discovery.
 - A provisioned AWS account or completed deployment.
 - RDS/RDS Proxy, VPC/subnets/endpoints or NAT, database backups, and remote
   Terraform state.
-- Publication tasks after human approval.
 
 The roadmap is tracked in [roadmap.md](./roadmap.md). Threats that become relevant as these capabilities are introduced are tracked in [threat-model.md](./threat-model.md).
 
@@ -153,7 +151,12 @@ Neither Slack retries nor queue delivery provide exactly-once execution. Correct
 
 ### Permissions can only narrow
 
-A derived artifact must never disclose evidence to an audience broader than the evidence's permitted audience. The initial product avoids the hardest case by accepting public Slack channels only and by not publishing automatically. Later publication must be policy-checked and human-approved.
+A derived artifact must never disclose evidence to an audience broader than the
+evidence's permitted audience. The current single-workspace path accepts public
+Slack channels and publishes only a human-approved immutable revision into one
+operator-configured Notion data source. It does not yet calculate destination
+readers or compare ACLs, so external multi-tenant production remains blocked
+until that policy is enforceable.
 
 ### Model providers are replaceable infrastructure
 
@@ -529,7 +532,10 @@ Only operational metadata is allowed in standard logs. Identifiers should be has
    manifest before persistence.
 8. **Notification Lambda to Slack:** a workspace-bound token may send only a
    fixed, content-free readiness message to the incident's original thread.
-9. **Review to publication (roadmap):** a human decision plus an audience policy changes a draft into an external artifact.
+9. **Review to publication:** approval commits a publication outbox record in
+   the same transaction. A scheduled, leased worker creates or reconciles the
+   page in one configured Notion data source, checkpoints its external ID and
+   URL, and then posts the link to the incident's original Slack thread.
 
 ## Idempotency and consistency
 
@@ -561,7 +567,8 @@ manifest. A completed version is a no-op. Slack notification uses the persisted
 draft ID as its stable client message ID. A terminal notification failure leaves
 the draft in `NEEDS_REVIEW`; it must never trigger a second report generation.
 
-For future external effects:
+Approved-report publication applies these controls; future issue-creation
+effects must do the same:
 
 - use an outbox record committed with the domain state;
 - give each publication or issue creation a stable idempotency key;
@@ -739,15 +746,16 @@ contradiction coverage, source coverage, ordering, overstatement, and obvious
 leakage; it cannot prove semantic entailment or completeness. Generated records
 remain `UNREVIEWED`, and the model cannot emit `HUMAN_CONFIRMED`.
 
-### Human review is not publication
+### Human review gates publication
 
 The generated Markdown remains non-authoritative until an authenticated user
 with an active tenant membership creates and approves an immutable revision.
 The review API validates every statement decision, preserves source links,
 requires acknowledgement of known contradictions and open questions, and
-atomically records approval with the incident transition. An approved revision
-still cannot leave the system: publication is a later, separately authorized
-external effect. This separation is an implemented safety property.
+atomically records approval, the incident transition, and a publication outbox
+record. The model runtime has no approval or publication port. External delivery
+is asynchronous, leased, checkpointed, and restricted to the configured Notion
+data source and original Slack thread.
 
 ## Architecture fitness checks
 

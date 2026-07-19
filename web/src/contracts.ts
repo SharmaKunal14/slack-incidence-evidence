@@ -171,8 +171,19 @@ export const revisionResponseSchema = z
   })
   .strict();
 
+export const revisionDetailResponseSchema = z
+  .object({
+    revision: revisionSummarySchema
+      .extend({ statements: z.array(revisionStatementSchema).max(300) })
+      .strict(),
+  })
+  .strict();
+
 export type Bundle = z.infer<typeof bundleSchema>;
 export type Classification = (typeof classificationValues)[number];
 export type Configuration = z.infer<typeof configurationSchema>;
 export type InboxItem = z.infer<typeof inboxItemSchema>;
+export type RevisionDetail = z.infer<
+  typeof revisionDetailResponseSchema
+>['revision'];
 export type Statement = z.infer<typeof statementSchema>;

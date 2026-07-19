@@ -53,6 +53,7 @@ describe('runMigrations', () => {
         '0003_incident_analysis.sql',
         '0004_incident_report_drafts.sql',
         '0005_human_review.sql',
+        '0006_approved_report_publication.sql',
       ],
       alreadyApplied: 0,
     });
@@ -75,6 +76,9 @@ describe('runMigrations', () => {
     );
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('CREATE TABLE reviewer_memberships'),
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE TABLE report_publications'),
     );
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO schema_migrations'),

@@ -10,9 +10,10 @@ The current release establishes secure ingestion, collects the triggering
 public Slack thread, extracts an evidence-cited timeline, claims, and open
 questions, and produces a versioned source-linked postmortem draft. An
 authenticated, tenant-authorized console lets a human inspect evidence, create
-an immutable corrected revision, acknowledge contradictions and unknowns, and
-approve exactly one revision. Selected-channel collection, GitHub retrieval,
-and external publication remain later vertical increments.
+immutable corrected revisions, browse every preserved version, acknowledge
+contradictions and unknowns, and approve exactly one revision. Approval queues
+durable publication to a private Notion data source and a final Slack link.
+Selected-channel collection and GitHub retrieval remain later increments.
 
 ## Implemented
 
@@ -65,8 +66,13 @@ and external publication remain later vertical increments.
 - Immutable review revisions, deterministic reviewed Markdown, preserved
   provenance links, explicit contradiction/open-question acknowledgement, and
   atomic approval/audit/incident-state transitions.
+- Tenant-authorized revision history which loads one bounded immutable version
+  at a time and keeps historical content read-only.
+- A transactional approval-to-publication outbox with PostgreSQL leases,
+  bounded retries, a Notion checkpoint, exact incident-ID page lookup, and an
+  idempotent final Slack thread notification.
 - Secrets Manager runtime loading with narrow, validated JSON secret contracts.
-- Terraform for API Gateway, seven independently scaled Lambdas, encrypted SQS
+- Terraform for API Gateway, eight independently scaled Lambdas, encrypted SQS
   FIFO/DLQ, a checkpointed Standard workflow, least-privilege IAM, bounded
   logs, concurrency controls, Cognito, private S3/CloudFront hosting, and
   queue/workflow/review alarms.
@@ -104,6 +110,9 @@ flowchart LR
     Notifier --> Review["Cognito + review console"]
     Review --> ReviewAPI["JWT-authorized review API"]
     ReviewAPI --> Postgres
+    Postgres --> Publisher["Scheduled publication Lambda"]
+    Publisher --> Notion["Private Notion data source"]
+    Publisher --> SlackAPI
 ```
 
 Production uses serverless protocol adapters; local development retains the
@@ -204,13 +213,14 @@ npm run build:lambda
 ```
 
 This produces the ignored artifact
-`artifacts/incident-copilot-lambda.zip`, containing seven composition roots:
+`artifacts/incident-copilot-lambda.zip`, containing eight composition roots:
 `slack-ingress-main.handler`, `incident-worker-main.handler`, and
 `slack-evidence-collector-main.handler`, and
 `incident-analysis-main.handler`, `incident-report-main.handler`, and
 `incident-review-notification-main.handler`, plus
-`incident-review-api-main.handler`. Build the static console separately with
-`npm run build:web`. Terraform instructions, required
+`incident-review-api-main.handler`, plus
+`approved-report-publication-main.handler`. Build the static console separately
+with `npm run build:web`. Terraform instructions, required
 secret shapes, networking assumptions, cost controls, and deployment gates are in
 [infrastructure/terraform/README.md](infrastructure/terraform/README.md).
 
@@ -221,8 +231,8 @@ certificate verified by each database-using Lambda. Those inputs and an OpenAI
 API secret must exist before the AWS path can process a real incident. The
 current Step Functions definition collects and analyzes only the triggering
 Slack thread, generates an internal draft, and notifies Slack that human review
-is required. Human revision and approval are implemented; selected-channel
-discovery and external publication are not.
+is required. Human revision, history, approval, Notion publication, and final
+Slack notification are implemented; selected-channel discovery is not.
 
 ## Security posture
 
@@ -232,7 +242,8 @@ discovery and external publication are not.
 - Queue delivery is assumed to be at-least-once; database uniqueness is the
   durable idempotency boundary.
 - Tenant IDs are present in every persistent relationship and repository query.
-- Model output can suggest claims but cannot grant access or publish reports.
+- Model output can suggest claims but cannot grant access, approve content, or
+  enqueue publication. Only an authenticated human approval can do so.
 
 This is a foundation, not a completed security certification. The OAuth
 installation flow, bot-token encryption, source ACL lookup, and destination ACL
@@ -249,8 +260,8 @@ The next product increments are:
 3. Integrate a GitHub App for deployments, commits, pull requests, and workflows.
 4. Expand the labelled evaluation corpus and calibrate semantic quality with
    human review rather than treating structural coverage as accuracy.
-5. Validate the authenticated evidence-review console with real reviewers and
-   measure review time/edit distance before enabling any publication.
+5. Validate the authenticated review and Notion publication experience with
+   real reviewers and measure review time, edit distance, and delivery failures.
 
 The project intentionally excludes Kubernetes, Kafka, a vector database, a graph
 database, autonomous root-cause claims, private-channel ingestion, and automated

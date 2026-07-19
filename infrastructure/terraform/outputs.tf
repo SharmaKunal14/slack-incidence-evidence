@@ -63,6 +63,11 @@ output "incident_review_api_lambda_name" {
   value       = aws_lambda_function.incident_review_api.function_name
 }
 
+output "approved_report_publication_lambda_name" {
+  description = "Scheduled Notion publication and Slack completion notification Lambda function name."
+  value       = aws_lambda_function.approved_report_publication.function_name
+}
+
 output "review_console_url" {
   description = "CloudFront URL for the authenticated human-review console."
   value       = local.review_application_url
@@ -92,6 +97,7 @@ output "cloudwatch_log_groups" {
   description = "Log groups created with bounded retention."
   value = {
     analysis            = aws_cloudwatch_log_group.incident_analysis.name
+    publication         = aws_cloudwatch_log_group.approved_report_publication.name
     api                 = aws_cloudwatch_log_group.api.name
     ingress             = aws_cloudwatch_log_group.ingress.name
     report              = aws_cloudwatch_log_group.incident_report.name

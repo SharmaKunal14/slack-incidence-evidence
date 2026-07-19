@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  loadApprovedReportPublicationLambdaEnvironment,
   loadIncidentAnalysisLambdaEnvironment,
   loadIncidentReviewApiLambdaEnvironment,
   loadIncidentReviewNotificationLambdaEnvironment,
@@ -198,6 +199,48 @@ describe('Lambda environment configuration', () => {
         ...database,
         SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
         REVIEW_APP_BASE_URL: 'https://user@review.example.test?secret=value',
+      }),
+    ).toThrow();
+  });
+
+  it('loads bounded Notion publication configuration without a plaintext token', () => {
+    const source = {
+      DATABASE_SECRET_ARN: 'database-secret-arn',
+      DATABASE_HOST: 'pooler.example.test',
+      DATABASE_NAME: 'postgres',
+      SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
+      NOTION_API_SECRET_ARN: 'notion-secret-arn',
+      NOTION_DATA_SOURCE_ID: '0123456789abcdef0123456789abcdef',
+      NOTION_TITLE_PROPERTY: 'Name',
+      NOTION_INCIDENT_ID_PROPERTY: 'Incident ID',
+      PUBLICATION_BATCH_SIZE: '2',
+      PUBLICATION_MAX_ATTEMPTS: '8',
+      PUBLICATION_LEASE_SECONDS: '180',
+      PUBLICATION_RETRY_BASE_SECONDS: '60',
+      NOTION_TIMEOUT_MS: '10000',
+    };
+
+    expect(
+      loadApprovedReportPublicationLambdaEnvironment(source),
+    ).toMatchObject({
+      PUBLICATION_BATCH_SIZE: 2,
+      PUBLICATION_MAX_ATTEMPTS: 8,
+      PUBLICATION_LEASE_SECONDS: 180,
+      NOTION_TIMEOUT_MS: 10_000,
+    });
+    expect(
+      loadApprovedReportPublicationLambdaEnvironment(source),
+    ).not.toHaveProperty('NOTION_API_TOKEN');
+    expect(() =>
+      loadApprovedReportPublicationLambdaEnvironment({
+        ...source,
+        NOTION_INCIDENT_ID_PROPERTY: 'Name',
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApprovedReportPublicationLambdaEnvironment({
+        ...source,
+        PUBLICATION_BATCH_SIZE: '11',
       }),
     ).toThrow();
   });

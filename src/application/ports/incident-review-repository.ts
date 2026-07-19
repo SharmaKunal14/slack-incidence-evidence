@@ -1,6 +1,7 @@
 import type {
   IncidentReviewBundle,
   ReportRevision,
+  ReportRevisionDetail,
   ResolvedReviewStatement,
   ReviewInboxCursor,
   ReviewInboxPage,
@@ -45,6 +46,11 @@ export interface IncidentReviewRepository {
     reviewer: ReviewerIdentity,
     incidentId: string,
   ): Promise<IncidentReviewBundle | null>;
+  loadRevision(
+    reviewer: ReviewerIdentity,
+    incidentId: string,
+    revisionId: string,
+  ): Promise<ReportRevisionDetail | null>;
   createRevision(input: CreateReportRevisionInput): Promise<ReportRevision>;
   approveRevision(input: ApproveReportRevisionInput): Promise<ReportRevision>;
 }

@@ -8,6 +8,7 @@ import type {
   ApproveReportRevision,
   CreateReportRevision,
   GetIncidentReview,
+  GetReportRevision,
   ListIncidentReviews,
 } from '../application/review-incident.js';
 import {
@@ -33,6 +34,7 @@ const cursorSchema = z
 export interface IncidentReviewApiDependencies {
   readonly listReviews: Pick<ListIncidentReviews, 'execute'>;
   readonly getReview: Pick<GetIncidentReview, 'execute'>;
+  readonly getRevision: Pick<GetReportRevision, 'execute'>;
   readonly createRevision: Pick<CreateReportRevision, 'execute'>;
   readonly approveRevision: Pick<ApproveReportRevision, 'execute'>;
   readonly logger: Logger;
@@ -74,6 +76,16 @@ export function createIncidentReviewApiHandler(
             incidentId,
           });
           return jsonResponse(200, bundle);
+        }
+        case 'GET /review/incidents/{incidentId}/revisions/{revisionId}': {
+          const incidentId = parsePathId(event, 'incidentId');
+          const revisionId = parsePathId(event, 'revisionId');
+          const revision = await dependencies.getRevision.execute({
+            reviewer,
+            incidentId,
+            revisionId,
+          });
+          return jsonResponse(200, { revision });
         }
         case 'POST /review/incidents/{incidentId}/revisions': {
           const incidentId = parsePathId(event, 'incidentId');

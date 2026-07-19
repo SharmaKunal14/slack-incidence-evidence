@@ -38,6 +38,16 @@ const openAiApiSecretSchema = z
   })
   .strict();
 
+const notionApiSecretSchema = z
+  .object({
+    apiToken: z
+      .string()
+      .min(1)
+      .max(4096)
+      .regex(/^[!-~]+$/),
+  })
+  .strict();
+
 export interface SlackSigningSecret {
   readonly signingSecret: string;
 }
@@ -55,6 +65,10 @@ export interface DatabaseConnectionSecret {
 
 export interface OpenAiApiSecret {
   readonly apiKey: string;
+}
+
+export interface NotionApiSecret {
+  readonly apiToken: string;
 }
 
 export function parseSlackSigningSecret(value: string): SlackSigningSecret {
@@ -86,6 +100,14 @@ export function parseDatabaseConnectionSecret(
 export function parseOpenAiApiSecret(value: string): OpenAiApiSecret {
   try {
     return openAiApiSecretSchema.parse(parseJson(value));
+  } catch {
+    throw new InvalidRuntimeSecretError();
+  }
+}
+
+export function parseNotionApiSecret(value: string): NotionApiSecret {
+  try {
+    return notionApiSecretSchema.parse(parseJson(value));
   } catch {
     throw new InvalidRuntimeSecretError();
   }

@@ -3,6 +3,7 @@ import {
   InvalidRuntimeSecretError,
   parseDatabaseConnectionSecret,
   parseOpenAiApiSecret,
+  parseNotionApiSecret,
   parseSlackBotTokenSecret,
   parseSlackSigningSecret,
 } from '../../src/config/runtime-secrets.js';
@@ -41,6 +42,9 @@ describe('runtime secret contracts', () => {
     expect(
       parseOpenAiApiSecret(JSON.stringify({ apiKey: 'openai-key' })),
     ).toEqual({ apiKey: 'openai-key' });
+    expect(
+      parseNotionApiSecret(JSON.stringify({ apiToken: 'notion-token' })),
+    ).toEqual({ apiToken: 'notion-token' });
   });
 
   it('rejects unexpected fields to catch a miswired secret', () => {
@@ -63,6 +67,11 @@ describe('runtime secret contracts', () => {
     expect(() =>
       parseOpenAiApiSecret(
         JSON.stringify({ apiKey: 'value', botToken: 'wrong-boundary' }),
+      ),
+    ).toThrow(InvalidRuntimeSecretError);
+    expect(() =>
+      parseNotionApiSecret(
+        JSON.stringify({ apiToken: 'value', databasePassword: 'wrong' }),
       ),
     ).toThrow(InvalidRuntimeSecretError);
   });
