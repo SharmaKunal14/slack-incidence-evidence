@@ -538,7 +538,9 @@ Only operational metadata is allowed in standard logs. Identifiers should be has
    provider, external ID, and URL, and then posts the link to the incident's
    original Slack thread. Provider assignment is durable after the first
    attempt so a configuration switch cannot silently duplicate an ambiguous
-   external side effect in another system.
+   external side effect in another system. Confluence scoped-token requests use
+   the fixed `api.atlassian.com/ex/confluence/{cloudId}` gateway, while returned
+   page links are resolved only against the separately configured site origin.
 
 ## Idempotency and consistency
 

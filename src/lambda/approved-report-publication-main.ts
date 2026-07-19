@@ -82,6 +82,9 @@ async function buildHandler(): Promise<ApprovedReportPublicationHandler> {
       const confluenceSecret = parseConfluenceApiSecret(publisherValue);
       publisher = new ConfluenceApprovedReportPublisher({
         baseUrl: environment.CONFLUENCE_BASE_URL,
+        ...(environment.CONFLUENCE_CLOUD_ID === undefined
+          ? {}
+          : { cloudId: environment.CONFLUENCE_CLOUD_ID }),
         email: confluenceSecret.email,
         apiToken: confluenceSecret.apiToken,
         spaceId: environment.CONFLUENCE_SPACE_ID,

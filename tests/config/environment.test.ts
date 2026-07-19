@@ -255,6 +255,7 @@ describe('Lambda environment configuration', () => {
       SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
       CONFLUENCE_API_SECRET_ARN: 'confluence-secret-arn',
       CONFLUENCE_BASE_URL: 'https://incident-copilot.atlassian.net',
+      CONFLUENCE_CLOUD_ID: '11111111-2222-3333-4444-555555555555',
       CONFLUENCE_SPACE_ID: '123456789',
       CONFLUENCE_PARENT_PAGE_ID: '987654321',
       CONFLUENCE_TIMEOUT_MS: '12000',
@@ -265,6 +266,7 @@ describe('Lambda environment configuration', () => {
     ).toMatchObject({
       REPORT_PUBLICATION_PROVIDER: 'CONFLUENCE',
       CONFLUENCE_BASE_URL: 'https://incident-copilot.atlassian.net',
+      CONFLUENCE_CLOUD_ID: '11111111-2222-3333-4444-555555555555',
       CONFLUENCE_SPACE_ID: '123456789',
       CONFLUENCE_PARENT_PAGE_ID: '987654321',
       CONFLUENCE_TIMEOUT_MS: 12_000,
@@ -282,6 +284,12 @@ describe('Lambda environment configuration', () => {
       loadApprovedReportPublicationLambdaEnvironment({
         ...source,
         CONFLUENCE_SPACE_ID: '../admin',
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApprovedReportPublicationLambdaEnvironment({
+        ...source,
+        CONFLUENCE_CLOUD_ID: '../another-tenant',
       }),
     ).toThrow();
   });

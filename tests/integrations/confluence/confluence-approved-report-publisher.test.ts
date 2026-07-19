@@ -7,6 +7,7 @@ import { ConfluenceApprovedReportPublisher } from '../../../src/integrations/con
 
 const incidentId = '2c6a2f4a-f762-41e9-9620-a07abdaa5c48';
 const baseUrl = 'https://incident-copilot.atlassian.net';
+const cloudId = '11111111-2222-3333-4444-555555555555';
 const spaceId = '123456789';
 const pageId = '987654321';
 const pageTitle = `Incident report — Checkout outage · ${incidentId}`;
@@ -69,6 +70,7 @@ function document(
 function publisher(request: typeof fetch): ConfluenceApprovedReportPublisher {
   return new ConfluenceApprovedReportPublisher({
     baseUrl,
+    cloudId,
     email: 'publisher@example.com',
     apiToken: 'confluence-api-token',
     spaceId,
@@ -102,7 +104,7 @@ describe('ConfluenceApprovedReportPublisher', () => {
     }
     const parsedLookupUrl = lookupUrl;
     expect(`${parsedLookupUrl.origin}${parsedLookupUrl.pathname}`).toBe(
-      `${baseUrl}/wiki/api/v2/spaces/${spaceId}/pages`,
+      `https://api.atlassian.com/ex/confluence/${cloudId}/wiki/api/v2/spaces/${spaceId}/pages`,
     );
     expect(Object.fromEntries(parsedLookupUrl.searchParams)).toEqual({
       title: pageTitle,
@@ -111,6 +113,13 @@ describe('ConfluenceApprovedReportPublisher', () => {
     });
     expect(request.mock.calls[0]?.[1]?.method).toBe('GET');
 
+    const createUrl = request.mock.calls[1]?.[0];
+    if (!(createUrl instanceof URL)) {
+      throw new Error('Expected Confluence create URL');
+    }
+    expect(createUrl.toString()).toBe(
+      `https://api.atlassian.com/ex/confluence/${cloudId}/wiki/api/v2/pages`,
+    );
     const createInit = request.mock.calls[1]?.[1];
     expect(createInit?.headers).toMatchObject({
       accept: 'application/json',
@@ -153,6 +162,30 @@ describe('ConfluenceApprovedReportPublisher', () => {
       pageUrl: `${baseUrl}/wiki/spaces/IR/pages/${pageId}/Incident+report`,
     });
     expect(request).toHaveBeenCalledOnce();
+  });
+
+  it('retains the site-specific API endpoint when no Cloud ID is configured', async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(response({ results: [page()], _links: {} }));
+    const classicPublisher = new ConfluenceApprovedReportPublisher({
+      baseUrl,
+      email: 'publisher@example.com',
+      apiToken: 'classic-api-token',
+      spaceId,
+      request,
+    });
+
+    await expect(classicPublisher.publish(document())).resolves.toMatchObject({
+      pageUrl: `${baseUrl}/wiki/spaces/IR/pages/${pageId}/Incident+report`,
+    });
+    const lookupUrl = request.mock.calls[0]?.[0];
+    if (!(lookupUrl instanceof URL)) {
+      throw new Error('Expected classic Confluence lookup URL');
+    }
+    expect(`${lookupUrl.origin}${lookupUrl.pathname}`).toBe(
+      `${baseUrl}/wiki/api/v2/spaces/${spaceId}/pages`,
+    );
   });
 
   it('fails closed when the title lookup is not unique or is paginated', async () => {
@@ -222,5 +255,18 @@ describe('ConfluenceApprovedReportPublisher', () => {
           spaceId,
         }),
     ).toThrow('plain HTTPS atlassian.net origin');
+  });
+
+  it('rejects a Cloud ID that could alter the API gateway path', () => {
+    expect(
+      () =>
+        new ConfluenceApprovedReportPublisher({
+          baseUrl,
+          cloudId: '../another-tenant',
+          email: 'publisher@example.com',
+          apiToken: 'confluence-api-token',
+          spaceId,
+        }),
+    ).toThrow();
   });
 });

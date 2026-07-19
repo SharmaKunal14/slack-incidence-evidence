@@ -157,6 +157,11 @@ const confluencePublicationEnvironmentSchema =
       }
     }),
     CONFLUENCE_SPACE_ID: z.string().regex(/^[1-9][0-9]{0,29}$/u),
+    CONFLUENCE_CLOUD_ID: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/u)
+      .optional(),
     CONFLUENCE_PARENT_PAGE_ID: z
       .string()
       .regex(/^[1-9][0-9]{0,29}$/u)

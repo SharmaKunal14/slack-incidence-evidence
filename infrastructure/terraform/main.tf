@@ -1363,6 +1363,8 @@ resource "aws_lambda_function" "approved_report_publication" {
         CONFLUENCE_BASE_URL       = var.confluence_base_url == null ? "" : var.confluence_base_url
         CONFLUENCE_SPACE_ID       = var.confluence_space_id == null ? "" : var.confluence_space_id
         CONFLUENCE_TIMEOUT_MS     = tostring(var.confluence_timeout_milliseconds)
+        }, var.confluence_cloud_id == null ? {} : {
+        CONFLUENCE_CLOUD_ID = var.confluence_cloud_id
         }, var.confluence_parent_page_id == null ? {} : {
         CONFLUENCE_PARENT_PAGE_ID = var.confluence_parent_page_id
     }))
