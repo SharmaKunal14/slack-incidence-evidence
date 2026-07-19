@@ -226,15 +226,21 @@ export class ConfluenceApprovedReportPublisher implements ApprovedReportPublishe
   private toPublishedPage(
     page: z.infer<typeof confluencePageSchema>,
   ): PublishedReportPage {
-    const pageUrl = new URL(page._links.webui, this.siteUrl);
+    let pageUrl = new URL(page._links.webui, this.siteUrl);
     if (
       pageUrl.origin !== this.siteUrl.origin ||
-      !pageUrl.pathname.startsWith('/wiki/') ||
       pageUrl.username !== '' ||
       pageUrl.password !== '' ||
       pageUrl.search !== '' ||
       pageUrl.hash !== ''
     ) {
+      throw new ReportPublicationProviderError('CONFLUENCE_INVALID_PAGE_URL');
+    }
+    // REST v2 web links omit the Confluence site's /wiki context path.
+    if (pageUrl.pathname.startsWith('/spaces/')) {
+      pageUrl = new URL(`/wiki${pageUrl.pathname}`, this.siteUrl);
+    }
+    if (!pageUrl.pathname.startsWith('/wiki/')) {
       throw new ReportPublicationProviderError('CONFLUENCE_INVALID_PAGE_URL');
     }
     return { pageId: page.id, pageUrl: pageUrl.toString() };
