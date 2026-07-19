@@ -11,6 +11,7 @@ import {
 } from '../config/runtime-secrets.js';
 import { PostgresIncidentAnalysisRepository } from '../infrastructure/postgres/incident-analysis-repository.js';
 import { PostgresIncidentRepository } from '../infrastructure/postgres/incident-repository.js';
+import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { ResponsesIncidentAnalyzer } from '../integrations/openai/responses-incident-analyzer.js';
 import { createLogger } from '../observability/logger.js';
@@ -91,7 +92,7 @@ async function buildHandler(): Promise<IncidentAnalysisHandler> {
     database.on('error', (error) => {
       logger.error({ err: error }, 'idle PostgreSQL client failed');
     });
-    await database.query('SELECT 1 FROM incident_analysis_runs LIMIT 1');
+    await assertDatabaseSchemaCompatible(database);
 
     const useCase = new AnalyzeIncidentEvidence(
       new PostgresIncidentAnalysisRepository(database),

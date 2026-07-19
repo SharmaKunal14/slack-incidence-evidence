@@ -17,6 +17,7 @@ import { uuidGenerator } from '../application/ports/id-generator.js';
 import { loadIncidentReviewApiLambdaEnvironment } from '../config/environment.js';
 import { parseDatabaseConnectionSecret } from '../config/runtime-secrets.js';
 import { PostgresIncidentReviewRepository } from '../infrastructure/postgres/incident-review-repository.js';
+import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { createLogger } from '../observability/logger.js';
 import {
@@ -84,7 +85,7 @@ async function buildHandler(): Promise<IncidentReviewApiHandler> {
     database.on('error', (error) => {
       logger.error({ err: error }, 'idle PostgreSQL client failed');
     });
-    await database.query('SELECT 1 FROM reviewer_memberships LIMIT 1');
+    await assertDatabaseSchemaCompatible(database);
     const repository = new PostgresIncidentReviewRepository(database);
     return createIncidentReviewApiHandler({
       listReviews: new ListIncidentReviews(repository),

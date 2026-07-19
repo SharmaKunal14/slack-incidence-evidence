@@ -26,6 +26,33 @@ const workerEnvironmentSchema = queueEnvironmentSchema.extend({
   SQS_WAIT_TIME_SECONDS: z.coerce.number().int().min(0).max(20).default(20),
 });
 
+const databaseMigrationEnvironmentSchema = commonEnvironmentSchema.extend({
+  DATABASE_SECRET_ARN: z
+    .string()
+    .trim()
+    .max(2_048)
+    .regex(
+      /^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$/,
+    ),
+  DATABASE_HOST: z
+    .string()
+    .trim()
+    .min(1)
+    .max(253)
+    .regex(
+      /^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$/,
+    ),
+  DATABASE_PORT: z.coerce.number().int().min(1).max(65_535).default(5432),
+  DATABASE_NAME: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z_][A-Za-z0-9_$]{0,62}$/),
+  DATABASE_SSL: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+});
+
 const slackIngressLambdaEnvironmentSchema = queueEnvironmentSchema.extend({
   SLACK_SIGNING_SECRET_ARN: z.string().trim().min(1),
 });
@@ -331,6 +358,9 @@ const liveEvaluationEnvironmentSchema = z
 
 export type ApiEnvironment = z.infer<typeof apiEnvironmentSchema>;
 export type WorkerEnvironment = z.infer<typeof workerEnvironmentSchema>;
+export type DatabaseMigrationEnvironment = z.infer<
+  typeof databaseMigrationEnvironmentSchema
+>;
 export type SlackIngressLambdaEnvironment = z.infer<
   typeof slackIngressLambdaEnvironmentSchema
 >;
@@ -369,6 +399,18 @@ export function loadWorkerEnvironment(
   source: NodeJS.ProcessEnv = process.env,
 ): WorkerEnvironment {
   return workerEnvironmentSchema.parse(source);
+}
+
+export function loadDatabaseMigrationEnvironment(
+  source: NodeJS.ProcessEnv = process.env,
+): DatabaseMigrationEnvironment {
+  const environment = databaseMigrationEnvironmentSchema.parse(source);
+  if (
+    environment.DATABASE_SECRET_ARN.split(':')[3] !== environment.AWS_REGION
+  ) {
+    throw new Error('Database secret ARN region must match AWS_REGION');
+  }
+  return environment;
 }
 
 export function loadSlackIngressLambdaEnvironment(

@@ -12,6 +12,7 @@ import {
   parseSlackBotTokenSecret,
 } from '../config/runtime-secrets.js';
 import { PostgresApprovedReportPublicationRepository } from '../infrastructure/postgres/approved-report-publication-repository.js';
+import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { ConfluenceApprovedReportPublisher } from '../integrations/confluence/confluence-approved-report-publisher.js';
 import { NotionApprovedReportPublisher } from '../integrations/notion/notion-approved-report-publisher.js';
@@ -116,7 +117,7 @@ async function buildHandler(): Promise<ApprovedReportPublicationHandler> {
     database.on('error', (error) => {
       logger.error({ err: error }, 'idle PostgreSQL client failed');
     });
-    await database.query('SELECT 1 FROM report_publications LIMIT 1');
+    await assertDatabaseSchemaCompatible(database);
 
     const publications = new PublishApprovedReports(
       new PostgresApprovedReportPublicationRepository(database),

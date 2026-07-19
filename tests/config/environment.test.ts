@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  loadDatabaseMigrationEnvironment,
   loadApprovedReportPublicationLambdaEnvironment,
   loadIncidentAnalysisLambdaEnvironment,
   loadIncidentReviewApiLambdaEnvironment,
@@ -12,6 +13,34 @@ import {
 } from '../../src/config/environment.js';
 
 describe('Lambda environment configuration', () => {
+  it('loads an AWS-backed migration target without a connection string', () => {
+    const environment = loadDatabaseMigrationEnvironment({
+      AWS_REGION: 'ap-southeast-2',
+      DATABASE_SECRET_ARN:
+        'arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:database-AbCdEf',
+      DATABASE_HOST: 'aws-0-ap-southeast-2.pooler.supabase.com',
+      DATABASE_PORT: '5432',
+      DATABASE_NAME: 'postgres',
+    });
+
+    expect(environment).toMatchObject({
+      DATABASE_HOST: 'aws-0-ap-southeast-2.pooler.supabase.com',
+      DATABASE_PORT: 5432,
+      DATABASE_NAME: 'postgres',
+      DATABASE_SSL: true,
+    });
+    expect(environment).not.toHaveProperty('DATABASE_URL');
+    expect(() =>
+      loadDatabaseMigrationEnvironment({
+        AWS_REGION: 'us-east-1',
+        DATABASE_SECRET_ARN:
+          'arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:database-AbCdEf',
+        DATABASE_HOST: 'pooler.example.test',
+        DATABASE_NAME: 'postgres',
+      }),
+    ).toThrow('Database secret ARN region must match AWS_REGION');
+  });
+
   it('loads the ingress boundary without requiring a plaintext secret', () => {
     const environment = loadSlackIngressLambdaEnvironment({
       INCIDENT_QUEUE_URL: 'https://sqs.example.test/queue.fifo',

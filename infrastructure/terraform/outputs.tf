@@ -73,6 +73,11 @@ output "review_console_url" {
   value       = local.review_application_url
 }
 
+output "review_distribution_id" {
+  description = "CloudFront distribution invalidated and verified after a review-console deployment."
+  value       = aws_cloudfront_distribution.review.id
+}
+
 output "review_api_url" {
   description = "Authenticated review API base URL. Browser calls require a Cognito access token and active database membership."
   value       = "${aws_apigatewayv2_api.public.api_endpoint}/review"

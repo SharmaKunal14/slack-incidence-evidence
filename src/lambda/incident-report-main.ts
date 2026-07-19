@@ -11,6 +11,7 @@ import {
 } from '../config/runtime-secrets.js';
 import { PostgresIncidentReportRepository } from '../infrastructure/postgres/incident-report-repository.js';
 import { PostgresIncidentRepository } from '../infrastructure/postgres/incident-repository.js';
+import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { ResponsesIncidentReportGenerator } from '../integrations/openai/responses-incident-report-generator.js';
 import { createLogger } from '../observability/logger.js';
@@ -91,7 +92,7 @@ async function buildHandler(): Promise<IncidentReportHandler> {
     database.on('error', (error) => {
       logger.error({ err: error }, 'idle PostgreSQL client failed');
     });
-    await database.query('SELECT 1 FROM incident_report_drafts LIMIT 1');
+    await assertDatabaseSchemaCompatible(database);
 
     const useCase = new GenerateIncidentReport(
       new PostgresIncidentReportRepository(database),

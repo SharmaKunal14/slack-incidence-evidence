@@ -1,0 +1,110 @@
+name: Deploy environment
+
+on:
+  workflow_call:
+    inputs:
+      deployment-environment:
+        description: GitHub Environment and Terraform environment to deploy.
+        required: true
+        type: string
+      release-artifact-name:
+        description: Immutable artifact produced by the calling CI run.
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.deployment-environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.deployment-environment }}
+      url: ${{ steps.smoke.outputs.url }}
+    concurrency:
+      group: incident-copilot-${{ inputs.deployment-environment }}
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    env:
+      DEPLOYMENT_ENVIRONMENT: ${{ inputs.deployment-environment }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      TF_STATE_KEY: ${{ vars.TF_STATE_KEY }}
+      TF_STATE_KMS_KEY_ARN: ${{ vars.TF_STATE_KMS_KEY_ARN }}
+      TF_INPUTS_JSON: ${{ vars.TF_INPUTS_JSON }}
+      DATABASE_SECRET_ARN: ${{ vars.MIGRATION_DATABASE_SECRET_ARN }}
+      DATABASE_HOST: ${{ vars.MIGRATION_DATABASE_HOST }}
+      DATABASE_PORT: ${{ vars.MIGRATION_DATABASE_PORT }}
+      DATABASE_NAME: ${{ vars.MIGRATION_DATABASE_NAME }}
+      DATABASE_SSL: 'true'
+      TF_IN_AUTOMATION: 'true'
+      TF_INPUT: 'false'
+    steps:
+      - name: Check out the release source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Download the immutable release
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ inputs.release-artifact-name }}
+          path: artifacts
+
+      - name: Install deployment tooling
+        run: npm ci --ignore-scripts
+
+      - name: Verify artifact digests and deployment configuration
+        run: |
+          npm run release:verify
+          npm run deployment:prepare
+
+      - name: Acquire short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@517a711dbcd0e402f90c77e7e2f81e849156e31d # v6
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: gha-${{ inputs.deployment-environment }}-${{ github.run_id }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          mask-aws-account-id: true
+
+      - name: Use the reviewed Terraform version
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: Create and enforce the Terraform plan
+        run: |
+          terraform -chdir=infrastructure/terraform init -input=false -reconfigure -backend-config=../../artifacts/terraform-backend.hcl
+          terraform -chdir=infrastructure/terraform validate
+          terraform -chdir=infrastructure/terraform plan -input=false -lock-timeout=5m -var-file=../../artifacts/deployment.auto.tfvars.json -out=tfplan
+          terraform -chdir=infrastructure/terraform show -json tfplan | npm run deployment:check-plan
+
+      - name: Apply forward-only database migrations
+        run: npm run db:migrate:aws
+
+      - name: Apply the saved infrastructure plan
+        run: terraform -chdir=infrastructure/terraform apply -input=false -lock-timeout=5m -auto-approve tfplan
+
+      - name: Verify the deployed environment
+        id: smoke
+        env:
+          TERRAFORM_OUTPUTS_PATH: artifacts/terraform-outputs.json
+        run: |
+          terraform -chdir=infrastructure/terraform output -json > artifacts/terraform-outputs.json
+          npm run deployment:smoke

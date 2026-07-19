@@ -13,13 +13,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm audit --audit-level=high
       - run: npm run check
+      - name: Preserve the immutable release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: incident-copilot-${{ github.sha }}
+          path: |
+            artifacts/incident-copilot-lambda.zip
+            artifacts/release-manifest.json
+            artifacts/review-web
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
 
   terraform:
     runs-on: ubuntu-latest
@@ -28,10 +43,83 @@ jobs:
       run:
         working-directory: infrastructure/terraform
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: 1.15.8
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false -input=false
       - run: terraform validate
+
+  migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16.14-alpine3.23@sha256:42b8b8b29c8a4e933d88943e5b03001a78794905cf786e6e7634e9f2abd5a0d3
+        env:
+          POSTGRES_DB: incident_copilot
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d incident_copilot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:ci-only-password@127.0.0.1:5432/incident_copilot
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Apply and re-verify every migration
+        run: |
+          npm run db:migrate
+          npm run db:migrate
+
+  deploy-development:
+    name: Deploy development
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [verify, terraform, migrations]
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      deployment-environment: development
+      release-artifact-name: incident-copilot-${{ github.sha }}
+
+  deploy-staging:
+    name: Deploy staging
+    if: vars.ENABLE_STAGING_DEPLOYMENT == 'true'
+    needs: [deploy-development]
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      deployment-environment: staging
+      release-artifact-name: incident-copilot-${{ github.sha }}
+
+  deploy-production:
+    name: Deploy production
+    if: vars.ENABLE_PRODUCTION_DEPLOYMENT == 'true'
+    needs: [deploy-staging]
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      deployment-environment: production
+      release-artifact-name: incident-copilot-${{ github.sha }}

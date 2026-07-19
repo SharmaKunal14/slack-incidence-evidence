@@ -9,6 +9,7 @@ import {
 } from '../config/runtime-secrets.js';
 import { PostgresIncidentRepository } from '../infrastructure/postgres/incident-repository.js';
 import { PostgresIncidentReportRepository } from '../infrastructure/postgres/incident-report-repository.js';
+import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { SlackWebApiIncidentStatusNotifier } from '../integrations/slack/web-api-incident-status-notifier.js';
 import { createLogger } from '../observability/logger.js';
@@ -87,7 +88,7 @@ async function buildHandler(): Promise<IncidentReviewNotificationHandler> {
     database.on('error', (error) => {
       logger.error({ err: error }, 'idle PostgreSQL client failed');
     });
-    await database.query('SELECT 1 FROM incidents LIMIT 1');
+    await assertDatabaseSchemaCompatible(database);
     const reportDrafts = new PostgresIncidentReportRepository(database);
     const useCase = new NotifyIncidentReviewReady(
       new PostgresIncidentRepository(database),

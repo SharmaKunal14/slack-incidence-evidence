@@ -82,6 +82,11 @@ Selected-channel collection and GitHub retrieval remain later increments.
 - PostgreSQL schema for tenants, installations, incidents, source artifacts,
   timeline events, claims, evidence links, workflow jobs, and audit events.
 - Transactional, checksummed SQL migrations protected by an advisory lock.
+- A shared required-migration startup gate for every database-backed Lambda.
+- A build-once GitHub Actions release path with OIDC-only AWS authentication,
+  serialized remote-state plans, migration-before-apply ordering, destructive
+  change blocking, deterministic smoke checks, and opt-in staging/production
+  promotion. AWS roles, state, and GitHub Environments must still be bootstrapped.
 - Structured AI analysis contract that rejects references to unknown evidence.
 - Redacted structured logging, health endpoints, graceful shutdown, CI, Docker,
   and reproducible local PostgreSQL/SQS services.
@@ -122,6 +127,7 @@ Fastify API and polling worker. Both paths compose the same application services
 and domain rules from one modular codebase. This isolates Slack's short response
 deadline from durable processing without duplicating business logic. See
 [architecture](docs/architecture.md), [serverless deployment](infrastructure/terraform/README.md),
+[deployment pipeline](docs/deployment-pipeline.md),
 [threat model](docs/threat-model.md), and [roadmap](docs/roadmap.md).
 
 ## Requirements

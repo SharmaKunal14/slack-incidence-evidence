@@ -10,6 +10,7 @@ import {
   parseSlackBotTokenSecret,
 } from '../config/runtime-secrets.js';
 import { PostgresSlackThreadCollectionRepository } from '../infrastructure/postgres/slack-thread-collection-repository.js';
+import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { SlackThreadWebApiSource } from '../integrations/slack/web-api-slack-thread-source.js';
 import { createLogger } from '../observability/logger.js';
@@ -94,7 +95,7 @@ async function buildHandler(): Promise<SlackEvidenceCollectorHandler> {
     database.on('error', (error) => {
       logger.error({ err: error }, 'idle PostgreSQL client failed');
     });
-    await database.query('SELECT 1 FROM slack_thread_collections LIMIT 1');
+    await assertDatabaseSchemaCompatible(database);
 
     const collector = new CollectSlackThreadPage(
       new PostgresSlackThreadCollectionRepository(database),
