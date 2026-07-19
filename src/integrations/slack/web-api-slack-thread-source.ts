@@ -12,6 +12,9 @@ import type { SlackBotInstallation } from './web-api-incident-status-notifier.js
 const REPLIES_URL = 'https://slack.com/api/conversations.replies';
 const PERMALINK_URL = 'https://slack.com/api/chat.getPermalink';
 const PAGE_SIZE = 15;
+// conversations.replies can prepend the thread parent to a full page of
+// replies, so the response may contain one more message than the limit.
+const MAX_MESSAGES_PER_RESPONSE = PAGE_SIZE + 1;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const PERMALINK_CONCURRENCY = 3;
 
@@ -52,7 +55,7 @@ const repliesResponseSchema = z.discriminatedUnion('ok', [
   z
     .object({
       ok: z.literal(true),
-      messages: z.array(slackMessageSchema).max(PAGE_SIZE),
+      messages: z.array(slackMessageSchema).max(MAX_MESSAGES_PER_RESPONSE),
       response_metadata: z
         .object({ next_cursor: z.string().max(2048).default('') })
         .passthrough()

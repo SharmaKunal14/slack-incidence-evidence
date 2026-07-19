@@ -562,7 +562,8 @@ Deploy immutable artifacts by commit SHA:
   serializing unrelated incidents across an entire tenant.
 - Step Functions execution data is excluded from logs to reduce both sensitive
   data exposure and log volume.
-- The collector reads at most 15 thread messages per invocation, resolves
+- The collector reads at most 16 thread message objects per invocation (the
+  parent plus a page of 15 replies), resolves
   permalinks with concurrency three, and has its own reserved-concurrency cap.
   A stored cursor makes each page independently retryable; a configurable page
   limit and cursor-progress check prevent unbounded executions.

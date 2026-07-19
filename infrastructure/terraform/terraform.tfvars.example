@@ -52,8 +52,9 @@ database_name = "postgres"
 # processor is still required to enforce it.
 evidence_retention_days = 30
 
-# Each page contains at most 15 messages. This prevents a bad cursor or an
-# unexpectedly large thread from creating an unbounded workflow.
+# Each response contains at most 16 message objects: the thread parent plus a
+# page of 15 replies. This prevents a bad cursor or an unexpectedly large
+# thread from creating an unbounded workflow.
 slack_thread_max_pages = 100
 
 # Leave both empty for Supabase's public TLS endpoint. If a later deployment

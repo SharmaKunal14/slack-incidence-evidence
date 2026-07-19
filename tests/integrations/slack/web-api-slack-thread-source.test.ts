@@ -162,6 +162,72 @@ describe('SlackThreadWebApiSource', () => {
     });
   });
 
+  it('accepts a full page of replies when Slack also includes the thread parent', async () => {
+    const messages = Array.from({ length: 16 }, (_, index) => ({
+      type: 'message',
+      ts: `1721178000.${String(index + 100).padStart(6, '0')}`,
+      text: `Message ${index + 1}`,
+      user: 'U001',
+    }));
+    const request = vi.fn<typeof fetch>().mockImplementation((url) => {
+      if (!(url instanceof URL)) {
+        throw new TypeError('Expected Slack source to use a URL request');
+      }
+      const requestUrl = url;
+      if (requestUrl.pathname === '/api/conversations.replies') {
+        return Promise.resolve(
+          jsonResponse({
+            ok: true,
+            messages,
+            response_metadata: { next_cursor: 'cursor-2' },
+          }),
+        );
+      }
+      return Promise.resolve(
+        jsonResponse({
+          ok: true,
+          channel: 'C001',
+          permalink: `https://workspace.slack.com/archives/C001/p${requestUrl.searchParams.get('message_ts')}`,
+        }),
+      );
+    });
+    const source = new SlackThreadWebApiSource(
+      { workspaceId: 'T001', botToken },
+      { request },
+    );
+
+    const result = await source.fetchPage(input);
+
+    expect(result).toMatchObject({
+      outcome: 'page',
+      nextCursor: 'cursor-2',
+    });
+    expect(result.outcome === 'page' && result.messages).toHaveLength(16);
+    expect(request).toHaveBeenCalledTimes(17);
+  });
+
+  it('rejects a Slack response above the parent-plus-page bound', async () => {
+    const messages = Array.from({ length: 17 }, (_, index) => ({
+      type: 'message',
+      ts: `1721178000.${String(index + 100).padStart(6, '0')}`,
+      text: `Message ${index + 1}`,
+      user: 'U001',
+    }));
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse({ ok: true, messages }));
+    const source = new SlackThreadWebApiSource(
+      { workspaceId: 'T001', botToken },
+      { request },
+    );
+
+    await expect(source.fetchPage(input)).rejects.toMatchObject({
+      code: 'SLACK_INVALID_RESPONSE',
+      retryable: true,
+    });
+    expect(request).toHaveBeenCalledOnce();
+  });
+
   it('rejects a cross-workspace request before sending the bot token', async () => {
     const request = vi.fn<typeof fetch>();
     const source = new SlackThreadWebApiSource(
