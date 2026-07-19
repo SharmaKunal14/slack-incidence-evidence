@@ -209,12 +209,15 @@ export class PostgresApprovedReportPublicationRepository implements ApprovedRepo
       `
         UPDATE report_publications
         SET status = CASE WHEN $1::boolean THEN 'FAILED' ELSE status END,
-            next_attempt_at = $2,
+            next_attempt_at = $2::timestamptz,
             last_error_code = $3,
             lease_owner = NULL,
             lease_expires_at = NULL,
-            updated_at = $4,
-            failed_at = CASE WHEN $1::boolean THEN $4 ELSE NULL END
+            updated_at = $4::timestamptz,
+            failed_at = CASE
+              WHEN $1::boolean THEN $4::timestamptz
+              ELSE NULL::timestamptz
+            END
         WHERE id = $5
           AND lease_owner = $6
           AND status IN ('PENDING', 'PAGE_PUBLISHED')
