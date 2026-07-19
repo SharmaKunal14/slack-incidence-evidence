@@ -193,7 +193,7 @@ variable "confluence_api_secret_arn" {
 }
 
 variable "confluence_base_url" {
-  description = "Plain HTTPS origin of the Confluence Cloud site; required when publication_provider is CONFLUENCE."
+  description = "Plain HTTPS origin of the human-facing Confluence Cloud site; required for page links when publication_provider is CONFLUENCE."
   type        = string
   default     = null
   nullable    = true
@@ -204,6 +204,18 @@ variable "confluence_base_url" {
       can(regex("^https://[A-Za-z0-9-]+\\.atlassian\\.net/?$", var.confluence_base_url))
     )
     error_message = "confluence_base_url must be null or a plain https://<site>.atlassian.net origin."
+  }
+}
+
+variable "confluence_cloud_id" {
+  description = "Optional opaque Atlassian Cloud ID. When set, Confluence API requests use the scoped-token api.atlassian.com gateway; when null, the classic-token site endpoint is retained."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.confluence_cloud_id == null || can(regex("^[A-Za-z0-9][A-Za-z0-9-]{0,127}$", var.confluence_cloud_id))
+    error_message = "confluence_cloud_id must be null or a 1-128 character alphanumeric/hyphen identifier."
   }
 }
 

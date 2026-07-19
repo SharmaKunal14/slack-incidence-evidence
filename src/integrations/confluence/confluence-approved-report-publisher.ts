@@ -13,6 +13,10 @@ const MAX_STORAGE_BODY_BYTES = 512 * 1024;
 const MAX_PAGE_TITLE_CHARACTERS = 255;
 
 const confluenceIdSchema = z.string().regex(/^[1-9][0-9]{0,29}$/u);
+const cloudIdSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/u);
 const confluencePageSchema = z
   .object({
     id: confluenceIdSchema,
@@ -46,6 +50,7 @@ const SECTION_HEADINGS = {
 
 export interface ConfluenceApprovedReportPublisherOptions {
   readonly baseUrl: string;
+  readonly cloudId?: string;
   readonly email: string;
   readonly apiToken: string;
   readonly spaceId: string;
@@ -58,7 +63,9 @@ export interface ConfluenceApprovedReportPublisherOptions {
 export class ConfluenceApprovedReportPublisher implements ApprovedReportPublisher {
   public readonly provider = 'CONFLUENCE' as const;
 
-  private readonly baseUrl: URL;
+  private readonly siteUrl: URL;
+  private readonly apiOrigin: URL;
+  private readonly apiPathPrefix: string;
   private readonly request: typeof fetch;
   private readonly timeoutMs: number;
   private readonly spaceId: string;
@@ -66,7 +73,15 @@ export class ConfluenceApprovedReportPublisher implements ApprovedReportPublishe
   private readonly authorization: string;
 
   public constructor(options: ConfluenceApprovedReportPublisherOptions) {
-    this.baseUrl = parseConfluenceBaseUrl(options.baseUrl);
+    this.siteUrl = parseConfluenceSiteUrl(options.baseUrl);
+    if (options.cloudId === undefined) {
+      this.apiOrigin = this.siteUrl;
+      this.apiPathPrefix = '';
+    } else {
+      const cloudId = cloudIdSchema.parse(options.cloudId);
+      this.apiOrigin = new URL('https://api.atlassian.com');
+      this.apiPathPrefix = `/ex/confluence/${cloudId}`;
+    }
     const email = z.email().max(254).parse(options.email.trim());
     const apiToken = z
       .string()
@@ -135,10 +150,7 @@ export class ConfluenceApprovedReportPublisher implements ApprovedReportPublishe
   private async findExistingPage(
     title: string,
   ): Promise<PublishedReportPage | null> {
-    const url = new URL(
-      `/wiki/api/v2/spaces/${this.spaceId}/pages`,
-      this.baseUrl,
-    );
+    const url = this.apiUrl(`/wiki/api/v2/spaces/${this.spaceId}/pages`);
     url.searchParams.set('title', title);
     url.searchParams.set('status', 'current');
     url.searchParams.set('limit', '2');
@@ -167,10 +179,14 @@ export class ConfluenceApprovedReportPublisher implements ApprovedReportPublishe
     init: { readonly method: 'GET' | 'POST'; readonly body?: string },
   ): Promise<unknown> {
     const url =
-      typeof pathOrUrl === 'string'
-        ? new URL(pathOrUrl, this.baseUrl)
-        : pathOrUrl;
-    if (url.origin !== this.baseUrl.origin) {
+      typeof pathOrUrl === 'string' ? this.apiUrl(pathOrUrl) : pathOrUrl;
+    if (
+      url.origin !== this.apiOrigin.origin ||
+      !url.pathname.startsWith(`${this.apiPathPrefix}/wiki/api/v2/`) ||
+      url.username !== '' ||
+      url.password !== '' ||
+      url.hash !== ''
+    ) {
       throw new ReportPublicationProviderError('CONFLUENCE_INVALID_API_URL');
     }
 
@@ -210,9 +226,9 @@ export class ConfluenceApprovedReportPublisher implements ApprovedReportPublishe
   private toPublishedPage(
     page: z.infer<typeof confluencePageSchema>,
   ): PublishedReportPage {
-    const pageUrl = new URL(page._links.webui, this.baseUrl);
+    const pageUrl = new URL(page._links.webui, this.siteUrl);
     if (
-      pageUrl.origin !== this.baseUrl.origin ||
+      pageUrl.origin !== this.siteUrl.origin ||
       !pageUrl.pathname.startsWith('/wiki/') ||
       pageUrl.username !== '' ||
       pageUrl.password !== '' ||
@@ -223,9 +239,16 @@ export class ConfluenceApprovedReportPublisher implements ApprovedReportPublishe
     }
     return { pageId: page.id, pageUrl: pageUrl.toString() };
   }
+
+  private apiUrl(path: string): URL {
+    if (!path.startsWith('/wiki/api/v2/')) {
+      throw new ReportPublicationProviderError('CONFLUENCE_INVALID_API_PATH');
+    }
+    return new URL(`${this.apiPathPrefix}${path}`, this.apiOrigin);
+  }
 }
 
-function parseConfluenceBaseUrl(value: string): URL {
+function parseConfluenceSiteUrl(value: string): URL {
   const url = new URL(value);
   if (
     url.protocol !== 'https:' ||
@@ -238,7 +261,7 @@ function parseConfluenceBaseUrl(value: string): URL {
     url.hash !== ''
   ) {
     throw new Error(
-      'Confluence base URL must be a plain HTTPS atlassian.net origin',
+      'Confluence site URL must be a plain HTTPS atlassian.net origin',
     );
   }
   return url;

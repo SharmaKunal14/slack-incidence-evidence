@@ -21,6 +21,7 @@ openai_api_secret_arn    = "arn:aws:secretsmanager:ap-southeast-2:123456789012:s
 publication_provider      = "CONFLUENCE"
 confluence_api_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/confluence-YzAbCd"
 confluence_base_url       = "https://your-site.atlassian.net"
+confluence_cloud_id       = "11111111-2222-3333-4444-555555555555"
 confluence_space_id       = "123456789"
 # confluence_parent_page_id = "987654321"
 

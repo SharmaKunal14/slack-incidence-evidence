@@ -249,10 +249,33 @@ Confluence Cloud API secret (publication Lambda only):
 ```
 
 Set `publication_provider = "CONFLUENCE"`, `confluence_base_url` to the plain
-`https://<site>.atlassian.net` origin, and `confluence_space_id` to the numeric
-space ID. `confluence_parent_page_id` is optional. The account should be a
+`https://<site>.atlassian.net` human-facing site origin,
+`confluence_cloud_id` to the Cloud ID required by a scoped token, and
+`confluence_space_id` to the numeric space ID. `confluence_parent_page_id` is
+optional. The account should be a
 dedicated service account with view/create-page permission only in the target
 space. The Lambda's IAM role can read only the selected provider secret.
+
+Retrieve the Cloud ID from the site-owned metadata endpoint:
+
+```bash
+curl --fail --silent --show-error \
+  "https://<site>.atlassian.net/_edge/tenant_info" |
+jq -r '.cloudId'
+```
+
+When `confluence_cloud_id` is set, API calls go to
+`https://api.atlassian.com/ex/confluence/<cloud-id>/wiki/api/v2/...`, which is
+required for scoped API tokens. The separate `confluence_base_url` is used only
+to construct and validate the human-facing page URL posted to Slack. Omitting
+`confluence_cloud_id` retains the site-specific API endpoint solely for true
+classic tokens.
+
+The publisher requires the scoped-token permissions `read:page:confluence` and
+`write:page:confluence`, plus the service account's site and target-space
+permissions. A manual `GET /wiki/api/v2/spaces` diagnostic additionally requires
+`read:space:confluence`; that broader scope is not needed by the publisher's
+page lookup and creation requests.
 
 The adapter uses the [Confluence Cloud REST API v2 page
 endpoints](https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-page/).
@@ -264,7 +287,9 @@ Basic authentication is appropriate for this self-hosted internal development
 integration. A distributable multi-tenant product must replace it with one
 centrally managed OAuth 2.0 (3LO) application rather than collecting customer
 API tokens. See Atlassian's [Basic authentication security
-guidance](https://developer.atlassian.com/cloud/confluence/basic-auth-for-rest-apis/).
+guidance](https://developer.atlassian.com/cloud/confluence/basic-auth-for-rest-apis/)
+and [scoped-token endpoint
+requirements](https://support.atlassian.com/confluence/kb/scoped-api-tokens-in-confluence-cloud/).
 
 `publication_provider` is an environment-level switch. Set it to `NOTION` to
 use the preserved Notion adapter or `CONFLUENCE` for Confluence; no application
