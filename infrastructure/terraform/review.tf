@@ -340,8 +340,9 @@ resource "aws_cloudwatch_log_group" "incident_review_api" {
 }
 
 resource "aws_iam_role" "incident_review_api" {
-  name               = "${local.name_prefix}-incident-review-api-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+  name                 = "${local.name_prefix}-incident-review-api-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role.json
+  permissions_boundary = var.lambda_role_permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "incident_review_api" {

@@ -35,6 +35,26 @@ variable "expected_aws_account_id" {
   }
 }
 
+variable "lambda_role_permissions_boundary_arn" {
+  description = "ARN of the environment-specific permissions boundary that must constrain every Terraform-created Lambda IAM role."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:[^:]+:iam::[0-9]{12}:policy/[A-Za-z0-9+=,.@_/-]+$", var.lambda_role_permissions_boundary_arn))
+    error_message = "lambda_role_permissions_boundary_arn must be an IAM managed-policy ARN."
+  }
+}
+
+variable "workflow_role_permissions_boundary_arn" {
+  description = "ARN of the environment-specific permissions boundary that must constrain the Terraform-created Step Functions IAM role."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:[^:]+:iam::[0-9]{12}:policy/[A-Za-z0-9+=,.@_/-]+$", var.workflow_role_permissions_boundary_arn))
+    error_message = "workflow_role_permissions_boundary_arn must be an IAM managed-policy ARN."
+  }
+}
+
 variable "lambda_artifact_path" {
   description = "Path to one deployment ZIP containing all Lambda composition entrypoints and their production dependencies."
   type        = string
