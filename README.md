@@ -128,6 +128,7 @@ and domain rules from one modular codebase. This isolates Slack's short response
 deadline from durable processing without duplicating business logic. See
 [architecture](docs/architecture.md), [serverless deployment](infrastructure/terraform/README.md),
 [deployment pipeline](docs/deployment-pipeline.md),
+[deployment-role bootstrap](infrastructure/bootstrap/README.md),
 [threat model](docs/threat-model.md), and [roadmap](docs/roadmap.md).
 
 ## Requirements

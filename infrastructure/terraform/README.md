@@ -531,7 +531,9 @@ manually before an audited retry or reassignment.
 
 The checked-in GitHub Actions pipeline, environment variables, OIDC boundary,
 state bootstrap, migration ordering, and promotion gates are documented in
-[the deployment pipeline runbook](../../docs/deployment-pipeline.md).
+[the deployment pipeline runbook](../../docs/deployment-pipeline.md). The OIDC
+deployment role and mandatory runtime-role permissions boundary are managed by
+the separate [bootstrap stack](../bootstrap/README.md).
 
 This reusable root intentionally omits a hard-coded backend because backend
 configuration differs by AWS account and cannot use normal input variables.

@@ -20,7 +20,10 @@ async function projectFixture(): Promise<string> {
       'environment',
       'expected_aws_account_id',
       'lambda_artifact_path',
+      'project_name',
       'review_web_artifact_directory',
+      'lambda_role_permissions_boundary_arn',
+      'workflow_role_permissions_boundary_arn',
       'slack_signing_secret_arn',
       'slack_bot_token_secret_arn',
       'database_secret_arn',
@@ -48,6 +51,8 @@ function validEnvironment(): NodeJS.ProcessEnv {
     AWS_ACCOUNT_ID: accountId,
     AWS_REGION: region,
     AWS_DEPLOY_ROLE_ARN: `arn:aws:iam::${accountId}:role/github-development`,
+    AWS_LAMBDA_ROLE_PERMISSIONS_BOUNDARY_ARN: `arn:aws:iam::${accountId}:policy/incident-copilot-development-lambda-boundary`,
+    AWS_WORKFLOW_ROLE_PERMISSIONS_BOUNDARY_ARN: `arn:aws:iam::${accountId}:policy/incident-copilot-development-workflow-boundary`,
     TF_STATE_BUCKET: 'incident-copilot-state-123456789012',
     TF_STATE_KEY: 'incident-copilot/development/terraform.tfstate',
     TF_STATE_KMS_KEY_ARN: `arn:aws:kms:${region}:${accountId}:key/11111111-2222-3333-4444-555555555555`,
@@ -96,6 +101,9 @@ describe('deployment configuration', () => {
     expect(variables).toMatchObject({
       environment: 'development',
       expected_aws_account_id: accountId,
+      project_name: 'incident-copilot',
+      lambda_role_permissions_boundary_arn: `arn:aws:iam::${accountId}:policy/incident-copilot-development-lambda-boundary`,
+      workflow_role_permissions_boundary_arn: `arn:aws:iam::${accountId}:policy/incident-copilot-development-workflow-boundary`,
       lambda_artifact_path: '../../artifacts/incident-copilot-lambda.zip',
     });
   });
@@ -120,6 +128,13 @@ describe('deployment configuration', () => {
       'arn:aws:iam::999999999999:role/github-development';
     await expect(
       prepareDeploymentConfiguration(root, roleSource),
+    ).rejects.toThrow('deployment account');
+
+    const boundarySource = validEnvironment();
+    boundarySource.AWS_LAMBDA_ROLE_PERMISSIONS_BOUNDARY_ARN =
+      'arn:aws:iam::999999999999:policy/incident-copilot-development-lambda-boundary';
+    await expect(
+      prepareDeploymentConfiguration(root, boundarySource),
     ).rejects.toThrow('deployment account');
 
     const secretSource = validEnvironment();
