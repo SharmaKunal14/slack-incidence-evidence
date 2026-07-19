@@ -7,6 +7,11 @@ import type {
   IncidentReviewReadyNotification,
   IncidentReviewReadyNotifier,
 } from '../../application/ports/incident-review-ready-notifier.js';
+import type {
+  IncidentReportPublishedNotification,
+  IncidentReportPublishedNotifier,
+} from '../../application/ports/incident-report-published-notifier.js';
+import { ReportPublicationProviderError } from '../../application/ports/approved-report-publisher.js';
 
 const SLACK_POST_MESSAGE_URL = 'https://slack.com/api/chat.postMessage';
 const MAX_RESPONSE_BYTES = 64 * 1024;
@@ -31,6 +36,30 @@ const readyNotificationSchema = z
     timelineEventCount: z.number().int().nonnegative().max(100_000),
     claimCount: z.number().int().nonnegative().max(100_000),
     openQuestionCount: z.number().int().nonnegative().max(100_000),
+  })
+  .strict();
+
+const publishedNotificationSchema = z
+  .object({
+    workspaceId: z.string().regex(/^T[A-Z0-9]{1,63}$/),
+    incidentId: z.uuid(),
+    revisionId: z.uuid(),
+    channelId: z.string().regex(/^C[A-Z0-9]{1,63}$/),
+    threadTs: slackTimestampSchema,
+    notionPageUrl: z.url().superRefine((value, context) => {
+      const url = new URL(value);
+      if (
+        url.protocol !== 'https:' ||
+        url.username !== '' ||
+        url.password !== '' ||
+        (url.hostname !== 'notion.so' && !url.hostname.endsWith('.notion.so'))
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Published report URL must be a Notion HTTPS URL',
+        });
+      }
+    }),
   })
   .strict();
 
@@ -70,7 +99,10 @@ export interface SlackWebApiIncidentStatusNotifierOptions {
  * a second logical message. It is an idempotency identifier, not a secret.
  */
 export class SlackWebApiIncidentStatusNotifier
-  implements IncidentStatusNotifier, IncidentReviewReadyNotifier
+  implements
+    IncidentStatusNotifier,
+    IncidentReviewReadyNotifier,
+    IncidentReportPublishedNotifier
 {
   private readonly request: typeof fetch;
   private readonly timeoutMs: number;
@@ -152,13 +184,35 @@ export class SlackWebApiIncidentStatusNotifier
     });
   }
 
+  public async notifyReportPublished(
+    notification: IncidentReportPublishedNotification,
+  ): Promise<{ readonly messageTs: string }> {
+    const input = publishedNotificationSchema.parse(notification);
+    if (input.workspaceId !== this.installation.workspaceId) {
+      throw new SlackWebApiError('SLACK_WORKSPACE_MISMATCH');
+    }
+
+    const messageTs = await this.postStatus({
+      channelId: input.channelId,
+      threadTs: input.threadTs,
+      clientMessageId: input.revisionId,
+      incidentId: input.incidentId,
+      text: [
+        'Final incident report approved and published.',
+        `Reference: ${input.incidentId}`,
+        `Notion report: ${input.notionPageUrl}`,
+      ].join('\n'),
+    });
+    return { messageTs };
+  }
+
   private async postStatus(input: {
     readonly channelId: string;
     readonly threadTs: string;
     readonly clientMessageId: string;
     readonly incidentId: string;
     readonly text: string;
-  }): Promise<void> {
+  }): Promise<string> {
     let response: Response;
     try {
       response = await this.request(SLACK_POST_MESSAGE_URL, {
@@ -206,6 +260,7 @@ export class SlackWebApiIncidentStatusNotifier
     if (parsed.data.channel !== input.channelId) {
       throw new SlackWebApiError('SLACK_RESPONSE_CHANNEL_MISMATCH');
     }
+    return parsed.data.ts;
   }
 }
 
@@ -231,19 +286,20 @@ function parseReviewAppBaseUrl(value: string | undefined): URL | null {
   return url;
 }
 
-export class SlackWebApiError extends Error {
+export class SlackWebApiError extends ReportPublicationProviderError {
   public constructor(
-    public readonly code: string,
+    code: string,
     options?: ErrorOptions,
+    retryAfterSeconds: number | null = null,
   ) {
-    super('Slack Web API request failed', options);
+    super(code, retryAfterSeconds, options);
     this.name = 'SlackWebApiError';
   }
 }
 
 export class SlackRateLimitError extends SlackWebApiError {
-  public constructor(public readonly retryAfterSeconds: number | null) {
-    super('SLACK_RATE_LIMITED');
+  public constructor(retryAfterSeconds: number | null) {
+    super('SLACK_RATE_LIMITED', undefined, retryAfterSeconds);
     this.name = 'SlackRateLimitError';
   }
 }

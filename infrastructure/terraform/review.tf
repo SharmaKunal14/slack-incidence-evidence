@@ -484,6 +484,7 @@ locals {
   review_api_routes = toset([
     "GET /review/incidents",
     "GET /review/incidents/{incidentId}",
+    "GET /review/incidents/{incidentId}/revisions/{revisionId}",
     "POST /review/incidents/{incidentId}/revisions",
     "POST /review/incidents/{incidentId}/revisions/{revisionId}/approve",
   ])

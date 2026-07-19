@@ -45,11 +45,13 @@ import {
   bundleSchema,
   classificationValues,
   inboxSchema,
+  revisionDetailResponseSchema,
   revisionResponseSchema,
   type Bundle,
   type Classification,
   type Configuration,
   type InboxItem,
+  type RevisionDetail,
   type Statement,
 } from './contracts.js';
 import { reconcileRevisionStatements } from './revision-view.js';
@@ -490,16 +492,50 @@ function IncidentWorkspace({
   );
   const [notice, setNotice] = useState<string | null>(null);
   const revisionIdentity = bundle.latestRevision?.id ?? bundle.reportDraft.id;
+  const [selectedVersionId, setSelectedVersionId] = useState(revisionIdentity);
+  const selectedIsOriginal = selectedVersionId === bundle.reportDraft.id;
+  const selectedIsLatest = selectedVersionId === revisionIdentity;
+  const selectedRevisionQuery = useQuery({
+    queryKey: [
+      'incident-review-revision',
+      bundle.incident.id,
+      selectedVersionId,
+    ],
+    queryFn: async () =>
+      revisionDetailResponseSchema.parse(
+        await apiRequest(
+          configuration,
+          token,
+          `/review/incidents/${encodeURIComponent(bundle.incident.id)}/revisions/${encodeURIComponent(selectedVersionId)}`,
+        ),
+      ).revision,
+    enabled: !selectedIsOriginal && !selectedIsLatest,
+  });
+  const selectedRevision: RevisionDetail | null = selectedIsOriginal
+    ? null
+    : selectedIsLatest
+      ? bundle.latestRevision
+      : (selectedRevisionQuery.data ?? null);
+  const selectedVersionIdentity = selectedRevision?.id ?? selectedVersionId;
 
   useEffect(() => {
-    setStatementStates(createStatementStates(bundle));
+    setSelectedVersionId(revisionIdentity);
+  }, [revisionIdentity]);
+
+  useEffect(() => {
+    if (!selectedIsOriginal && selectedRevision === null) {
+      return;
+    }
+    setStatementStates(
+      createStatementStates(bundle, selectedRevision?.statements ?? null),
+    );
     setAcknowledgedContradictions(
-      bundle.latestRevision?.acknowledgedContradictions ?? false,
+      selectedRevision?.acknowledgedContradictions ?? false,
     );
     setAcknowledgedQuestions(
-      bundle.latestRevision?.acknowledgedOpenQuestions ?? false,
+      selectedRevision?.acknowledgedOpenQuestions ?? false,
     );
-  }, [bundle, revisionIdentity]);
+  }, [bundle, selectedIsOriginal, selectedRevision, selectedVersionIdentity]);
 
   const saveRevision = useMutation({
     mutationFn: async () => {
@@ -546,7 +582,9 @@ function IncidentWorkspace({
   });
 
   const displayedDraft =
-    bundle.latestRevision?.status === 'DRAFT' ? bundle.latestRevision : null;
+    selectedIsLatest && selectedRevision?.status === 'DRAFT'
+      ? selectedRevision
+      : null;
   const approveRevision = useMutation({
     mutationFn: async () => {
       if (displayedDraft === null) {
@@ -576,7 +614,8 @@ function IncidentWorkspace({
     },
   });
 
-  const editable = bundle.incident.status === 'NEEDS_REVIEW';
+  const editable =
+    bundle.incident.status === 'NEEDS_REVIEW' && selectedIsLatest;
   const contradictionCount = bundle.claims.filter(
     (claim) =>
       claim.classification === 'disputed' ||
@@ -617,16 +656,21 @@ function IncidentWorkspace({
           </div>
           <h1>{bundle.incident.title}</h1>
           <p className="revision-context">
-            {bundle.latestRevision === null ? (
+            {selectedIsOriginal ? (
               <>
                 <Sparkles size={16} /> Original AI draft{' '}
                 {bundle.reportDraft.draftVersion}
               </>
+            ) : selectedRevision === null ? (
+              <>
+                <LoaderCircle className="spin" size={16} /> Loading preserved
+                revision
+              </>
             ) : (
               <>
                 <History size={16} /> Human revision{' '}
-                {bundle.latestRevision.revisionNumber} ·{' '}
-                {humanize(bundle.latestRevision.status)}
+                {selectedRevision.revisionNumber} ·{' '}
+                {humanize(selectedRevision.status)}
               </>
             )}
             <span>Based on incident version {bundle.incident.version}</span>
@@ -689,52 +733,83 @@ function IncidentWorkspace({
           <div className="workspace-heading">
             <div>
               <p className="eyebrow">Reviewed narrative</p>
-              <h2 id="report-title">Postmortem draft</h2>
+              <h2 id="report-title">Postmortem report</h2>
             </div>
-            <span className="workspace-hint">
-              <ShieldCheck size={15} /> Every statement stays linked to its
-              source
-            </span>
+            <label className="version-picker">
+              <span>
+                <History size={14} /> Version history
+              </span>
+              <select
+                aria-label="Displayed report version"
+                value={selectedVersionId}
+                onChange={(event) => setSelectedVersionId(event.target.value)}
+              >
+                {bundle.revisions.map((revision) => (
+                  <option key={revision.id} value={revision.id}>
+                    Revision {revision.revisionNumber} ·{' '}
+                    {humanize(revision.status)} ·{' '}
+                    {formatCalendarDate(revision.createdAt)}
+                  </option>
+                ))}
+                <option value={bundle.reportDraft.id}>
+                  Original AI draft · Version {bundle.reportDraft.draftVersion}
+                </option>
+              </select>
+            </label>
           </div>
-          <div className="report-sections">
-            {bundle.sections.map((section, sectionIndex) => (
-              <section className="report-section" key={section.sectionType}>
-                <header className="report-section-heading">
-                  <span>{String(sectionIndex + 1).padStart(2, '0')}</span>
-                  <h3>{humanize(section.sectionType)}</h3>
-                  <small>
-                    {section.statements.length}{' '}
-                    {section.statements.length === 1
-                      ? 'statement'
-                      : 'statements'}
-                  </small>
-                </header>
-                <div className="statement-list">
-                  {section.statements.map((statement) => {
-                    const state = statementStates[statement.id];
-                    if (state === undefined) {
-                      throw new Error('Report statement has no review state');
-                    }
-                    return (
-                      <StatementEditor
-                        editable={editable}
-                        key={statement.id}
-                        onChange={(next) =>
-                          setStatementStates((current) => ({
-                            ...current,
-                            [statement.id]: next,
-                          }))
-                        }
-                        onOpenSource={openSource}
-                        state={state}
-                        statement={statement}
-                      />
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
-          </div>
+          {selectedRevisionQuery.isPending && (
+            <p className="version-message">
+              <LoaderCircle className="spin" size={15} /> Loading preserved
+              revision…
+            </p>
+          )}
+          {selectedRevisionQuery.isError && (
+            <p className="version-message version-message-error">
+              <AlertCircle size={15} /> This preserved revision could not be
+              loaded.
+            </p>
+          )}
+          {(selectedIsOriginal || selectedRevision !== null) && (
+            <div className="report-sections">
+              {bundle.sections.map((section, sectionIndex) => (
+                <section className="report-section" key={section.sectionType}>
+                  <header className="report-section-heading">
+                    <span>{String(sectionIndex + 1).padStart(2, '0')}</span>
+                    <h3>{humanize(section.sectionType)}</h3>
+                    <small>
+                      {section.statements.length}{' '}
+                      {section.statements.length === 1
+                        ? 'statement'
+                        : 'statements'}
+                    </small>
+                  </header>
+                  <div className="statement-list">
+                    {section.statements.map((statement) => {
+                      const state = statementStates[statement.id];
+                      if (state === undefined) {
+                        throw new Error('Report statement has no review state');
+                      }
+                      return (
+                        <StatementEditor
+                          editable={editable}
+                          key={statement.id}
+                          onChange={(next) =>
+                            setStatementStates((current) => ({
+                              ...current,
+                              [statement.id]: next,
+                            }))
+                          }
+                          onOpenSource={openSource}
+                          state={state}
+                          statement={statement}
+                        />
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
         </section>
 
         <EvidenceWorkspace
@@ -761,14 +836,21 @@ function IncidentWorkspace({
       ) : (
         <section
           className="approved-banner reveal"
-          aria-label="Approved revision"
+          aria-label="Read-only report version"
         >
           <span>
             <CheckCircle2 size={22} />
           </span>
           <div>
-            <strong>Approved revision locked</strong>
-            <p>This immutable human-reviewed record is displayed read-only.</p>
+            <strong>
+              {selectedRevision?.status === 'APPROVED'
+                ? 'Approved revision locked'
+                : 'Preserved historical version'}
+            </strong>
+            <p>
+              This version is immutable and displayed read-only. Use Version
+              history to compare it with earlier or later revisions.
+            </p>
           </div>
         </section>
       )}
@@ -1426,12 +1508,10 @@ function RequestFailure({
 
 function createStatementStates(
   bundle: Bundle,
+  revisionStatements = bundle.latestRevision?.statements ?? null,
 ): Readonly<Record<string, StatementState>> {
   const sources = bundle.sections.flatMap((section) => section.statements);
-  const views = reconcileRevisionStatements(
-    sources,
-    bundle.latestRevision?.statements ?? null,
-  );
+  const views = reconcileRevisionStatements(sources, revisionStatements);
   return Object.fromEntries(
     sources.map((statement) => {
       const view = views.get(statement.id);
@@ -1448,6 +1528,14 @@ function createStatementStates(
       ];
     }),
   );
+}
+
+function formatCalendarDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date(value));
 }
 
 function parseClassification(value: string): Classification {

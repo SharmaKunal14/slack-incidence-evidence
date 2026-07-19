@@ -14,7 +14,8 @@ Slack signed request -> API Gateway -> ingress Lambda -> SQS FIFO -> worker Lamb
 Triggering-thread history collection, structured model extraction,
 evidence-constrained draft generation, a content-free ready notification, and
 tenant-authorized human revision/approval are implemented. This model also
-anticipates selected-channel Slack collection, GitHub evidence, publication,
+includes human-approved Notion publication and anticipates selected-channel
+Slack collection, GitHub evidence,
 and follow-up issue creation.
 Planned controls are not credited as current protection.
 
@@ -526,6 +527,12 @@ Publication controls still required:
 - block automatic publication when destination readers are unknown;
 - require explicit human approval for redacted broader-audience reports; and
 - audit source set, reviewer, policy result, destination, and external ID.
+
+The current development path implements a single configured destination,
+human approval, a transactional outbox, and durable external IDs. It does not
+inspect the Notion reader set or revalidate Slack source ACLs at publication
+time. That is a known release blocker for external multi-tenant production, not
+an assurance supplied by the integration token.
 
 Paraphrasing private evidence does not make it public.
 

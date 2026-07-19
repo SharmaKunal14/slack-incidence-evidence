@@ -128,6 +128,10 @@ describe('PostgresIncidentReviewRepository approval', () => {
       revisionId,
     ]);
     expect(query).toHaveBeenCalledWith('COMMIT');
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO report_publications'),
+      [`publication:${revisionId}`, 'tenant-1', incidentId, revisionId, now],
+    );
     expect(query).not.toHaveBeenCalledWith('ROLLBACK');
     expect(release).toHaveBeenCalledOnce();
   });
@@ -298,5 +302,61 @@ describe('PostgresIncidentReviewRepository review bundle', () => {
         incidentId,
       ),
     ).rejects.toBeInstanceOf(ReviewConfigurationError);
+  });
+});
+
+describe('PostgresIncidentReviewRepository revision history', () => {
+  it('loads an older revision only through an active tenant membership', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce(
+        result([
+          {
+            ...revisionRow('APPROVED'),
+            statement_count: 1,
+            source_statement_count: '2',
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        result([
+          {
+            original_report_statement_id: 'statement-1',
+            section_type: 'ROOT_CAUSE',
+            position: 0,
+            decision: 'KEEP',
+            statement: 'A pool limit caused request queuing.',
+            classification: 'HUMAN_CONFIRMED',
+          },
+          {
+            original_report_statement_id: 'statement-2',
+            section_type: 'CONTRIBUTING_FACTORS',
+            position: 0,
+            decision: 'EXCLUDE',
+            statement: null,
+            classification: null,
+          },
+        ]),
+      );
+    const pool = { query } as unknown as Pool;
+
+    await expect(
+      new PostgresIncidentReviewRepository(pool).loadRevision(
+        { subject },
+        incidentId,
+        revisionId,
+      ),
+    ).resolves.toMatchObject({
+      id: revisionId,
+      statementCount: 1,
+      statements: [
+        { originalStatementId: 'statement-1', decision: 'KEEP' },
+        { originalStatementId: 'statement-2', decision: 'EXCLUDE' },
+      ],
+    });
+    expect(query.mock.calls[0]?.[0]).toEqual(
+      expect.stringContaining('JOIN reviewer_memberships membership'),
+    );
+    expect(query.mock.calls[0]?.[1]).toEqual([subject, incidentId, revisionId]);
   });
 });

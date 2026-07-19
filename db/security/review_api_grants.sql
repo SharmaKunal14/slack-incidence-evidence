@@ -39,6 +39,7 @@ GRANT INSERT ON TABLE
   report_revision_claim_links,
   report_revision_timeline_event_links,
   report_approvals,
+  report_publications,
   audit_events
 TO :"review_role";
 
@@ -55,5 +56,6 @@ GRANT UPDATE (
 ) ON incidents TO :"review_role";
 
 -- The API must never provision reviewers, change model drafts, delete evidence,
--- or publish a report. Those capabilities remain separate operator/publisher
--- concerns and are intentionally absent.
+-- or execute publication. It may only enqueue the approved immutable revision
+-- in the same transaction; external publication remains a separate worker
+-- concern.

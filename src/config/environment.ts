@@ -81,6 +81,58 @@ const incidentReviewApiLambdaEnvironmentSchema =
       .default(524_288),
   });
 
+const approvedReportPublicationLambdaEnvironmentSchema =
+  lambdaPostgresEnvironmentSchema
+    .extend({
+      NOTION_API_SECRET_ARN: z.string().trim().min(1),
+      NOTION_DATA_SOURCE_ID: z
+        .string()
+        .trim()
+        .regex(
+          /^(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/iu,
+        ),
+      NOTION_TITLE_PROPERTY: z.string().trim().min(1).max(100).default('Name'),
+      NOTION_INCIDENT_ID_PROPERTY: z
+        .string()
+        .trim()
+        .min(1)
+        .max(100)
+        .default('Incident ID'),
+      NOTION_TIMEOUT_MS: z.coerce
+        .number()
+        .int()
+        .min(1_000)
+        .max(30_000)
+        .default(10_000),
+      PUBLICATION_BATCH_SIZE: z.coerce.number().int().min(1).max(10).default(1),
+      PUBLICATION_MAX_ATTEMPTS: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(20)
+        .default(8),
+      PUBLICATION_LEASE_SECONDS: z.coerce
+        .number()
+        .int()
+        .min(30)
+        .max(900)
+        .default(180),
+      PUBLICATION_RETRY_BASE_SECONDS: z.coerce
+        .number()
+        .int()
+        .min(30)
+        .max(3_600)
+        .default(60),
+    })
+    .refine(
+      (value) =>
+        value.NOTION_TITLE_PROPERTY !== value.NOTION_INCIDENT_ID_PROPERTY,
+      {
+        message: 'Notion publication properties must be distinct',
+        path: ['NOTION_INCIDENT_ID_PROPERTY'],
+      },
+    );
+
 const slackEvidenceCollectorLambdaEnvironmentSchema =
   lambdaPostgresEnvironmentSchema.extend({
     EVIDENCE_RETENTION_DAYS: z.coerce
@@ -245,6 +297,9 @@ export type IncidentReviewNotificationLambdaEnvironment = z.infer<
 export type IncidentReviewApiLambdaEnvironment = z.infer<
   typeof incidentReviewApiLambdaEnvironmentSchema
 >;
+export type ApprovedReportPublicationLambdaEnvironment = z.infer<
+  typeof approvedReportPublicationLambdaEnvironmentSchema
+>;
 export type SlackEvidenceCollectorLambdaEnvironment = z.infer<
   typeof slackEvidenceCollectorLambdaEnvironmentSchema
 >;
@@ -292,6 +347,12 @@ export function loadIncidentReviewApiLambdaEnvironment(
   source: NodeJS.ProcessEnv = process.env,
 ): IncidentReviewApiLambdaEnvironment {
   return incidentReviewApiLambdaEnvironmentSchema.parse(source);
+}
+
+export function loadApprovedReportPublicationLambdaEnvironment(
+  source: NodeJS.ProcessEnv = process.env,
+): ApprovedReportPublicationLambdaEnvironment {
+  return approvedReportPublicationLambdaEnvironmentSchema.parse(source);
 }
 
 export function loadSlackEvidenceCollectorLambdaEnvironment(

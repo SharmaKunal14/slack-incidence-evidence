@@ -2,7 +2,7 @@ aws_region  = "ap-southeast-2"
 environment = "development"
 
 # Produce this ZIP from the application build before running terraform plan.
-# It must contain all seven composition roots documented in README.md, plus all
+# It must contain all eight composition roots documented in README.md, plus all
 # production dependencies.
 lambda_artifact_path = "../../artifacts/incident-copilot-lambda.zip"
 
@@ -15,6 +15,17 @@ database_secret_arn      = "arn:aws:secretsmanager:ap-southeast-2:123456789012:s
 # database secret while bootstrapping.
 # review_database_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/review-database-StUvWx"
 openai_api_secret_arn    = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/openai-MnOpQr"
+notion_api_secret_arn    = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/notion-YzAbCd"
+
+# In production, use a separate PostgreSQL login with only the publication
+# grants. Development can omit this while bootstrapping.
+# publication_database_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/publication-database-EfGhIj"
+
+# The destination data source must have a title property named "Name" and a
+# rich-text property named "Incident ID". Share it with the Notion integration.
+notion_data_source_id         = "0123456789abcdef0123456789abcdef"
+notion_title_property         = "Name"
+notion_incident_id_property   = "Incident ID"
 
 # Pin this deliberately in staging/production. A model alias is convenient for
 # development but can change behaviour without a source-code deployment.

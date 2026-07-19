@@ -9,6 +9,7 @@ import {
   ApproveReportRevision,
   CreateReportRevision,
   GetIncidentReview,
+  GetReportRevision,
   ListIncidentReviews,
 } from '../application/review-incident.js';
 import { systemClock } from '../application/ports/clock.js';
@@ -88,6 +89,7 @@ async function buildHandler(): Promise<IncidentReviewApiHandler> {
     return createIncidentReviewApiHandler({
       listReviews: new ListIncidentReviews(repository),
       getReview: new GetIncidentReview(repository),
+      getRevision: new GetReportRevision(repository),
       createRevision: new CreateReportRevision(
         repository,
         systemClock,

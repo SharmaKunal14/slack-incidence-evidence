@@ -26,6 +26,8 @@ await build({
   absWorkingDir: projectRoot,
   bundle: true,
   entryPoints: {
+    'approved-report-publication-main':
+      'src/lambda/approved-report-publication-main.ts',
     'incident-analysis-main': 'src/lambda/incident-analysis-main.ts',
     'incident-report-main': 'src/lambda/incident-report-main.ts',
     'incident-review-api-main': 'src/lambda/incident-review-api-main.ts',
@@ -57,6 +59,7 @@ await writeFile(
 
 const bundleFiles = (await readdir(stagingDirectory)).sort();
 const expectedBundleFiles = [
+  'approved-report-publication-main.js',
   'incident-analysis-main.js',
   'incident-report-main.js',
   'incident-review-api-main.js',
@@ -78,7 +81,7 @@ await executeFile(
   process.execPath,
   [
     '-e',
-    "const ingress = require('./slack-ingress-main.js'); const worker = require('./incident-worker-main.js'); const collector = require('./slack-evidence-collector-main.js'); const analysis = require('./incident-analysis-main.js'); const report = require('./incident-report-main.js'); const reviewApi = require('./incident-review-api-main.js'); const notification = require('./incident-review-notification-main.js'); if (typeof ingress.handler !== 'function' || typeof worker.handler !== 'function' || typeof collector.handler !== 'function' || typeof analysis.handler !== 'function' || typeof report.handler !== 'function' || typeof reviewApi.handler !== 'function' || typeof notification.handler !== 'function') throw new Error('Lambda handler export missing');",
+    "const publication = require('./approved-report-publication-main.js'); const ingress = require('./slack-ingress-main.js'); const worker = require('./incident-worker-main.js'); const collector = require('./slack-evidence-collector-main.js'); const analysis = require('./incident-analysis-main.js'); const report = require('./incident-report-main.js'); const reviewApi = require('./incident-review-api-main.js'); const notification = require('./incident-review-notification-main.js'); if (typeof publication.handler !== 'function' || typeof ingress.handler !== 'function' || typeof worker.handler !== 'function' || typeof collector.handler !== 'function' || typeof analysis.handler !== 'function' || typeof report.handler !== 'function' || typeof reviewApi.handler !== 'function' || typeof notification.handler !== 'function') throw new Error('Lambda handler export missing');",
   ],
   {
     cwd: stagingDirectory,
@@ -92,6 +95,15 @@ await executeFile(
       OPENAI_MODEL: 'test-model',
       OPENAI_TIMEOUT_MS: '90000',
       OPENAI_REPORT_TIMEOUT_MS: '90000',
+      NOTION_API_SECRET_ARN: 'test-notion-secret',
+      NOTION_DATA_SOURCE_ID: '123456781234123412341234567890ab',
+      NOTION_INCIDENT_ID_PROPERTY: 'Incident ID',
+      NOTION_TITLE_PROPERTY: 'Name',
+      NOTION_TIMEOUT_MS: '10000',
+      PUBLICATION_BATCH_SIZE: '1',
+      PUBLICATION_LEASE_SECONDS: '180',
+      PUBLICATION_MAX_ATTEMPTS: '8',
+      PUBLICATION_RETRY_BASE_SECONDS: '60',
       REPORT_LEASE_SECONDS: '180',
       REVIEW_APP_BASE_URL: 'https://review.example.test',
       EVIDENCE_RETENTION_DAYS: '30',

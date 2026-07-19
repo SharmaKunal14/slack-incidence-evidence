@@ -135,6 +135,10 @@ interface RevisionStatementRow {
   readonly classification: string | null;
 }
 
+interface AuthorizedRevisionRow extends RevisionRow {
+  readonly source_statement_count: number | string;
+}
+
 interface LockedReviewRow extends BundleHeaderRow {
   readonly draft_status: string;
 }
@@ -358,7 +362,7 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
     const latestRevision =
       latestRevisionRow === undefined
         ? null
-        : await this.loadLatestRevision(
+        : await this.loadRevisionDetail(
             header,
             latestRevisionRow,
             statementResult.rows.length,
@@ -387,6 +391,51 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       revisions: revisionResult.rows.map(toRevisionSummary),
       latestRevision,
     };
+  }
+
+  public async loadRevision(
+    reviewer: ReviewerIdentity,
+    incidentId: string,
+    revisionId: string,
+  ): Promise<ReportRevisionDetail | null> {
+    const result = await this.pool.query<AuthorizedRevisionRow>(
+      `
+        SELECT
+          revision.*,
+          (
+            SELECT COUNT(*)
+            FROM incident_report_statements source_statement
+            WHERE source_statement.tenant_id = revision.tenant_id
+              AND source_statement.incident_id = revision.incident_id
+              AND source_statement.report_draft_id = revision.report_draft_id
+          ) AS source_statement_count
+        FROM report_revisions revision
+        JOIN incidents incident
+          ON incident.tenant_id = revision.tenant_id
+         AND incident.id = revision.incident_id
+        JOIN reviewer_memberships membership
+          ON membership.tenant_id = revision.tenant_id
+         AND membership.cognito_subject = $1
+         AND membership.status = 'ACTIVE'
+        WHERE revision.incident_id = $2
+          AND revision.id = $3
+          AND incident.status IN ('NEEDS_REVIEW', 'APPROVED')
+        LIMIT 1
+      `,
+      [reviewer.subject, incidentId, revisionId],
+    );
+    const revision = result.rows[0];
+    if (revision === undefined) {
+      return null;
+    }
+    return this.loadRevisionDetail(
+      revision,
+      revision,
+      parseNonNegativeInteger(
+        revision.source_statement_count,
+        'source statement count',
+      ),
+    );
   }
 
   public async createRevision(
@@ -606,6 +655,11 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
         locked.status === 'APPROVED' &&
         lockedIncident.incident_status === 'APPROVED'
       ) {
+        await ensurePublicationJob(
+          client,
+          locked,
+          locked.approved_at ?? input.approvedAt,
+        );
         await client.query('COMMIT');
         return toRevision(locked);
       }
@@ -713,6 +767,7 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
         metadata: { revisionNumber: approved.revision_number },
         occurredAt: input.approvedAt,
       });
+      await ensurePublicationJob(client, approved, input.approvedAt);
       await client.query('COMMIT');
       return toRevision(approved);
     } catch (error) {
@@ -928,8 +983,8 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
     );
   }
 
-  private async loadLatestRevision(
-    header: BundleHeaderRow,
+  private async loadRevisionDetail(
+    scope: Pick<RevisionRow, 'tenant_id' | 'incident_id' | 'report_draft_id'>,
     revision: RevisionRow,
     sourceStatementCount: number,
   ): Promise<ReportRevisionDetail> {
@@ -951,9 +1006,9 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
         LIMIT $5
       `,
       [
-        header.tenant_id,
-        header.incident_id,
-        header.report_draft_id,
+        scope.tenant_id,
+        scope.incident_id,
+        scope.report_draft_id,
         revision.id,
         MAX_REPORT_STATEMENTS + 1,
       ],
@@ -965,10 +1020,11 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
     );
     if (
       result.rows.length !== sourceStatementCount ||
-      result.rows.length !== revision.statement_count
+      result.rows.filter((statement) => statement.decision !== 'EXCLUDE')
+        .length !== revision.statement_count
     ) {
       throw new ReviewConfigurationError(
-        'Latest report revision does not contain one decision per source statement',
+        'Report revision statement decisions are inconsistent',
       );
     }
     return {
@@ -976,6 +1032,36 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       statements: result.rows.map(toRevisionStatement),
     };
   }
+}
+
+async function ensurePublicationJob(
+  client: PoolClient,
+  revision: RevisionRow,
+  approvedAt: Date | string,
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO report_publications (
+        id,
+        tenant_id,
+        incident_id,
+        report_revision_id,
+        status,
+        next_attempt_at,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, 'PENDING', $5, $5, $5)
+      ON CONFLICT (tenant_id, incident_id, report_revision_id) DO NOTHING
+    `,
+    [
+      `publication:${revision.id}`,
+      revision.tenant_id,
+      revision.incident_id,
+      revision.id,
+      approvedAt,
+    ],
+  );
 }
 
 async function lockReviewContext(

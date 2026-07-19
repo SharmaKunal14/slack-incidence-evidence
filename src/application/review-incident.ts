@@ -12,6 +12,7 @@ import {
   ReviewValidationError,
   type IncidentReviewBundle,
   type ReportRevision,
+  type ReportRevisionDetail,
   type ResolvedReviewStatement,
   type ReviewInboxCursor,
   type ReviewInboxPage,
@@ -63,6 +64,26 @@ export class GetIncidentReview {
       throw new ReviewNotFoundError();
     }
     return bundle;
+  }
+}
+
+export class GetReportRevision {
+  public constructor(private readonly reviews: IncidentReviewRepository) {}
+
+  public async execute(input: {
+    readonly reviewer: ReviewerIdentity;
+    readonly incidentId: string;
+    readonly revisionId: string;
+  }): Promise<ReportRevisionDetail> {
+    const revision = await this.reviews.loadRevision(
+      input.reviewer,
+      input.incidentId,
+      input.revisionId,
+    );
+    if (revision === null) {
+      throw new ReviewNotFoundError();
+    }
+    return revision;
   }
 }
 

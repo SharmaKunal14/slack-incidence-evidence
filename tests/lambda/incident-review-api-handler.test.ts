@@ -25,6 +25,18 @@ function dependencies(
     getReview: {
       execute: vi.fn().mockResolvedValue({ incident: { id: incidentId } }),
     },
+    getRevision: {
+      execute: vi.fn().mockResolvedValue({
+        id: revisionId,
+        revisionNumber: 1,
+        status: 'DRAFT',
+        createdAt: '2026-07-18T01:00:00.000Z',
+        statementCount: 1,
+        acknowledgedContradictions: true,
+        acknowledgedOpenQuestions: true,
+        statements: [],
+      }),
+    },
     createRevision: {
       execute: vi.fn().mockResolvedValue({
         id: revisionId,
@@ -146,6 +158,25 @@ describe('incident review API boundary', () => {
     expect(structured(response).headers).toMatchObject({
       'cache-control': 'no-store',
       'x-content-type-options': 'nosniff',
+    });
+  });
+
+  it('loads one preserved revision through the tenant-authorized use case', async () => {
+    const deps = dependencies();
+    const handler = createIncidentReviewApiHandler(deps);
+
+    const response = await handler(
+      eventFor({
+        routeKey: 'GET /review/incidents/{incidentId}/revisions/{revisionId}',
+        pathParameters: { incidentId, revisionId },
+      }),
+    );
+
+    expect(structured(response).statusCode).toBe(200);
+    expect(deps.getRevision.execute).toHaveBeenCalledWith({
+      reviewer: { subject },
+      incidentId,
+      revisionId,
     });
   });
 

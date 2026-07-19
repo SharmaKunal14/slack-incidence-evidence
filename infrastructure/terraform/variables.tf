@@ -73,6 +73,12 @@ variable "incident_review_api_lambda_handler" {
   default     = "incident-review-api-main.handler"
 }
 
+variable "approved_report_publication_lambda_handler" {
+  description = "Scheduled approved-report publication handler exported at the root of the shared Lambda artifact."
+  type        = string
+  default     = "approved-report-publication-main.handler"
+}
+
 variable "review_web_artifact_directory" {
   description = "Directory containing the built review console assets. Run npm run build:web before Terraform planning."
   type        = string
@@ -142,6 +148,63 @@ variable "openai_api_secret_arn" {
   validation {
     condition     = can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.openai_api_secret_arn))
     error_message = "openai_api_secret_arn must be a Secrets Manager secret ARN."
+  }
+}
+
+variable "notion_api_secret_arn" {
+  description = "ARN of an existing Secrets Manager secret containing JSON {\"apiToken\":\"...\"}. Terraform never reads the value."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.notion_api_secret_arn))
+    error_message = "notion_api_secret_arn must be a Secrets Manager secret ARN."
+  }
+}
+
+variable "publication_database_secret_arn" {
+  description = "Optional development override and required production ARN for a dedicated least-privilege publication worker database user. Terraform never reads its value."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = (
+      var.publication_database_secret_arn == null ||
+      can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.publication_database_secret_arn))
+    )
+    error_message = "publication_database_secret_arn must be null or a Secrets Manager secret ARN."
+  }
+}
+
+variable "notion_data_source_id" {
+  description = "Notion data source receiving approved report pages. This identifier is configuration, not a credential."
+  type        = string
+
+  validation {
+    condition     = can(regex("^(?:[0-9A-Fa-f]{32}|[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12})$", var.notion_data_source_id))
+    error_message = "notion_data_source_id must be a 32-character or hyphenated UUID-style Notion identifier."
+  }
+}
+
+variable "notion_title_property" {
+  description = "Name of the title property in the destination Notion data source."
+  type        = string
+  default     = "Name"
+
+  validation {
+    condition     = length(trimspace(var.notion_title_property)) >= 1 && length(trimspace(var.notion_title_property)) <= 100
+    error_message = "notion_title_property must contain 1-100 characters."
+  }
+}
+
+variable "notion_incident_id_property" {
+  description = "Name of the rich-text incident ID property used to deduplicate Notion pages."
+  type        = string
+  default     = "Incident ID"
+
+  validation {
+    condition     = length(trimspace(var.notion_incident_id_property)) >= 1 && length(trimspace(var.notion_incident_id_property)) <= 100
+    error_message = "notion_incident_id_property must contain 1-100 characters."
   }
 }
 
@@ -610,6 +673,94 @@ variable "review_notification_reserved_concurrency" {
   validation {
     condition     = var.review_notification_reserved_concurrency >= 1
     error_message = "review_notification_reserved_concurrency must be at least 1."
+  }
+}
+
+variable "publication_memory_mb" {
+  description = "Memory assigned to the scheduled approved-report publication worker."
+  type        = number
+  default     = 512
+
+  validation {
+    condition     = var.publication_memory_mb >= 128 && var.publication_memory_mb <= 10240
+    error_message = "publication_memory_mb must be between 128 and 10240 MB."
+  }
+}
+
+variable "publication_timeout_seconds" {
+  description = "Timeout for one bounded scheduled publication run."
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.publication_timeout_seconds >= 15 && var.publication_timeout_seconds <= 300
+    error_message = "publication_timeout_seconds must be between 15 and 300 seconds."
+  }
+}
+
+variable "publication_reserved_concurrency" {
+  description = "Hard concurrency boundary for Notion, Slack, and PostgreSQL publication work."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.publication_reserved_concurrency >= 1 && var.publication_reserved_concurrency <= 10
+    error_message = "publication_reserved_concurrency must be between 1 and 10."
+  }
+}
+
+variable "publication_batch_size" {
+  description = "Maximum publication jobs processed sequentially per scheduled invocation."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.publication_batch_size >= 1 && var.publication_batch_size <= 10
+    error_message = "publication_batch_size must be between 1 and 10."
+  }
+}
+
+variable "publication_max_attempts" {
+  description = "Maximum leased publication attempts before a job becomes terminally failed."
+  type        = number
+  default     = 8
+
+  validation {
+    condition     = var.publication_max_attempts >= 1 && var.publication_max_attempts <= 20
+    error_message = "publication_max_attempts must be between 1 and 20."
+  }
+}
+
+variable "publication_lease_seconds" {
+  description = "Database lease protecting one publication job from concurrent workers."
+  type        = number
+  default     = 180
+
+  validation {
+    condition     = var.publication_lease_seconds >= 30 && var.publication_lease_seconds <= 900
+    error_message = "publication_lease_seconds must be between 30 and 900 seconds."
+  }
+}
+
+variable "publication_retry_base_seconds" {
+  description = "Base delay for bounded exponential publication retries."
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.publication_retry_base_seconds >= 30 && var.publication_retry_base_seconds <= 3600
+    error_message = "publication_retry_base_seconds must be between 30 and 3600 seconds."
+  }
+}
+
+variable "notion_timeout_milliseconds" {
+  description = "Timeout for one Notion API request."
+  type        = number
+  default     = 10000
+
+  validation {
+    condition     = var.notion_timeout_milliseconds >= 1000 && var.notion_timeout_milliseconds <= 30000
+    error_message = "notion_timeout_milliseconds must be between 1000 and 30000."
   }
 }
 

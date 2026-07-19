@@ -8,7 +8,7 @@ the application's at-least-once and idempotency assumptions.
 ## What it creates
 
 - An API Gateway HTTP API with one Slack-HMAC-authenticated public route and
-  four Cognito-JWT-authorized human-review routes.
+  five Cognito-JWT-authorized human-review routes.
 - A short-lived Slack ingress Lambda behind that route.
 - An encrypted SQS FIFO queue, encrypted FIFO dead-letter queue, redrive policy,
   explicit redrive allow policy, and resource policies denying non-TLS access.
@@ -31,6 +31,10 @@ the application's at-least-once and idempotency assumptions.
   optional TOTP MFA.
 - A private, encrypted, versioned S3 bucket exposed only through an origin-
   access-controlled CloudFront review console with restrictive response headers.
+- A scheduled, single-concurrency publication Lambda which leases approved
+  revisions from a transactional PostgreSQL outbox, creates one complete Notion
+  page, checkpoints its URL, and posts the final link to the triggering Slack
+  thread.
 - A Standard workflow which loops over durable Slack page checkpoints, waits on
   Slack rate-limit hints, then runs leased structured extraction with durable
   model retry waits without holding Lambda compute, then generates a leased
@@ -41,10 +45,10 @@ the application's at-least-once and idempotency assumptions.
 - Bounded-retention CloudWatch log groups.
 - Reserved Lambda concurrency limits to protect cost, Slack/GitHub quotas, and
   the future database connection budget.
-- Alarms for failed jobs in the DLQ, excessive source-queue age, and failed
-  evidence workflows.
+- Alarms for failed jobs in the DLQ, excessive source-queue age, failed evidence
+  workflows, publication Lambda errors, and exhausted publication retries.
 
-All seven functions use the same immutable ZIP artifact but have separate
+All eight functions use the same immutable ZIP artifact but have separate
 handlers, roles, environment variables, memory, timeouts, and concurrency
 limits.
 
@@ -75,6 +79,13 @@ Reviewer browser -> Cognito authorization code + PKCE
                  -> API Gateway JWT authorizer
                  -> review API Lambda
                  -> active tenant membership + PostgreSQL review transaction
+
+Approval transaction -> PostgreSQL report_publications outbox
+EventBridge schedule -> publication Lambda (leased, bounded retries)
+                     -> Notion data source (exact Incident ID lookup/create)
+                     -> PostgreSQL Notion checkpoint
+                     -> Slack Web API final thread link
+                     -> PostgreSQL completion checkpoint
 ```
 
 API Gateway throttling is a cost and abuse guard; it is **not** Slack
@@ -112,10 +123,10 @@ Leave both VPC input lists empty for Supabase's public pooler. When both lists
 are supplied, database-using functions are attached to those subnets and receive
 the minimal Lambda ENI-management IAM actions. A private deployment then needs either
 Secrets Manager and Step Functions interface endpoints or controlled NAT egress
-to reach those AWS APIs. Slack and OpenAI calls require deliberate HTTPS egress;
-a private-subnet deployment without NAT or another approved egress path will
-fail. Supabase PrivateLink can replace the public database path when its cost and
-availability requirements justify it.
+to reach those AWS APIs. Slack, OpenAI, and Notion calls require deliberate
+HTTPS egress; a private-subnet deployment without NAT or another approved
+egress path will fail. Supabase PrivateLink can replace the public database path
+when its cost and availability requirements justify it.
 
 ## Secret contracts
 
@@ -177,6 +188,17 @@ The script cannot make an owner credential least-privileged. A real production
 deployment also needs a non-owner pipeline role; otherwise a compromised
 pipeline runtime can bypass the intended table separation.
 
+The publication database secret uses the same JSON shape. Production must use
+a separate non-owner PostgreSQL login and set
+`publication_database_secret_arn`. Apply its narrowly scoped grants as the
+database owner:
+
+```bash
+psql "$ADMIN_DATABASE_URL" \
+  --set=publication_role=incident_publication_worker \
+  --file=db/security/publication_worker_grants.sql
+```
+
 OpenAI API secret (analysis and report Lambdas only):
 
 ```json
@@ -191,6 +213,31 @@ an explicit non-secret Terraform input; production should prefer a reviewed,
 pinned model snapshot so behavior does not change without a deployment. The
 application sends `store: false`, but provider retention, training, region, and
 contractual controls still require an explicit organisational review.
+
+Notion API secret (publication Lambda only):
+
+```json
+{
+  "apiToken": "actual Notion internal integration token"
+}
+```
+
+Create a Notion internal integration with **Read content** and **Insert
+content** capabilities. Create a destination data source with a title property
+named `Name` and a rich-text property named `Incident ID`, then explicitly
+share the parent database with the integration. Set `notion_data_source_id` to
+the data source ID—not the browser database ID when those differ. Property names
+are configurable through `notion_title_property` and
+`notion_incident_id_property`.
+
+The exact `Incident ID` query is the external deduplication boundary. Notion
+does not enforce uniqueness for rich-text properties, so operators must not
+manually duplicate an incident ID; the worker fails closed if it finds multiple
+matches. Pages inherit the parent database's Notion permissions. Posting a URL
+to Slack does not grant Notion access, but the destination ACL must still be
+reviewed so incident data is not exposed to a broader audience than intended.
+The adapter uses Notion API `2026-03-11` and keeps each create request below the
+documented block, rich-text, and payload limits.
 
 The database host, port, name, and mandatory TLS setting are separate non-secret
 environment variables. A complete `DATABASE_URL` is intentionally never
@@ -228,6 +275,7 @@ incident-analysis-main.js       exports handler
 incident-report-main.js         exports handler
 incident-review-notification-main.js exports handler
 incident-review-api-main.js          exports handler
+approved-report-publication-main.js  exports handler
 ```
 
 The defaults are therefore:
@@ -240,6 +288,7 @@ incident_analysis_lambda_handler = "incident-analysis-main.handler"
 incident_report_lambda_handler = "incident-report-main.handler"
 incident_review_notification_lambda_handler = "incident-review-notification-main.handler"
 incident_review_api_lambda_handler = "incident-review-api-main.handler"
+approved_report_publication_lambda_handler = "approved-report-publication-main.handler"
 ```
 
 Build for the selected `lambda_architecture`; the default is `arm64`. Pure
@@ -256,11 +305,13 @@ Prerequisites:
 - A `zip` command-line utility used by `npm run build:lambda`.
 - The built Lambda artifact.
 - The built review console assets (`npm run build:web`).
-- Existing Slack signing, Slack bot-token, database, and OpenAI Secrets Manager
-  secret ARNs.
+- Existing Slack signing, Slack bot-token, database, OpenAI, and Notion Secrets
+  Manager secret ARNs.
+- A Notion data source shared with the integration and containing the required
+  title and rich-text incident ID properties.
 - An existing PostgreSQL endpoint. For the current Supabase deployment, use the
   transaction-pooler hostname, port 6543, and empty VPC input lists.
-- Database migrations through `0005_human_review.sql` applied before the
+- Database migrations through `0006_approved_report_publication.sql` applied before the
   updated workflow is deployed or invoked.
 
 Create an ignored variable file:
@@ -327,7 +378,9 @@ The expected workflow state before review is success, the analysis run is
 `COMPLETE`, generated claims remain `UNREVIEWED`, the report draft is
 `NEEDS_REVIEW`, and the incident advances to `NEEDS_REVIEW`. The draft is not
 published. After an authorized reviewer approves a revision, the revision and
-incident become `APPROVED`; publication remains a separate unimplemented stage.
+incident become `APPROVED` and a publication job is committed atomically. The
+scheduled worker normally publishes within one minute, subject to bounded
+provider retries.
 
 After apply, obtain the Slack URL:
 
@@ -385,7 +438,20 @@ select incident_id, report_revision_id, approved_by_subject, approved_at
 from report_approvals
 order by approved_at desc
 limit 5;
+
+select id, incident_id, report_revision_id, status, attempt_count,
+       notion_page_url, slack_message_ts, last_error_code,
+       created_at, completed_at, failed_at
+from report_publications
+order by created_at desc
+limit 5;
 ```
+
+The final expected publication status is `COMPLETE`, with both
+`notion_page_url` and `slack_message_ts` populated. `NOTION_PUBLISHED` means the
+Notion page is durable but Slack delivery is still retrying. `FAILED` requires
+operator diagnosis before an audited retry. Migration 0006 backfills `PENDING`
+jobs for revisions approved before this feature was deployed.
 
 ## Production state and CI/CD
 
@@ -409,8 +475,8 @@ Deploy immutable artifacts by commit SHA:
 
 - API Gateway and all Lambdas charge primarily when used; no ALB or ECS tasks
   remain running while the project is idle.
-- Ingress, worker, collector, analysis, report, and notification concurrency are independent and
-  explicitly capped.
+- Ingress, worker, collector, analysis, report, notification, review, and
+  publication concurrency are independent and explicitly capped.
 - The SQS event source's maximum concurrency equals the worker's reserved
   concurrency, preventing the poller from creating avoidable Lambda throttles.
 - The FIFO queue buffers bursts and the oldest-message alarm exposes backlog.
@@ -434,6 +500,10 @@ Deploy immutable artifacts by commit SHA:
 - Standard workflows are appropriate for durable, auditable, human-scale
   incident processing. Model requests and large evidence must live in S3 or
   PostgreSQL, not in workflow state.
+- Publication uses a once-per-minute scheduler rather than holding a workflow
+  open during human review. PostgreSQL is the durable queue, an expiring lease
+  handles worker death, Notion is checkpointed before Slack, and default batch
+  size one stays below Notion's average request-rate limit.
 
 Lambda can scale faster than Slack, GitHub, model providers, or PostgreSQL.
 Raise reserved concurrency only after checking all four budgets. Cap concurrency
@@ -450,6 +520,9 @@ Pass one or more SNS topic ARNs through `alarm_action_arns` to route alerts.
   configured age threshold.
 - **Failed workflow:** alarms when collection, analysis, or report generation reaches a terminal
   failure or exhausts infrastructure retries.
+- **Publication errors:** alarms on unhandled scheduled-worker failures.
+- **Publication retries exhausted:** a log-derived alarm identifies an approved
+  report that could not complete Notion or Slack delivery.
 
 The configured evidence-retention period sets `retention_expires_at`; this
 release does not yet run an expiry deletion processor. Do not describe the data

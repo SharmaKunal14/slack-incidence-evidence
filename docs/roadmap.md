@@ -385,7 +385,7 @@ workflow, not a general document editor.
 - Every review read and mutation is tenant scoped.
 - A reviewer can complete the workflow without developer tools.
 - A statement correction produces a new revision and preserves audit history.
-- No external publication exists yet without an approved draft version.
+- No external publication exists without an approved immutable revision.
 - Real reviewers report lower effort than the manual baseline.
 
 ### Main risks
@@ -396,7 +396,7 @@ workflow, not a general document editor.
 
 ## Stage 6 — Controlled publication and follow-up actions
 
-Status: **Planned**
+Status: **In progress — Notion report publication and Slack completion are implemented; GitHub follow-up actions and destination ACL inspection are not.**
 
 ### User outcome
 
@@ -404,21 +404,21 @@ After human approval, the system publishes one source-linked Markdown report and
 
 ### Scope
 
-- Approved-draft publication state machine.
-- Markdown renderer and one controlled destination.
-- Slack completion message linking to the reviewed artifact.
+- Approved-revision transactional outbox and scheduled leased worker.
+- Deterministic readable renderer and one configured Notion data source.
+- Slack completion message linking to the reviewed Notion page.
 - GitHub issue creation with description, owner, priority, due date, linked claim/failure mode, verification method, and incident link.
-- Transactional outbox.
-- Stable external idempotency keys.
-- Ambiguous-timeout reconciliation.
-- Destination allowlist and audience policy.
-- External resource IDs and audit records.
+- Stable external idempotency keys and exact incident-ID reconciliation.
+- Notion and Slack external resource checkpoints.
+- Destination audience inspection and policy enforcement (not yet implemented).
+- Publication audit events beyond durable job state (not yet implemented).
 
 ### Exit criteria
 
 - An unreviewed or superseded draft cannot be published.
 - A worker retry cannot create a second document or issue.
-- Unknown destination visibility blocks automatic publication.
+- Unknown destination visibility blocks external multi-tenant production; the
+  current development path relies on one operator-approved Notion data source.
 - Publication records the exact approved revision and source set.
 - Revoked destination permission produces a clear recoverable state.
 - A complete demonstration runs Slack trigger to reviewed report to GitHub follow-up issue.

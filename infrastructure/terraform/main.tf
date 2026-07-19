@@ -1,7 +1,8 @@
 locals {
-  name_prefix        = "${var.project_name}-${var.environment}"
-  node_env           = var.environment == "production" ? "production" : "development"
-  worker_vpc_enabled = length(var.worker_subnet_ids) > 0 && length(var.worker_security_group_ids) > 0
+  name_prefix                 = "${var.project_name}-${var.environment}"
+  node_env                    = var.environment == "production" ? "production" : "development"
+  worker_vpc_enabled          = length(var.worker_subnet_ids) > 0 && length(var.worker_security_group_ids) > 0
+  publication_database_secret = coalesce(var.publication_database_secret_arn, var.database_secret_arn)
 }
 
 # -----------------------------------------------------------------------------
@@ -136,6 +137,11 @@ resource "aws_cloudwatch_log_group" "incident_report" {
 
 resource "aws_cloudwatch_log_group" "incident_review_notification" {
   name              = "/aws/lambda/${local.name_prefix}-incident-review-notification"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_cloudwatch_log_group" "approved_report_publication" {
+  name              = "/aws/lambda/${local.name_prefix}-approved-report-publication"
   retention_in_days = var.log_retention_days
 }
 
@@ -871,6 +877,75 @@ resource "aws_iam_role_policy" "incident_review_notification" {
   policy = data.aws_iam_policy_document.incident_review_notification.json
 }
 
+resource "aws_iam_role" "approved_report_publication" {
+  name               = "${local.name_prefix}-approved-report-publication-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+}
+
+data "aws_iam_policy_document" "approved_report_publication" {
+  statement {
+    sid       = "WriteFunctionLogs"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.approved_report_publication.arn}:*"]
+  }
+
+  dynamic "statement" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      # Lambda ENI management APIs require wildcard resources. This grant is
+      # absent unless the operator explicitly enables VPC mode.
+      sid = "ManagePublicationVpcNetworkInterfaces"
+      actions = [
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:CreateNetworkInterface",
+        "ec2:DeleteNetworkInterface",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeSubnets",
+        "ec2:UnassignPrivateIpAddresses",
+      ]
+      resources = ["*"]
+    }
+  }
+
+  statement {
+    sid       = "ReadPublicationDatabaseCredentials"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [local.publication_database_secret]
+  }
+
+  statement {
+    sid       = "ReadSlackBotToken"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.slack_bot_token_secret_arn]
+  }
+
+  statement {
+    sid       = "ReadNotionApiToken"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.notion_api_secret_arn]
+  }
+
+  dynamic "statement" {
+    for_each = length(var.secrets_kms_key_arns) == 0 ? [] : [1]
+    content {
+      sid       = "DecryptCustomerManagedSecretKeys"
+      actions   = ["kms:Decrypt"]
+      resources = var.secrets_kms_key_arns
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+      }
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "approved_report_publication" {
+  name   = "approved-report-publication"
+  role   = aws_iam_role.approved_report_publication.id
+  policy = data.aws_iam_policy_document.approved_report_publication.json
+}
+
 # -----------------------------------------------------------------------------
 # Lambda compute. All functions use one immutable build artifact but distinct
 # composition roots, IAM roles, configuration, and concurrency budgets.
@@ -1241,6 +1316,106 @@ resource "aws_lambda_function" "incident_review_notification" {
   ]
 }
 
+resource "aws_lambda_function" "approved_report_publication" {
+  function_name = "${local.name_prefix}-approved-report-publication"
+  description   = "Publishes approved immutable reports to Notion and then posts the durable page link to Slack."
+  role          = aws_iam_role.approved_report_publication.arn
+  runtime       = "nodejs22.x"
+  architectures = [var.lambda_architecture]
+  handler       = var.approved_report_publication_lambda_handler
+
+  filename         = var.lambda_artifact_path
+  source_code_hash = filebase64sha256(var.lambda_artifact_path)
+
+  memory_size                    = var.publication_memory_mb
+  timeout                        = var.publication_timeout_seconds
+  reserved_concurrent_executions = var.publication_reserved_concurrency
+
+  environment {
+    variables = {
+      AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
+      DATABASE_HOST                       = var.database_host
+      DATABASE_NAME                       = var.database_name
+      DATABASE_POOL_MAX                   = tostring(var.database_pool_max)
+      DATABASE_PORT                       = tostring(var.database_port)
+      DATABASE_SECRET_ARN                 = local.publication_database_secret
+      DATABASE_SSL                        = "true"
+      LOG_LEVEL                           = var.log_level
+      NODE_ENV                            = local.node_env
+      NOTION_API_SECRET_ARN               = var.notion_api_secret_arn
+      NOTION_DATA_SOURCE_ID               = var.notion_data_source_id
+      NOTION_INCIDENT_ID_PROPERTY         = var.notion_incident_id_property
+      NOTION_TIMEOUT_MS                   = tostring(var.notion_timeout_milliseconds)
+      NOTION_TITLE_PROPERTY               = var.notion_title_property
+      PUBLICATION_BATCH_SIZE              = tostring(var.publication_batch_size)
+      PUBLICATION_LEASE_SECONDS           = tostring(var.publication_lease_seconds)
+      PUBLICATION_MAX_ATTEMPTS            = tostring(var.publication_max_attempts)
+      PUBLICATION_RETRY_BASE_SECONDS      = tostring(var.publication_retry_base_seconds)
+      SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
+    }
+  }
+
+  tracing_config {
+    mode = "PassThrough"
+  }
+
+  dynamic "vpc_config" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      subnet_ids         = var.worker_subnet_ids
+      security_group_ids = var.worker_security_group_ids
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition = (
+        length(var.worker_subnet_ids) == 0 && length(var.worker_security_group_ids) == 0
+        ) || (
+        length(var.worker_subnet_ids) > 0 && length(var.worker_security_group_ids) > 0
+      )
+      error_message = "worker_subnet_ids and worker_security_group_ids must either both be empty or both be populated."
+    }
+    precondition {
+      condition     = var.publication_lease_seconds > var.publication_timeout_seconds
+      error_message = "publication_lease_seconds must outlive publication_timeout_seconds."
+    }
+    precondition {
+      condition     = var.notion_title_property != var.notion_incident_id_property
+      error_message = "Notion title and incident ID properties must be distinct."
+    }
+    precondition {
+      condition     = var.environment != "production" || var.publication_database_secret_arn != null
+      error_message = "Production requires publication_database_secret_arn for a dedicated least-privilege PostgreSQL publisher role."
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.approved_report_publication,
+    aws_iam_role_policy.approved_report_publication,
+  ]
+}
+
+resource "aws_cloudwatch_event_rule" "approved_report_publication" {
+  name                = "${local.name_prefix}-approved-report-publication"
+  description         = "Polls durable approved-report publication jobs once per minute."
+  schedule_expression = "rate(1 minute)"
+}
+
+resource "aws_cloudwatch_event_target" "approved_report_publication" {
+  rule      = aws_cloudwatch_event_rule.approved_report_publication.name
+  target_id = "ApprovedReportPublicationLambda"
+  arn       = aws_lambda_function.approved_report_publication.arn
+}
+
+resource "aws_lambda_permission" "eventbridge_approved_report_publication" {
+  statement_id  = "AllowEventBridgeApprovedReportPublication"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.approved_report_publication.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.approved_report_publication.arn
+}
+
 resource "aws_lambda_event_source_mapping" "incident_jobs" {
   event_source_arn = aws_sqs_queue.incident_jobs.arn
   function_name    = aws_lambda_function.worker.arn
@@ -1397,4 +1572,50 @@ resource "aws_cloudwatch_metric_alarm" "incident_workflow_failed" {
   dimensions = {
     StateMachineArn = aws_sfn_state_machine.incident_workflow.arn
   }
+}
+
+resource "aws_cloudwatch_metric_alarm" "approved_report_publication_errors" {
+  alarm_name          = "${local.name_prefix}-approved-report-publication-errors"
+  alarm_description   = "The approved-report publication worker returned an unhandled Lambda error."
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  statistic           = "Sum"
+  period              = 60
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = var.alarm_action_arns
+  ok_actions          = var.alarm_action_arns
+
+  dimensions = {
+    FunctionName = aws_lambda_function.approved_report_publication.function_name
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "approved_report_publication_exhausted" {
+  name           = "${local.name_prefix}-approved-report-publication-exhausted"
+  pattern        = "{ $.msg = \"approved report publication exhausted retries\" }"
+  log_group_name = aws_cloudwatch_log_group.approved_report_publication.name
+
+  metric_transformation {
+    name      = "ApprovedReportPublicationExhausted"
+    namespace = "IncidentEvidenceCopilot"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "approved_report_publication_exhausted" {
+  alarm_name          = "${local.name_prefix}-approved-report-publication-exhausted"
+  alarm_description   = "An approved report exhausted bounded Notion or Slack publication retries and requires operator action."
+  namespace           = "IncidentEvidenceCopilot"
+  metric_name         = "ApprovedReportPublicationExhausted"
+  statistic           = "Sum"
+  period              = 60
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = var.alarm_action_arns
+  ok_actions          = var.alarm_action_arns
 }
