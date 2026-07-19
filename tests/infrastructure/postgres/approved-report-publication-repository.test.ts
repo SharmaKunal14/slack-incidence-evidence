@@ -152,4 +152,35 @@ describe('PostgresApprovedReportPublicationRepository', () => {
       expect.stringContaining('lease_expires_at > $3'),
     );
   });
+
+  it('casts retry timestamps explicitly so PostgreSQL can infer reused parameter types', async () => {
+    const query = vi.fn().mockResolvedValue(result([], 1));
+    const pool = { query } as unknown as Pool;
+    const failedAt = new Date('2026-07-19T01:00:30.000Z');
+    const retryAt = new Date('2026-07-19T01:01:30.000Z');
+
+    await expect(
+      new PostgresApprovedReportPublicationRepository(pool).recordFailure({
+        jobId,
+        workerId: 'event-id',
+        errorCode: 'CONFLUENCE_FORBIDDEN',
+        retryAt,
+        failedAt,
+        terminal: false,
+      }),
+    ).resolves.toBeUndefined();
+
+    const statement: unknown = query.mock.calls[0]?.[0];
+    expect(statement).toEqual(expect.stringContaining('$2::timestamptz'));
+    expect(statement).toEqual(expect.stringContaining('$4::timestamptz'));
+    expect(statement).toEqual(expect.stringContaining('NULL::timestamptz'));
+    expect(query).toHaveBeenCalledWith(expect.any(String), [
+      false,
+      retryAt,
+      'CONFLUENCE_FORBIDDEN',
+      failedAt,
+      jobId,
+      'event-id',
+    ]);
+  });
 });
