@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  reconcileRevisionQuestionAnswers,
   reconcileRevisionStatements,
   requiresPreservedRevisionFetch,
 } from '../../web/src/revision-view.js';
@@ -100,6 +101,70 @@ describe('revision statement reconciliation', () => {
         },
       ]),
     ).toThrow('Saved revision statement does not match its source');
+  });
+});
+
+describe('revision question-answer reconciliation', () => {
+  const questions = [
+    { id: 'question-1', question: 'Who approved the emergency access?' },
+    { id: 'question-2', question: 'When was the token revoked?' },
+  ] as const;
+
+  it('starts each source question without a recorded answer', () => {
+    expect(reconcileRevisionQuestionAnswers(questions, null)).toEqual(
+      new Map([
+        ['question-1', ''],
+        ['question-2', ''],
+      ]),
+    );
+  });
+
+  it('restores only the answers preserved in the selected revision', () => {
+    expect(
+      reconcileRevisionQuestionAnswers(questions, [
+        {
+          questionId: 'question-2',
+          question: questions[1].question,
+          answer: 'The token was revoked at 11:42 UTC.',
+        },
+      ]),
+    ).toEqual(
+      new Map([
+        ['question-1', ''],
+        ['question-2', 'The token was revoked at 11:42 UTC.'],
+      ]),
+    );
+  });
+
+  it('fails closed for unknown, duplicate, or altered questions', () => {
+    expect(() =>
+      reconcileRevisionQuestionAnswers(questions, [
+        { questionId: 'unknown', question: 'Unknown', answer: 'No.' },
+      ]),
+    ).toThrow('unknown open question');
+    expect(() =>
+      reconcileRevisionQuestionAnswers(questions, [
+        {
+          questionId: 'question-1',
+          question: questions[0].question,
+          answer: 'First answer',
+        },
+        {
+          questionId: 'question-1',
+          question: questions[0].question,
+          answer: 'Second answer',
+        },
+      ]),
+    ).toThrow('duplicate question answers');
+    expect(() =>
+      reconcileRevisionQuestionAnswers(questions, [
+        {
+          questionId: 'question-1',
+          question: 'A changed question',
+          answer: 'Answer',
+        },
+      ]),
+    ).toThrow('does not match its source');
   });
 });
 

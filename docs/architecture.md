@@ -756,11 +756,14 @@ remain `UNREVIEWED`, and the model cannot emit `HUMAN_CONFIRMED`.
 The generated Markdown remains non-authoritative until an authenticated user
 with an active tenant membership creates and approves an immutable revision.
 The review API validates every statement decision, preserves source links,
-requires acknowledgement of known contradictions and open questions, and
+requires acknowledgement of known contradictions and open questions, preserves
+reviewer answers to those questions within each immutable revision, and
 atomically records approval, the incident transition, and a publication outbox
-record. The model runtime has no approval or publication port. External delivery
-is asynchronous, leased, checkpointed, and restricted to the configured Notion
-or Confluence destination and original Slack thread.
+record. Questions without a recorded answer remain visible in a separate final
+report section; approval acknowledges uncertainty rather than erasing it. The
+model runtime has no approval or publication port. External delivery is
+asynchronous, leased, checkpointed, and restricted to the configured Notion or
+Confluence destination and original Slack thread.
 
 ## Architecture fitness checks
 

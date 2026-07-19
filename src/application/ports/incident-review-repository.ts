@@ -2,6 +2,7 @@ import type {
   IncidentReviewBundle,
   ReportRevision,
   ReportRevisionDetail,
+  ResolvedReviewQuestionAnswer,
   ResolvedReviewStatement,
   ReviewInboxCursor,
   ReviewInboxPage,
@@ -18,6 +19,7 @@ export interface CreateReportRevisionInput {
   readonly requestSha256: string;
   readonly acknowledgedContradictions: boolean;
   readonly acknowledgedOpenQuestions: boolean;
+  readonly questionAnswers: readonly ResolvedReviewQuestionAnswer[];
   readonly statements: readonly ResolvedReviewStatement[];
   readonly renderedMarkdown: string;
   readonly contentSha256: string;

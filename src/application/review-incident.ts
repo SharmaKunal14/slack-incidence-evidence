@@ -13,6 +13,7 @@ import {
   type IncidentReviewBundle,
   type ReportRevision,
   type ReportRevisionDetail,
+  type ResolvedReviewQuestionAnswer,
   type ResolvedReviewStatement,
   type ReviewInboxCursor,
   type ReviewInboxPage,
@@ -158,9 +159,30 @@ export class CreateReportRevision {
       );
     }
 
+    const questions = new Map(
+      bundle.openQuestions.map((question) => [question.id, question]),
+    );
+    const questionAnswers: ResolvedReviewQuestionAnswer[] =
+      command.questionAnswers.map((answer) => {
+        const question = questions.get(answer.questionId);
+        if (question === undefined) {
+          throw new ReviewValidationError(
+            'Review answer references an unknown open question',
+          );
+        }
+        return {
+          id: this.idGenerator.generate(),
+          questionId: question.id,
+          question: question.question,
+          answer: answer.answer,
+        };
+      });
+
     const renderedMarkdown = renderReviewedReportMarkdown(
       bundle.incident.title,
       statements,
+      questionAnswers,
+      bundle.openQuestions,
     );
     const canonicalRequest = JSON.stringify({
       incidentId: command.incidentId,
@@ -168,6 +190,9 @@ export class CreateReportRevision {
       expectedIncidentVersion: command.expectedIncidentVersion,
       acknowledgedContradictions: command.acknowledgedContradictions,
       acknowledgedOpenQuestions: command.acknowledgedOpenQuestions,
+      questionAnswers: [...command.questionAnswers].sort((left, right) =>
+        left.questionId.localeCompare(right.questionId),
+      ),
       decisions: [...command.decisions].sort((left, right) =>
         left.statementId.localeCompare(right.statementId),
       ),
@@ -182,6 +207,7 @@ export class CreateReportRevision {
       requestSha256: sha256(canonicalRequest),
       acknowledgedContradictions: command.acknowledgedContradictions,
       acknowledgedOpenQuestions: command.acknowledgedOpenQuestions,
+      questionAnswers,
       statements,
       renderedMarkdown,
       contentSha256: sha256(renderedMarkdown),

@@ -12,6 +12,7 @@ import {
 } from '../../application/review/incident-review.js';
 
 const MAX_PUBLICATION_STATEMENTS = 300;
+const MAX_PUBLICATION_OPEN_QUESTIONS = 100;
 
 interface PublicationRow {
   readonly id: string;
@@ -39,6 +40,11 @@ interface PublicationStatementRow {
   readonly position: number;
   readonly statement: string | null;
   readonly classification: string | null;
+}
+
+interface PublicationQuestionAnswerRow {
+  readonly question: string;
+  readonly answer: string | null;
 }
 
 /** Leases due publication jobs and checkpoints each external side effect. */
@@ -317,6 +323,50 @@ async function loadPublication(
     );
   }
 
+  const questionResult = await client.query<PublicationQuestionAnswerRow>(
+    `
+        SELECT question.question, answer.answer
+        FROM report_revisions revision
+        JOIN incident_report_drafts draft
+          ON draft.tenant_id = revision.tenant_id
+         AND draft.incident_id = revision.incident_id
+         AND draft.id = revision.report_draft_id
+        JOIN analysis_open_questions question
+          ON question.tenant_id = draft.tenant_id
+         AND question.incident_id = draft.incident_id
+         AND question.analysis_run_id = draft.analysis_run_id
+        LEFT JOIN report_revision_question_answers answer
+          ON answer.tenant_id = revision.tenant_id
+         AND answer.incident_id = revision.incident_id
+         AND answer.report_revision_id = revision.id
+         AND answer.question_id = question.id
+        WHERE revision.tenant_id = $1
+          AND revision.incident_id = $2
+          AND revision.id = $3
+        ORDER BY question.created_at, question.id
+        LIMIT $4
+      `,
+    [
+      row.tenant_id,
+      row.incident_id,
+      row.report_revision_id,
+      MAX_PUBLICATION_OPEN_QUESTIONS + 1,
+    ],
+  );
+  if (questionResult.rows.length > MAX_PUBLICATION_OPEN_QUESTIONS) {
+    throw new PublicationPersistenceError(
+      'Approved revision open questions exceed the publication limit',
+    );
+  }
+  const questionAnswers = questionResult.rows.flatMap((question) =>
+    question.answer === null
+      ? []
+      : [{ question: question.question, answer: question.answer }],
+  );
+  const remainingOpenQuestions = questionResult.rows.flatMap((question) =>
+    question.answer === null ? [question.question] : [],
+  );
+
   return {
     id: row.id,
     tenantId: row.tenant_id,
@@ -337,6 +387,8 @@ async function loadPublication(
       revisionNumber: positiveInteger(row.revision_number, 'revision number'),
       approvedAt: toDate(row.approved_at),
       sections: toSections(statementResult.rows),
+      questionAnswers,
+      remainingOpenQuestions,
     },
   };
 }

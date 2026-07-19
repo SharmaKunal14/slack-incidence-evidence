@@ -364,6 +364,9 @@ A reviewer can inspect and correct the incident without reading an opaque genera
   explicit uncertainty reclassification. Certainty cannot be strengthened
   silently; a human must choose `human_confirmed`.
 - Explicit acknowledgement gates when contradictions or open questions exist.
+- Per-question reviewer answers with bounded input, immutable revision history,
+  and read-only rendering for preserved versions. Unanswered questions remain
+  explicit rather than receiving generated placeholder content.
 - Immutable revisions with deterministic Markdown, SHA-256 identities, original
   statement links, claim/timeline provenance, reviewer subject, and audit event.
 - Idempotent revision creation and a PostgreSQL-locked, optimistic, atomic
@@ -374,10 +377,10 @@ A reviewer can inspect and correct the incident without reading an opaque genera
   credentials (mandatory for production Terraform deployments).
 
 Still missing are claim-level dispute controls independent of statement edits,
-timestamp correction, answered-question records, per-evidence sensitivity
-exclusion, source-access revalidation against Slack at review time, reviewer
-metrics, and real-user validation. The current console is an evidence review
-workflow, not a general document editor.
+timestamp correction, per-evidence sensitivity exclusion, source-access
+revalidation against Slack at review time, reviewer metrics, and real-user
+validation. The current console is an evidence review workflow, not a general
+document editor.
 
 ### Exit criteria
 
@@ -405,7 +408,8 @@ After human approval, the system publishes one source-linked Markdown report and
 ### Scope
 
 - Approved-revision transactional outbox and scheduled leased worker.
-- Deterministic readable renderers and one configured Confluence or Notion destination.
+- Deterministic readable renderers, including reviewed answers and explicitly
+  remaining open questions, and one configured Confluence or Notion destination.
 - Slack completion message linking to the reviewed provider page.
 - GitHub issue creation with description, owner, priority, due date, linked claim/failure mode, verification method, and incident link.
 - Stable external idempotency keys and exact incident-ID reconciliation.

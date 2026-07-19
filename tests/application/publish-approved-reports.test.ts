@@ -38,6 +38,8 @@ function job(
       severity: 'SEV1',
       revisionNumber: 2,
       approvedAt: now,
+      questionAnswers: [],
+      remainingOpenQuestions: [],
       sections: [
         {
           sectionType: 'root_cause',

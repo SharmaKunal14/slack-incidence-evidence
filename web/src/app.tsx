@@ -55,6 +55,7 @@ import {
   type Statement,
 } from './contracts.js';
 import {
+  reconcileRevisionQuestionAnswers,
   reconcileRevisionStatements,
   requiresPreservedRevisionFetch,
 } from './revision-view.js';
@@ -487,6 +488,9 @@ function IncidentWorkspace({
   const [statementStates, setStatementStates] = useState(() =>
     createStatementStates(bundle),
   );
+  const [questionAnswers, setQuestionAnswers] = useState(() =>
+    createQuestionAnswerStates(bundle),
+  );
   const [acknowledgedContradictions, setAcknowledgedContradictions] = useState(
     bundle.latestRevision?.acknowledgedContradictions ?? false,
   );
@@ -537,6 +541,12 @@ function IncidentWorkspace({
     setStatementStates(
       createStatementStates(bundle, selectedRevision?.statements ?? null),
     );
+    setQuestionAnswers(
+      createQuestionAnswerStates(
+        bundle,
+        selectedRevision?.questionAnswers ?? null,
+      ),
+    );
     setAcknowledgedContradictions(
       selectedRevision?.acknowledgedContradictions ?? false,
     );
@@ -558,6 +568,12 @@ function IncidentWorkspace({
               }
             : { statementId, decision: state.decision },
       );
+      const answeredQuestions = Object.entries(questionAnswers)
+        .map(([questionId, answer]) => ({
+          questionId,
+          answer: answer.trim(),
+        }))
+        .filter((answer) => answer.answer.length > 0);
       return revisionResponseSchema.parse(
         await apiRequest(
           configuration,
@@ -572,6 +588,7 @@ function IncidentWorkspace({
               clientRequestId: crypto.randomUUID(),
               acknowledgedContradictions,
               acknowledgedOpenQuestions: acknowledgedQuestions,
+              questionAnswers: answeredQuestions,
               decisions,
             }),
           },
@@ -823,6 +840,14 @@ function IncidentWorkspace({
         <EvidenceWorkspace
           activeTab={activeTab}
           bundle={bundle}
+          editable={editable}
+          questionAnswers={questionAnswers}
+          onQuestionAnswerChange={(questionId, answer) =>
+            setQuestionAnswers((current) => ({
+              ...current,
+              [questionId]: answer,
+            }))
+          }
           onOpenSource={openSource}
           onTabChange={setActiveTab}
         />
@@ -971,14 +996,23 @@ export function StatementEditor({
 function EvidenceWorkspace({
   activeTab,
   bundle,
+  editable,
   onOpenSource,
+  onQuestionAnswerChange,
   onTabChange,
+  questionAnswers,
 }: {
   readonly activeTab: EvidenceTab;
   readonly bundle: Bundle;
+  readonly editable: boolean;
   readonly onOpenSource: (id: string) => void;
+  readonly onQuestionAnswerChange: (questionId: string, answer: string) => void;
   readonly onTabChange: (tab: EvidenceTab) => void;
+  readonly questionAnswers: Readonly<Record<string, string>>;
 }): ReactNode {
+  const answeredQuestionCount = Object.values(questionAnswers).filter(
+    (answer) => answer.trim().length > 0,
+  ).length;
   return (
     <aside className="evidence-workspace" aria-labelledby="evidence-title">
       <div className="workspace-heading evidence-heading">
@@ -1026,12 +1060,72 @@ function EvidenceWorkspace({
               copy="The extraction did not leave any unresolved questions."
             />
           ) : (
-            bundle.openQuestions.map((question, index) => (
-              <article className="question-card" key={question.id}>
-                <span>{String(index + 1).padStart(2, '0')}</span>
-                <p>{question.question}</p>
-              </article>
-            ))
+            <>
+              <div className="question-progress" aria-live="polite">
+                <span>
+                  <CircleHelp size={15} /> Reviewer context
+                </span>
+                <strong>
+                  {answeredQuestionCount} of {bundle.openQuestions.length}{' '}
+                  answered
+                </strong>
+              </div>
+              {bundle.openQuestions.map((question, index) => {
+                const answer = questionAnswers[question.id];
+                if (answer === undefined) {
+                  throw new Error('Open question has no review state');
+                }
+                const answered = answer.trim().length > 0;
+                return (
+                  <article
+                    className="question-card"
+                    data-answered={answered}
+                    key={question.id}
+                  >
+                    <header className="question-card-heading">
+                      <span>{String(index + 1).padStart(2, '0')}</span>
+                      <span className="question-answer-status">
+                        {answered ? (
+                          <Check size={13} />
+                        ) : (
+                          <PencilLine size={13} />
+                        )}
+                        {answered ? 'Answered' : 'Needs answer'}
+                      </span>
+                    </header>
+                    <p className="question-copy">{question.question}</p>
+                    {editable ? (
+                      <label className="question-answer-field">
+                        <span>Your reviewed answer</span>
+                        <textarea
+                          aria-label={`Answer: ${question.question}`}
+                          maxLength={4_000}
+                          placeholder="Add the confirmed context, decision, or remaining uncertainty…"
+                          rows={4}
+                          value={answer}
+                          onChange={(event) =>
+                            onQuestionAnswerChange(
+                              question.id,
+                              event.target.value,
+                            )
+                          }
+                        />
+                        <small>{answer.length.toLocaleString()} / 4,000</small>
+                      </label>
+                    ) : (
+                      <div className="preserved-question-answer">
+                        <span>Reviewed answer</span>
+                        <p>
+                          {answered
+                            ? answer
+                            : 'No answer was recorded in this revision.'}
+                        </p>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </>
           )}
         </Tabs.Content>
         <Tabs.Content className="evidence-tab-content" value="claims">
@@ -1535,6 +1629,15 @@ function createStatementStates(
         },
       ];
     }),
+  );
+}
+
+function createQuestionAnswerStates(
+  bundle: Bundle,
+  revisionAnswers = bundle.latestRevision?.questionAnswers ?? null,
+): Readonly<Record<string, string>> {
+  return Object.fromEntries(
+    reconcileRevisionQuestionAnswers(bundle.openQuestions, revisionAnswers),
   );
 }
 

@@ -161,6 +161,7 @@ describe('human incident review', () => {
       statementCount: 1,
       acknowledgedContradictions: true,
       acknowledgedOpenQuestions: true,
+      questionAnswers: [],
       statements: [
         {
           originalStatementId: 'statement-1',
@@ -300,6 +301,8 @@ describe('human incident review', () => {
     expect(persisted.requestSha256).toMatch(/^[0-9a-f]{64}$/u);
     expect(persisted.contentSha256).toMatch(/^[0-9a-f]{64}$/u);
     expect(persisted.renderedMarkdown).toContain('**Human confirmed:**');
+    expect(persisted.renderedMarkdown).toContain('## Remaining open questions');
+    expect(persisted.renderedMarkdown).toContain('Which query regressed?');
     expect(persisted.statements).toEqual([
       expect.objectContaining({
         originalStatementId: 'statement-1',
@@ -307,6 +310,64 @@ describe('human incident review', () => {
         claimIds: ['claim-1'],
       }),
     ]);
+  });
+
+  it('preserves reviewed open-question answers in the immutable content', async () => {
+    const reviews = repository();
+    const useCase = new CreateReportRevision(
+      reviews,
+      { now: () => now },
+      { generate: () => revisionId },
+    );
+
+    await useCase.execute({
+      reviewer,
+      command: {
+        ...createCommand(),
+        questionAnswers: [
+          {
+            questionId: 'question-1',
+            answer: 'The checkout_read query regressed after the deploy.',
+          },
+        ],
+      },
+    });
+
+    const persisted = reviews.createRevision.mock.calls[0]?.[0];
+    expect(persisted?.questionAnswers).toEqual([
+      {
+        id: revisionId,
+        questionId: 'question-1',
+        question: 'Which query regressed?',
+        answer: 'The checkout_read query regressed after the deploy.',
+      },
+    ]);
+    expect(persisted?.renderedMarkdown).toContain(
+      '## Reviewed questions and answers',
+    );
+    expect(persisted?.renderedMarkdown).toContain('Which query regressed?');
+  });
+
+  it('rejects an answer that points outside the incident questions', async () => {
+    const reviews = repository();
+    const useCase = new CreateReportRevision(
+      reviews,
+      { now: () => now },
+      { generate: () => revisionId },
+    );
+
+    await expect(
+      useCase.execute({
+        reviewer,
+        command: {
+          ...createCommand(),
+          questionAnswers: [
+            { questionId: 'question-from-another-incident', answer: 'No.' },
+          ],
+        },
+      }),
+    ).rejects.toThrow('unknown open question');
+    expect(reviews.createRevision).not.toHaveBeenCalled();
   });
 
   it('passes identity, concurrency version, and request ID to atomic approval', async () => {

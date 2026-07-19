@@ -30,7 +30,8 @@ GRANT SELECT ON TABLE
   timeline_event_evidence_links,
   source_artifacts,
   analysis_open_questions,
-  report_revisions
+  report_revisions,
+  report_revision_question_answers
 TO :"review_role";
 
 GRANT INSERT ON TABLE
@@ -38,6 +39,7 @@ GRANT INSERT ON TABLE
   report_revision_statements,
   report_revision_claim_links,
   report_revision_timeline_event_links,
+  report_revision_question_answers,
   report_approvals,
   report_publications,
   audit_events

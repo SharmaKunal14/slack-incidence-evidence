@@ -4,7 +4,10 @@ import {
   ReviewConfigurationError,
   ReviewConflictError,
 } from '../../../src/application/review/incident-review.js';
-import type { ApproveReportRevisionInput } from '../../../src/application/ports/incident-review-repository.js';
+import type {
+  ApproveReportRevisionInput,
+  CreateReportRevisionInput,
+} from '../../../src/application/ports/incident-review-repository.js';
 import { PostgresIncidentReviewRepository } from '../../../src/infrastructure/postgres/incident-review-repository.js';
 
 const now = new Date('2026-07-18T01:00:00.000Z');
@@ -178,7 +181,110 @@ describe('PostgresIncidentReviewRepository approval', () => {
   });
 });
 
-function reviewReadPool(revisionStatementRows: readonly QueryResultRow[]): {
+describe('PostgresIncidentReviewRepository revision persistence', () => {
+  it('writes question answers inside the same transaction as the revision', async () => {
+    const input: CreateReportRevisionInput = {
+      id: revisionId,
+      reviewer: { subject },
+      incidentId,
+      reportDraftId,
+      expectedIncidentVersion: 4,
+      clientRequestId: 'd61ad8d8-5111-4ce0-a044-1addc5bf0414',
+      requestSha256: 'a'.repeat(64),
+      acknowledgedContradictions: true,
+      acknowledgedOpenQuestions: true,
+      questionAnswers: [
+        {
+          id: 'question-answer-1',
+          questionId: 'question-1',
+          question: 'Who approved the emergency change?',
+          answer: 'The incident commander approved it at 01:14 UTC.',
+        },
+      ],
+      statements: [
+        {
+          id: 'revision-statement-1',
+          originalStatementId: 'statement-1',
+          sectionType: 'root_cause',
+          position: 0,
+          decision: 'KEEP',
+          text: 'A pool limit caused request queuing.',
+          classification: 'human_confirmed',
+          claimIds: [],
+          timelineEventIds: [],
+        },
+      ],
+      renderedMarkdown: '# Reviewed',
+      contentSha256: 'b'.repeat(64),
+      createdAt: now,
+      auditEventId: 'audit-event-1',
+    };
+    const query = vi.fn((sql: string) => {
+      if (sql.includes('FOR UPDATE OF i, draft')) {
+        return Promise.resolve(
+          result([
+            {
+              tenant_id: 'tenant-1',
+              incident_id: incidentId,
+              title: 'Checkout outage',
+              severity: 'SEV1',
+              incident_status: 'NEEDS_REVIEW',
+              incident_version: 4,
+              incident_created_at: now,
+              incident_updated_at: now,
+              report_draft_id: reportDraftId,
+              draft_version: 1,
+              rendered_markdown: '# Draft',
+              analysis_run_id: 'analysis-1',
+              draft_status: 'NEEDS_REVIEW',
+            },
+          ]),
+        );
+      }
+      if (sql.includes('COALESCE(MAX(revision_number)')) {
+        return Promise.resolve(result([{ next_revision_number: 1 }]));
+      }
+      if (sql.includes('INSERT INTO report_revisions')) {
+        return Promise.resolve(
+          result([
+            { ...revisionRow(), revision_number: 1, statement_count: 1 },
+          ]),
+        );
+      }
+      return Promise.resolve(result([]));
+    });
+    const release = vi.fn();
+    const client = { query, release } as unknown as PoolClient;
+    const pool = {
+      connect: vi.fn().mockResolvedValue(client),
+    } as unknown as Pool;
+
+    await expect(
+      new PostgresIncidentReviewRepository(pool).createRevision(input),
+    ).resolves.toMatchObject({ id: revisionId, revisionNumber: 1 });
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO report_revision_question_answers'),
+      [
+        'tenant-1',
+        incidentId,
+        reportDraftId,
+        revisionId,
+        ['question-answer-1'],
+        ['question-1'],
+        ['The incident commander approved it at 01:14 UTC.'],
+        now,
+      ],
+    );
+    expect(query).toHaveBeenCalledWith('COMMIT');
+    expect(query).not.toHaveBeenCalledWith('ROLLBACK');
+  });
+});
+
+function reviewReadPool(
+  revisionStatementRows: readonly QueryResultRow[],
+  revisionQuestionAnswerRows: readonly QueryResultRow[] = [],
+): {
   readonly pool: Pool;
   readonly query: ReturnType<typeof vi.fn>;
 } {
@@ -242,6 +348,16 @@ function reviewReadPool(revisionStatementRows: readonly QueryResultRow[]): {
       ]);
       return Promise.resolve(result([...revisionStatementRows]));
     }
+    if (sql.includes('FROM report_revision_question_answers')) {
+      expect(parameters).toEqual([
+        'tenant-1',
+        incidentId,
+        reportDraftId,
+        revisionId,
+        101,
+      ]);
+      return Promise.resolve(result([...revisionQuestionAnswerRows]));
+    }
     if (sql.includes('FROM report_revisions')) {
       return Promise.resolve(
         result([
@@ -256,16 +372,25 @@ function reviewReadPool(revisionStatementRows: readonly QueryResultRow[]): {
 
 describe('PostgresIncidentReviewRepository review bundle', () => {
   it('loads the complete newest immutable revision using tenant-scoped keys', async () => {
-    const { pool, query } = reviewReadPool([
-      {
-        original_report_statement_id: 'statement-1',
-        section_type: 'ROOT_CAUSE',
-        position: 0,
-        decision: 'EDIT',
-        statement: 'The deploy exhausted the database connection pool.',
-        classification: 'HUMAN_CONFIRMED',
-      },
-    ]);
+    const { pool, query } = reviewReadPool(
+      [
+        {
+          original_report_statement_id: 'statement-1',
+          section_type: 'ROOT_CAUSE',
+          position: 0,
+          decision: 'EDIT',
+          statement: 'The deploy exhausted the database connection pool.',
+          classification: 'HUMAN_CONFIRMED',
+        },
+      ],
+      [
+        {
+          question_id: 'question-1',
+          question: 'Who approved the emergency change?',
+          answer: 'The incident commander approved it at 01:14 UTC.',
+        },
+      ],
+    );
 
     const bundle = await new PostgresIncidentReviewRepository(pool).loadBundle(
       { subject },
@@ -284,6 +409,13 @@ describe('PostgresIncidentReviewRepository review bundle', () => {
           decision: 'EDIT',
           text: 'The deploy exhausted the database connection pool.',
           classification: 'human_confirmed',
+        },
+      ],
+      questionAnswers: [
+        {
+          questionId: 'question-1',
+          question: 'Who approved the emergency change?',
+          answer: 'The incident commander approved it at 01:14 UTC.',
         },
       ],
     });
@@ -337,7 +469,8 @@ describe('PostgresIncidentReviewRepository revision history', () => {
             classification: null,
           },
         ]),
-      );
+      )
+      .mockResolvedValueOnce(result([]));
     const pool = { query } as unknown as Pool;
 
     await expect(

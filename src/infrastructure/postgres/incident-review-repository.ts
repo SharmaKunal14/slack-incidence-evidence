@@ -135,6 +135,12 @@ interface RevisionStatementRow {
   readonly classification: string | null;
 }
 
+interface RevisionQuestionAnswerRow {
+  readonly question_id: string;
+  readonly question: string;
+  readonly answer: string;
+}
+
 interface AuthorizedRevisionRow extends RevisionRow {
   readonly source_statement_count: number | string;
 }
@@ -543,6 +549,7 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       }
 
       await insertRevisionStatements(client, locked.tenant_id, input);
+      await insertRevisionQuestionAnswers(client, locked.tenant_id, input);
       await insertAuditEvent(client, {
         id: input.auditEventId,
         tenantId: locked.tenant_id,
@@ -555,6 +562,7 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
         metadata: {
           revisionNumber,
           includedStatementCount: created.statement_count,
+          answeredQuestionCount: input.questionAnswers.length,
         },
         occurredAt: input.createdAt,
       });
@@ -988,8 +996,9 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
     revision: RevisionRow,
     sourceStatementCount: number,
   ): Promise<ReportRevisionDetail> {
-    const result = await this.pool.query<RevisionStatementRow>(
-      `
+    const [statementResult, questionAnswerResult] = await Promise.all([
+      this.pool.query<RevisionStatementRow>(
+        `
         SELECT
           original_report_statement_id,
           section_type,
@@ -1005,23 +1014,53 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
         ORDER BY section_type, position, id
         LIMIT $5
       `,
-      [
-        scope.tenant_id,
-        scope.incident_id,
-        scope.report_draft_id,
-        revision.id,
-        MAX_REPORT_STATEMENTS + 1,
-      ],
-    );
+        [
+          scope.tenant_id,
+          scope.incident_id,
+          scope.report_draft_id,
+          revision.id,
+          MAX_REPORT_STATEMENTS + 1,
+        ],
+      ),
+      this.pool.query<RevisionQuestionAnswerRow>(
+        `
+          SELECT answer.question_id, question.question, answer.answer
+          FROM report_revision_question_answers answer
+          JOIN analysis_open_questions question
+            ON question.tenant_id = answer.tenant_id
+           AND question.incident_id = answer.incident_id
+           AND question.id = answer.question_id
+          WHERE answer.tenant_id = $1
+            AND answer.incident_id = $2
+            AND answer.report_draft_id = $3
+            AND answer.report_revision_id = $4
+          ORDER BY answer.created_at, answer.id
+          LIMIT $5
+        `,
+        [
+          scope.tenant_id,
+          scope.incident_id,
+          scope.report_draft_id,
+          revision.id,
+          MAX_OPEN_QUESTIONS + 1,
+        ],
+      ),
+    ]);
     requireBound(
-      result.rows,
+      statementResult.rows,
       MAX_REPORT_STATEMENTS,
       'latest revision statements',
     );
+    requireBound(
+      questionAnswerResult.rows,
+      MAX_OPEN_QUESTIONS,
+      'latest revision question answers',
+    );
     if (
-      result.rows.length !== sourceStatementCount ||
-      result.rows.filter((statement) => statement.decision !== 'EXCLUDE')
-        .length !== revision.statement_count
+      statementResult.rows.length !== sourceStatementCount ||
+      statementResult.rows.filter(
+        (statement) => statement.decision !== 'EXCLUDE',
+      ).length !== revision.statement_count
     ) {
       throw new ReviewConfigurationError(
         'Report revision statement decisions are inconsistent',
@@ -1029,7 +1068,12 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
     }
     return {
       ...toRevisionSummary(revision),
-      statements: result.rows.map(toRevisionStatement),
+      statements: statementResult.rows.map(toRevisionStatement),
+      questionAnswers: questionAnswerResult.rows.map((answer) => ({
+        questionId: answer.question_id,
+        question: answer.question,
+        answer: answer.answer,
+      })),
     };
   }
 }
@@ -1257,6 +1301,51 @@ async function insertRevisionStatements(
       ],
     );
   }
+}
+
+async function insertRevisionQuestionAnswers(
+  client: PoolClient,
+  tenantId: string,
+  input: CreateReportRevisionInput,
+): Promise<void> {
+  if (input.questionAnswers.length === 0) {
+    return;
+  }
+  await client.query(
+    `
+      INSERT INTO report_revision_question_answers (
+        id,
+        tenant_id,
+        incident_id,
+        report_draft_id,
+        report_revision_id,
+        question_id,
+        answer,
+        created_at
+      )
+      SELECT
+        answer.id,
+        $1,
+        $2,
+        $3,
+        $4,
+        answer.question_id,
+        answer.content,
+        $8
+      FROM UNNEST($5::text[], $6::text[], $7::text[])
+        AS answer(id, question_id, content)
+    `,
+    [
+      tenantId,
+      input.incidentId,
+      input.reportDraftId,
+      input.id,
+      input.questionAnswers.map((answer) => answer.id),
+      input.questionAnswers.map((answer) => answer.questionId),
+      input.questionAnswers.map((answer) => answer.answer),
+      input.createdAt,
+    ],
+  );
 }
 
 async function insertAuditEvent(

@@ -191,7 +191,13 @@ function renderPageBlocks(document: ApprovedReportDocument): unknown[] {
         (sectionTotal, statement) => sectionTotal + statement.text.length,
         0,
       ),
-    0,
+    document.questionAnswers.reduce(
+      (total, answer) => total + answer.question.length + answer.answer.length,
+      document.remainingOpenQuestions.reduce(
+        (total, question) => total + question.length,
+        0,
+      ),
+    ),
   );
   if (reportCharacterCount > MAX_REPORT_CHARACTERS) {
     throw new ReportPublicationProviderError('NOTION_REPORT_TOO_LARGE');
@@ -240,6 +246,45 @@ function renderPageBlocks(document: ApprovedReportDocument): unknown[] {
       object: 'block',
       type: 'paragraph',
       paragraph: { rich_text: richText(content) },
+    });
+  }
+  if (document.questionAnswers.length > 0) {
+    blocks.push({
+      object: 'block',
+      type: 'heading_2',
+      heading_2: { rich_text: richText('Reviewed questions and answers') },
+    });
+    blocks.push({
+      object: 'block',
+      type: 'paragraph',
+      paragraph: {
+        rich_text: richText(
+          document.questionAnswers
+            .map(
+              (answer, index) =>
+                `${index + 1}. ${answer.question}\n${answer.answer}`,
+            )
+            .join('\n\n'),
+        ),
+      },
+    });
+  }
+  if (document.remainingOpenQuestions.length > 0) {
+    blocks.push({
+      object: 'block',
+      type: 'heading_2',
+      heading_2: { rich_text: richText('Remaining open questions') },
+    });
+    blocks.push({
+      object: 'block',
+      type: 'paragraph',
+      paragraph: {
+        rich_text: richText(
+          document.remainingOpenQuestions
+            .map((question) => `• ${question}`)
+            .join('\n\n'),
+        ),
+      },
     });
   }
   if (blocks.length > 100) {

@@ -55,6 +55,7 @@ describe('runMigrations', () => {
         '0005_human_review.sql',
         '0006_approved_report_publication.sql',
         '0007_configurable_report_publisher.sql',
+        '0008_review_question_answers.sql',
       ],
       alreadyApplied: 0,
     });

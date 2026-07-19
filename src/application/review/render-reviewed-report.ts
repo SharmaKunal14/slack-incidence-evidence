@@ -2,7 +2,10 @@ import {
   INCIDENT_REPORT_SECTION_TYPES,
   type IncidentReportSectionType,
 } from '../report/incident-report.js';
-import type { ResolvedReviewStatement } from './incident-review.js';
+import type {
+  ResolvedReviewQuestionAnswer,
+  ResolvedReviewStatement,
+} from './incident-review.js';
 
 const HEADINGS: Readonly<Record<IncidentReportSectionType, string>> = {
   executive_summary: 'Executive summary',
@@ -20,6 +23,11 @@ const HEADINGS: Readonly<Record<IncidentReportSectionType, string>> = {
 export function renderReviewedReportMarkdown(
   incidentTitle: string,
   statements: readonly ResolvedReviewStatement[],
+  questionAnswers: readonly ResolvedReviewQuestionAnswer[] = [],
+  openQuestions: readonly {
+    readonly id: string;
+    readonly question: string;
+  }[] = [],
 ): string {
   const lines = [
     `# ${escapeMarkdown(incidentTitle)}`,
@@ -51,6 +59,30 @@ export function renderReviewedReportMarkdown(
         `- ${classificationPrefix(statement.classification)}${escapeMarkdown(statement.text ?? '')}`,
         `  - _Sources: ${references}_`,
       );
+    }
+    lines.push('');
+  }
+  if (questionAnswers.length > 0) {
+    lines.push('## Reviewed questions and answers', '');
+    for (const answer of questionAnswers) {
+      lines.push(
+        `### ${escapeMarkdown(answer.question)}`,
+        '',
+        escapeMarkdown(answer.answer),
+        '',
+      );
+    }
+  }
+  const answeredQuestionIds = new Set(
+    questionAnswers.map((answer) => answer.questionId),
+  );
+  const remainingQuestions = openQuestions.filter(
+    (question) => !answeredQuestionIds.has(question.id),
+  );
+  if (remainingQuestions.length > 0) {
+    lines.push('## Remaining open questions', '');
+    for (const question of remainingQuestions) {
+      lines.push(`- ${escapeMarkdown(question.question)}`);
     }
     lines.push('');
   }
