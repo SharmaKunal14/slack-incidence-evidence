@@ -1,0 +1,959 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Least-privilege GitHub OIDC deployment role and mandatory runtime-role permissions boundary for incident-copilot.",
+  "Parameters": {
+    "ProjectName": {
+      "Type": "String",
+      "Default": "incident-copilot",
+      "AllowedPattern": "^[a-z][a-z0-9-]{1,29}$"
+    },
+    "Environment": {
+      "Type": "String",
+      "AllowedValues": ["development", "staging", "production"]
+    },
+    "GitHubOidcProviderArn": {
+      "Type": "String",
+      "AllowedPattern": "^arn:[^:]+:iam::[0-9]{12}:oidc-provider/token\\.actions\\.githubusercontent\\.com$"
+    },
+    "GitHubOidcSubject": {
+      "Type": "String",
+      "MinLength": 20,
+      "MaxLength": 512,
+      "AllowedPattern": "^repo:[^:]+:environment:(development|staging|production)$"
+    },
+    "StateBucketName": {
+      "Type": "String",
+      "MinLength": 3,
+      "MaxLength": 63,
+      "AllowedPattern": "^[a-z0-9][a-z0-9.-]*[a-z0-9]$"
+    },
+    "StateObjectKey": {
+      "Type": "String",
+      "MinLength": 1,
+      "MaxLength": 1024,
+      "AllowedPattern": "^[A-Za-z0-9][A-Za-z0-9!_.*'()/+-]*$"
+    },
+    "StateKmsKeyArn": {
+      "Type": "String",
+      "AllowedPattern": "^arn:[^:]+:kms:[^:]+:[0-9]{12}:key/[A-Za-z0-9-]+$"
+    },
+    "MigrationDatabaseSecretArn": {
+      "Type": "String",
+      "AllowedPattern": "^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$"
+    },
+    "ReviewBucketName": {
+      "Type": "String",
+      "MinLength": 3,
+      "MaxLength": 63,
+      "AllowedPattern": "^[a-z0-9][a-z0-9.-]*[a-z0-9]$"
+    },
+    "MigrationSecretKmsKeyArn": {
+      "Type": "String",
+      "Default": "",
+      "AllowedPattern": "^$|^arn:[^:]+:kms:[^:]+:[0-9]{12}:key/[A-Za-z0-9-]+$"
+    }
+  },
+  "Conditions": {
+    "HasMigrationSecretKmsKey": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [{ "Ref": "MigrationSecretKmsKeyArn" }, ""]
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "LambdaRolePermissionsBoundary": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": {
+          "Fn::Sub": "${ProjectName}-${Environment}-lambda-boundary"
+        },
+        "Description": "Maximum permissions for incident-copilot runtime Lambda roles.",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "WriteApplicationLogs",
+              "Effect": "Allow",
+              "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-${Environment}-*:log-stream:*"
+                }
+              ]
+            },
+            {
+              "Sid": "UseApplicationQueues",
+              "Effect": "Allow",
+              "Action": [
+                "sqs:ChangeMessageVisibility",
+                "sqs:DeleteMessage",
+                "sqs:GetQueueAttributes",
+                "sqs:ReceiveMessage",
+                "sqs:SendMessage"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-${Environment}-*"
+              }
+            },
+            {
+              "Sid": "ReadEnvironmentSecrets",
+              "Effect": "Allow",
+              "Action": "secretsmanager:GetSecretValue",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*"
+              }
+            },
+            {
+              "Sid": "DecryptEnvironmentSecretsOnlyThroughSecretsManager",
+              "Effect": "Allow",
+              "Action": "kms:Decrypt",
+              "Resource": "*",
+              "Condition": {
+                "StringEquals": {
+                  "kms:ViaService": {
+                    "Fn::Sub": "secretsmanager.${AWS::Region}.${AWS::URLSuffix}"
+                  }
+                },
+                "StringLike": {
+                  "kms:EncryptionContext:SecretARN": {
+                    "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/*"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "StartEnvironmentWorkflow",
+              "Effect": "Allow",
+              "Action": "states:StartExecution",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-${Environment}-*"
+              }
+            },
+            {
+              "Sid": "ManageVpcNetworkInterfacesWhenExplicitlyConfigured",
+              "Effect": "Allow",
+              "Action": [
+                "ec2:AssignPrivateIpAddresses",
+                "ec2:CreateNetworkInterface",
+                "ec2:DeleteNetworkInterface",
+                "ec2:DescribeNetworkInterfaces",
+                "ec2:DescribeSubnets",
+                "ec2:UnassignPrivateIpAddresses"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }
+      }
+    },
+    "WorkflowRolePermissionsBoundary": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": {
+          "Fn::Sub": "${ProjectName}-${Environment}-workflow-boundary"
+        },
+        "Description": "Maximum permissions for the incident-copilot Step Functions role.",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DeliverStepFunctionsLogs",
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogDelivery",
+                "logs:DeleteLogDelivery",
+                "logs:DescribeLogGroups",
+                "logs:DescribeResourcePolicies",
+                "logs:GetLogDelivery",
+                "logs:ListLogDeliveries",
+                "logs:PutResourcePolicy",
+                "logs:UpdateLogDelivery"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "InvokeEnvironmentFunctions",
+              "Effect": "Allow",
+              "Action": "lambda:InvokeFunction",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-${Environment}-*"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "StateAndMigrationPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": {
+          "Fn::Sub": "${ProjectName}-${Environment}-deploy-state"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "ListExactStateObjects",
+              "Effect": "Allow",
+              "Action": "s3:ListBucket",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::${StateBucketName}"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "s3:prefix": [
+                    { "Ref": "StateObjectKey" },
+                    { "Fn::Sub": "${StateObjectKey}.tflock" }
+                  ]
+                }
+              }
+            },
+            {
+              "Sid": "ReadWriteState",
+              "Effect": "Allow",
+              "Action": ["s3:GetObject", "s3:PutObject"],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::${StateBucketName}/${StateObjectKey}"
+              }
+            },
+            {
+              "Sid": "ManageStateLock",
+              "Effect": "Allow",
+              "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::${StateBucketName}/${StateObjectKey}.tflock"
+              }
+            },
+            {
+              "Sid": "UseStateKey",
+              "Effect": "Allow",
+              "Action": [
+                "kms:Decrypt",
+                "kms:DescribeKey",
+                "kms:Encrypt",
+                "kms:GenerateDataKey"
+              ],
+              "Resource": { "Ref": "StateKmsKeyArn" }
+            },
+            {
+              "Sid": "ReadMigrationDatabaseSecret",
+              "Effect": "Allow",
+              "Action": "secretsmanager:GetSecretValue",
+              "Resource": { "Ref": "MigrationDatabaseSecretArn" }
+            }
+          ]
+        }
+      }
+    },
+    "MigrationSecretKmsPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Condition": "HasMigrationSecretKmsKey",
+      "Properties": {
+        "ManagedPolicyName": {
+          "Fn::Sub": "${ProjectName}-${Environment}-deploy-migration-kms"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DecryptMigrationSecretThroughSecretsManager",
+              "Effect": "Allow",
+              "Action": "kms:Decrypt",
+              "Resource": { "Ref": "MigrationSecretKmsKeyArn" },
+              "Condition": {
+                "StringEquals": {
+                  "kms:ViaService": {
+                    "Fn::Sub": "secretsmanager.${AWS::Region}.${AWS::URLSuffix}"
+                  },
+                  "kms:EncryptionContext:SecretARN": {
+                    "Ref": "MigrationDatabaseSecretArn"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "CoreInfrastructurePolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": {
+          "Fn::Sub": "${ProjectName}-${Environment}-deploy-core"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "ManageEnvironmentQueues",
+              "Effect": "Allow",
+              "Action": [
+                "sqs:CreateQueue",
+                "sqs:GetQueueAttributes",
+                "sqs:GetQueueUrl",
+                "sqs:ListQueueTags",
+                "sqs:SetQueueAttributes",
+                "sqs:TagQueue",
+                "sqs:UntagQueue"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectName}-${Environment}-*"
+              }
+            },
+            {
+              "Sid": "ListQueuesForProviderRead",
+              "Effect": "Allow",
+              "Action": "sqs:ListQueues",
+              "Resource": "*"
+            },
+            {
+              "Sid": "ManageEnvironmentLogGroups",
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogGroup",
+                "logs:DescribeLogStreams",
+                "logs:ListTagsForResource",
+                "logs:PutMetricFilter",
+                "logs:PutRetentionPolicy",
+                "logs:TagResource",
+                "logs:UntagResource"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-${Environment}-*"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/${ProjectName}-${Environment}*"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vendedlogs/states/${ProjectName}-${Environment}-*"
+                }
+              ]
+            },
+            {
+              "Sid": "DescribeLogsForProviderRead",
+              "Effect": "Allow",
+              "Action": [
+                "logs:DescribeLogGroups",
+                "logs:DescribeMetricFilters"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "ManageTaggedEnvironmentAlarms",
+              "Effect": "Allow",
+              "Action": ["cloudwatch:PutMetricAlarm", "cloudwatch:TagResource"],
+              "Resource": "*",
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestTag/Application": { "Ref": "ProjectName" },
+                  "aws:RequestTag/Environment": { "Ref": "Environment" },
+                  "aws:RequestTag/ManagedBy": "Terraform"
+                }
+              }
+            },
+            {
+              "Sid": "DescribeAlarmsForProviderRead",
+              "Effect": "Allow",
+              "Action": [
+                "cloudwatch:DescribeAlarms",
+                "cloudwatch:ListTagsForResource"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "ManageEnvironmentEventRules",
+              "Effect": "Allow",
+              "Action": [
+                "events:DescribeRule",
+                "events:ListTagsForResource",
+                "events:ListTargetsByRule",
+                "events:PutRule",
+                "events:PutTargets",
+                "events:TagResource",
+                "events:UntagResource"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${ProjectName}-${Environment}-*"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "RuntimeRoleManagementPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": {
+          "Fn::Sub": "${ProjectName}-${Environment}-deploy-runtime-roles"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "CreateBoundedLambdaRoles",
+              "Effect": "Allow",
+              "Action": "iam:CreateRole",
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-ingress-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-worker-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-evidence-collector-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-analysis-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-report-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-review-notification-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-approved-report-publication-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-review-api-role"
+                }
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "iam:PermissionsBoundary": {
+                    "Ref": "LambdaRolePermissionsBoundary"
+                  },
+                  "aws:RequestTag/Application": { "Ref": "ProjectName" },
+                  "aws:RequestTag/Environment": { "Ref": "Environment" },
+                  "aws:RequestTag/ManagedBy": "Terraform"
+                }
+              }
+            },
+            {
+              "Sid": "CreateBoundedWorkflowRole",
+              "Effect": "Allow",
+              "Action": "iam:CreateRole",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-workflow-role"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "iam:PermissionsBoundary": {
+                    "Ref": "WorkflowRolePermissionsBoundary"
+                  },
+                  "aws:RequestTag/Application": { "Ref": "ProjectName" },
+                  "aws:RequestTag/Environment": { "Ref": "Environment" },
+                  "aws:RequestTag/ManagedBy": "Terraform"
+                }
+              }
+            },
+            {
+              "Sid": "ManageExactRuntimeRoles",
+              "Effect": "Allow",
+              "Action": [
+                "iam:GetRole",
+                "iam:GetRolePolicy",
+                "iam:ListAttachedRolePolicies",
+                "iam:ListRolePolicies",
+                "iam:ListRoleTags",
+                "iam:PutRolePolicy",
+                "iam:TagRole",
+                "iam:UntagRole",
+                "iam:UpdateAssumeRolePolicy"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-ingress-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-worker-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-evidence-collector-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-analysis-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-report-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-review-notification-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-approved-report-publication-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-review-api-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-workflow-role"
+                }
+              ]
+            },
+            {
+              "Sid": "SetExactLambdaBoundary",
+              "Effect": "Allow",
+              "Action": "iam:PutRolePermissionsBoundary",
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-ingress-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-worker-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-evidence-collector-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-analysis-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-report-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-review-notification-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-approved-report-publication-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-review-api-role"
+                }
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "iam:PermissionsBoundary": {
+                    "Ref": "LambdaRolePermissionsBoundary"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "SetExactWorkflowBoundary",
+              "Effect": "Allow",
+              "Action": "iam:PutRolePermissionsBoundary",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-workflow-role"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "iam:PermissionsBoundary": {
+                    "Ref": "WorkflowRolePermissionsBoundary"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "PassExactLambdaRoles",
+              "Effect": "Allow",
+              "Action": "iam:PassRole",
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-ingress-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-worker-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-evidence-collector-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-analysis-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-report-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-review-notification-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-approved-report-publication-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-incident-review-api-role"
+                }
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "iam:PassedToService": "lambda.amazonaws.com"
+                }
+              }
+            },
+            {
+              "Sid": "PassExactWorkflowRole",
+              "Effect": "Allow",
+              "Action": "iam:PassRole",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-workflow-role"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "iam:PassedToService": "states.amazonaws.com"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ComputeInfrastructurePolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": {
+          "Fn::Sub": "${ProjectName}-${Environment}-deploy-compute"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "ManageEnvironmentFunctions",
+              "Effect": "Allow",
+              "Action": [
+                "lambda:AddPermission",
+                "lambda:CreateFunction",
+                "lambda:GetFunction",
+                "lambda:GetFunctionCodeSigningConfig",
+                "lambda:GetFunctionConcurrency",
+                "lambda:GetPolicy",
+                "lambda:GetRuntimeManagementConfig",
+                "lambda:ListTags",
+                "lambda:PutFunctionConcurrency",
+                "lambda:PutRuntimeManagementConfig",
+                "lambda:TagResource",
+                "lambda:UntagResource",
+                "lambda:UpdateFunctionCode",
+                "lambda:UpdateFunctionConfiguration"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-${Environment}-*"
+              }
+            },
+            {
+              "Sid": "CreateEnvironmentEventSourceMapping",
+              "Effect": "Allow",
+              "Action": "lambda:CreateEventSourceMapping",
+              "Resource": "*",
+              "Condition": {
+                "ArnLike": {
+                  "lambda:FunctionArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-${Environment}-*"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "ManageEnvironmentEventSourceMappings",
+              "Effect": "Allow",
+              "Action": [
+                "lambda:GetEventSourceMapping",
+                "lambda:ListTags",
+                "lambda:TagResource",
+                "lambda:UntagResource",
+                "lambda:UpdateEventSourceMapping"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:event-source-mapping:*"
+              }
+            },
+            {
+              "Sid": "ListEventSourceMappingsForProviderRead",
+              "Effect": "Allow",
+              "Action": "lambda:ListEventSourceMappings",
+              "Resource": "*"
+            },
+            {
+              "Sid": "ManageEnvironmentStateMachine",
+              "Effect": "Allow",
+              "Action": [
+                "states:CreateStateMachine",
+                "states:DescribeStateMachine",
+                "states:ListTagsForResource",
+                "states:TagResource",
+                "states:UntagResource",
+                "states:UpdateStateMachine"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-${Environment}-*"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "EdgeAndIdentityInfrastructurePolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": {
+          "Fn::Sub": "${ProjectName}-${Environment}-deploy-edge"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "ManageRegionalHttpApi",
+              "Effect": "Allow",
+              "Action": [
+                "apigateway:GET",
+                "apigateway:POST",
+                "apigateway:PUT",
+                "apigateway:PATCH"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis/*"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:${AWS::Region}::/tags/*"
+                }
+              ]
+            },
+            {
+              "Sid": "CreateTaggedReviewerPool",
+              "Effect": "Allow",
+              "Action": "cognito-idp:CreateUserPool",
+              "Resource": "*",
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestTag/Application": { "Ref": "ProjectName" },
+                  "aws:RequestTag/Environment": { "Ref": "Environment" },
+                  "aws:RequestTag/ManagedBy": "Terraform"
+                }
+              }
+            },
+            {
+              "Sid": "ManageEnvironmentReviewerPool",
+              "Effect": "Allow",
+              "Action": [
+                "cognito-idp:CreateUserPoolClient",
+                "cognito-idp:CreateUserPoolDomain",
+                "cognito-idp:DescribeUserPool",
+                "cognito-idp:DescribeUserPoolClient",
+                "cognito-idp:DescribeUserPoolDomain",
+                "cognito-idp:GetUserPoolMfaConfig",
+                "cognito-idp:ListTagsForResource",
+                "cognito-idp:SetUserPoolMfaConfig",
+                "cognito-idp:TagResource",
+                "cognito-idp:UntagResource",
+                "cognito-idp:UpdateUserPool",
+                "cognito-idp:UpdateUserPoolClient"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "aws:ResourceTag/Application": { "Ref": "ProjectName" },
+                  "aws:ResourceTag/Environment": { "Ref": "Environment" },
+                  "aws:ResourceTag/ManagedBy": "Terraform"
+                }
+              }
+            },
+            {
+              "Sid": "ReadCognitoDomains",
+              "Effect": "Allow",
+              "Action": "cognito-idp:DescribeUserPoolDomain",
+              "Resource": "*"
+            },
+            {
+              "Sid": "ManageReviewBucket",
+              "Effect": "Allow",
+              "Action": [
+                "s3:CreateBucket",
+                "s3:GetAccelerateConfiguration",
+                "s3:GetBucketAcl",
+                "s3:GetBucketCORS",
+                "s3:GetBucketLogging",
+                "s3:GetBucketLocation",
+                "s3:GetBucketObjectLockConfiguration",
+                "s3:GetBucketOwnershipControls",
+                "s3:GetBucketPolicy",
+                "s3:GetBucketPolicyStatus",
+                "s3:GetBucketPublicAccessBlock",
+                "s3:GetBucketRequestPayment",
+                "s3:GetBucketTagging",
+                "s3:GetBucketVersioning",
+                "s3:GetBucketWebsite",
+                "s3:GetEncryptionConfiguration",
+                "s3:GetLifecycleConfiguration",
+                "s3:GetReplicationConfiguration",
+                "s3:ListBucket",
+                "s3:PutBucketOwnershipControls",
+                "s3:PutBucketPolicy",
+                "s3:PutBucketPublicAccessBlock",
+                "s3:PutBucketTagging",
+                "s3:PutBucketVersioning",
+                "s3:PutEncryptionConfiguration"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::${ReviewBucketName}"
+              }
+            },
+            {
+              "Sid": "ManageReviewObjects",
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObject",
+                "s3:GetObjectAttributes",
+                "s3:GetObjectTagging",
+                "s3:PutObject",
+                "s3:PutObjectTagging"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::${ReviewBucketName}/*"
+              }
+            },
+            {
+              "Sid": "CreateUnscopableCloudFrontComponents",
+              "Effect": "Allow",
+              "Action": [
+                "cloudfront:CreateOriginAccessControl",
+                "cloudfront:CreateResponseHeadersPolicy"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "CreateTaggedReviewDistribution",
+              "Effect": "Allow",
+              "Action": "cloudfront:CreateDistribution",
+              "Resource": "*",
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestTag/Application": { "Ref": "ProjectName" },
+                  "aws:RequestTag/Environment": { "Ref": "Environment" },
+                  "aws:RequestTag/ManagedBy": "Terraform"
+                }
+              }
+            },
+            {
+              "Sid": "ReadCloudFrontManagedPolicies",
+              "Effect": "Allow",
+              "Action": [
+                "cloudfront:GetCachePolicy",
+                "cloudfront:GetCachePolicyConfig",
+                "cloudfront:ListCachePolicies"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "ManageUnscopableCloudFrontComponents",
+              "Effect": "Allow",
+              "Action": [
+                "cloudfront:GetOriginAccessControl",
+                "cloudfront:GetOriginAccessControlConfig",
+                "cloudfront:GetResponseHeadersPolicy",
+                "cloudfront:GetResponseHeadersPolicyConfig",
+                "cloudfront:UpdateOriginAccessControl",
+                "cloudfront:UpdateResponseHeadersPolicy"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "TagReviewCloudFrontResources",
+              "Effect": "Allow",
+              "Action": "cloudfront:TagResource",
+              "Resource": "*",
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestTag/Application": { "Ref": "ProjectName" },
+                  "aws:RequestTag/Environment": { "Ref": "Environment" },
+                  "aws:RequestTag/ManagedBy": "Terraform"
+                }
+              }
+            },
+            {
+              "Sid": "ManageTaggedReviewDistribution",
+              "Effect": "Allow",
+              "Action": [
+                "cloudfront:CreateInvalidation",
+                "cloudfront:GetDistribution",
+                "cloudfront:GetDistributionConfig",
+                "cloudfront:GetInvalidation",
+                "cloudfront:ListTagsForResource",
+                "cloudfront:UntagResource",
+                "cloudfront:UpdateDistribution"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "aws:ResourceTag/Application": { "Ref": "ProjectName" },
+                  "aws:ResourceTag/Environment": { "Ref": "Environment" },
+                  "aws:ResourceTag/ManagedBy": "Terraform"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "DeploymentRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::Sub": "${ProjectName}-${Environment}-github-deploy-managed"
+        },
+        "Description": "GitHub OIDC Terraform deployer for one incident-copilot environment.",
+        "MaxSessionDuration": 3600,
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": { "Ref": "GitHubOidcProviderArn" }
+              },
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                  "token.actions.githubusercontent.com:sub": {
+                    "Ref": "GitHubOidcSubject"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          { "Ref": "StateAndMigrationPolicy" },
+          { "Ref": "CoreInfrastructurePolicy" },
+          { "Ref": "RuntimeRoleManagementPolicy" },
+          { "Ref": "ComputeInfrastructurePolicy" },
+          { "Ref": "EdgeAndIdentityInfrastructurePolicy" },
+          {
+            "Fn::If": [
+              "HasMigrationSecretKmsKey",
+              { "Ref": "MigrationSecretKmsPolicy" },
+              { "Ref": "AWS::NoValue" }
+            ]
+          }
+        ],
+        "Tags": [
+          { "Key": "Application", "Value": { "Ref": "ProjectName" } },
+          { "Key": "Environment", "Value": { "Ref": "Environment" } },
+          { "Key": "ManagedBy", "Value": "CloudFormation" }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "DeploymentRoleArn": {
+      "Value": { "Fn::GetAtt": ["DeploymentRole", "Arn"] }
+    },
+    "LambdaRolePermissionsBoundaryArn": {
+      "Value": { "Ref": "LambdaRolePermissionsBoundary" }
+    },
+    "WorkflowRolePermissionsBoundaryArn": {
+      "Value": { "Ref": "WorkflowRolePermissionsBoundary" }
+    }
+  }
+}
