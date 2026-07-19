@@ -152,12 +152,82 @@ variable "openai_api_secret_arn" {
 }
 
 variable "notion_api_secret_arn" {
-  description = "ARN of an existing Secrets Manager secret containing JSON {\"apiToken\":\"...\"}. Terraform never reads the value."
+  description = "Optional ARN of a Secrets Manager secret containing JSON {\"apiToken\":\"...\"}; required when publication_provider is NOTION. Terraform never reads the value."
   type        = string
+  default     = null
+  nullable    = true
 
   validation {
-    condition     = can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.notion_api_secret_arn))
-    error_message = "notion_api_secret_arn must be a Secrets Manager secret ARN."
+    condition = (
+      var.notion_api_secret_arn == null ||
+      can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.notion_api_secret_arn))
+    )
+    error_message = "notion_api_secret_arn must be null or a Secrets Manager secret ARN."
+  }
+}
+
+variable "publication_provider" {
+  description = "Approved-report destination selected for this environment. Existing checkpointed jobs retain their original provider."
+  type        = string
+  default     = "NOTION"
+
+  validation {
+    condition     = contains(["NOTION", "CONFLUENCE"], var.publication_provider)
+    error_message = "publication_provider must be NOTION or CONFLUENCE."
+  }
+}
+
+variable "confluence_api_secret_arn" {
+  description = "Optional ARN of a Secrets Manager secret containing JSON {\"email\":\"...\",\"apiToken\":\"...\"}; required when publication_provider is CONFLUENCE. Terraform never reads the value."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = (
+      var.confluence_api_secret_arn == null ||
+      can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.confluence_api_secret_arn))
+    )
+    error_message = "confluence_api_secret_arn must be null or a Secrets Manager secret ARN."
+  }
+}
+
+variable "confluence_base_url" {
+  description = "Plain HTTPS origin of the Confluence Cloud site; required when publication_provider is CONFLUENCE."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = (
+      var.confluence_base_url == null ||
+      can(regex("^https://[A-Za-z0-9-]+\\.atlassian\\.net/?$", var.confluence_base_url))
+    )
+    error_message = "confluence_base_url must be null or a plain https://<site>.atlassian.net origin."
+  }
+}
+
+variable "confluence_space_id" {
+  description = "Numeric Confluence Cloud space ID receiving approved reports; required for the Confluence provider."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.confluence_space_id == null || can(regex("^[1-9][0-9]{0,29}$", var.confluence_space_id))
+    error_message = "confluence_space_id must be null or a positive numeric identifier."
+  }
+}
+
+variable "confluence_parent_page_id" {
+  description = "Optional numeric parent page ID under which Confluence reports are created."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.confluence_parent_page_id == null || can(regex("^[1-9][0-9]{0,29}$", var.confluence_parent_page_id))
+    error_message = "confluence_parent_page_id must be null or a positive numeric identifier."
   }
 }
 
@@ -177,12 +247,17 @@ variable "publication_database_secret_arn" {
 }
 
 variable "notion_data_source_id" {
-  description = "Notion data source receiving approved report pages. This identifier is configuration, not a credential."
+  description = "Optional Notion data source receiving approved report pages; required when publication_provider is NOTION."
   type        = string
+  default     = null
+  nullable    = true
 
   validation {
-    condition     = can(regex("^(?:[0-9A-Fa-f]{32}|[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12})$", var.notion_data_source_id))
-    error_message = "notion_data_source_id must be a 32-character or hyphenated UUID-style Notion identifier."
+    condition = (
+      var.notion_data_source_id == null ||
+      can(regex("^(?:[0-9A-Fa-f]{32}|[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12})$", var.notion_data_source_id))
+    )
+    error_message = "notion_data_source_id must be null or a 32-character or hyphenated UUID-style Notion identifier."
   }
 }
 
@@ -699,7 +774,7 @@ variable "publication_timeout_seconds" {
 }
 
 variable "publication_reserved_concurrency" {
-  description = "Hard concurrency boundary for Notion, Slack, and PostgreSQL publication work."
+  description = "Hard concurrency boundary for external publishing, Slack, and PostgreSQL publication work."
   type        = number
   default     = 1
 
@@ -761,6 +836,17 @@ variable "notion_timeout_milliseconds" {
   validation {
     condition     = var.notion_timeout_milliseconds >= 1000 && var.notion_timeout_milliseconds <= 30000
     error_message = "notion_timeout_milliseconds must be between 1000 and 30000."
+  }
+}
+
+variable "confluence_timeout_milliseconds" {
+  description = "Hard timeout for one Confluence Cloud REST request."
+  type        = number
+  default     = 10000
+
+  validation {
+    condition     = var.confluence_timeout_milliseconds >= 1000 && var.confluence_timeout_milliseconds <= 30000
+    error_message = "confluence_timeout_milliseconds must be between 1000 and 30000."
   }
 }
 

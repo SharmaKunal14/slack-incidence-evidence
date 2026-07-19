@@ -32,9 +32,9 @@ the application's at-least-once and idempotency assumptions.
 - A private, encrypted, versioned S3 bucket exposed only through an origin-
   access-controlled CloudFront review console with restrictive response headers.
 - A scheduled, single-concurrency publication Lambda which leases approved
-  revisions from a transactional PostgreSQL outbox, creates one complete Notion
-  page, checkpoints its URL, and posts the final link to the triggering Slack
-  thread.
+  revisions from a transactional PostgreSQL outbox, creates one complete page
+  in the configured Confluence or Notion destination, checkpoints its URL, and
+  posts the final link to the triggering Slack thread.
 - A Standard workflow which loops over durable Slack page checkpoints, waits on
   Slack rate-limit hints, then runs leased structured extraction with durable
   model retry waits without holding Lambda compute, then generates a leased
@@ -82,8 +82,8 @@ Reviewer browser -> Cognito authorization code + PKCE
 
 Approval transaction -> PostgreSQL report_publications outbox
 EventBridge schedule -> publication Lambda (leased, bounded retries)
-                     -> Notion data source (exact Incident ID lookup/create)
-                     -> PostgreSQL Notion checkpoint
+                     -> configured Confluence space or Notion data source
+                     -> PostgreSQL provider-neutral page checkpoint
                      -> Slack Web API final thread link
                      -> PostgreSQL completion checkpoint
 ```
@@ -123,7 +123,7 @@ Leave both VPC input lists empty for Supabase's public pooler. When both lists
 are supplied, database-using functions are attached to those subnets and receive
 the minimal Lambda ENI-management IAM actions. A private deployment then needs either
 Secrets Manager and Step Functions interface endpoints or controlled NAT egress
-to reach those AWS APIs. Slack, OpenAI, and Notion calls require deliberate
+to reach those AWS APIs. Slack, OpenAI, Confluence, and Notion calls require deliberate
 HTTPS egress; a private-subnet deployment without NAT or another approved
 egress path will fail. Supabase PrivateLink can replace the public database path
 when its cost and availability requirements justify it.
@@ -239,6 +239,40 @@ reviewed so incident data is not exposed to a broader audience than intended.
 The adapter uses Notion API `2026-03-11` and keeps each create request below the
 documented block, rich-text, and payload limits.
 
+Confluence Cloud API secret (publication Lambda only):
+
+```json
+{
+  "email": "dedicated-publisher@example.com",
+  "apiToken": "actual Atlassian API token"
+}
+```
+
+Set `publication_provider = "CONFLUENCE"`, `confluence_base_url` to the plain
+`https://<site>.atlassian.net` origin, and `confluence_space_id` to the numeric
+space ID. `confluence_parent_page_id` is optional. The account should be a
+dedicated service account with view/create-page permission only in the target
+space. The Lambda's IAM role can read only the selected provider secret.
+
+The adapter uses the [Confluence Cloud REST API v2 page
+endpoints](https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-page/).
+It performs an exact lookup using
+a stable title containing the incident UUID, fails closed on ambiguous results,
+escapes every untrusted value before generating Confluence storage-format HTML,
+and validates returned links against the configured Atlassian origin. API-token
+Basic authentication is appropriate for this self-hosted internal development
+integration. A distributable multi-tenant product must replace it with one
+centrally managed OAuth 2.0 (3LO) application rather than collecting customer
+API tokens. See Atlassian's [Basic authentication security
+guidance](https://developer.atlassian.com/cloud/confluence/basic-auth-for-rest-apis/).
+
+`publication_provider` is an environment-level switch. Set it to `NOTION` to
+use the preserved Notion adapter or `CONFLUENCE` for Confluence; no application
+code changes are required. A job is pinned to its provider on its first lease.
+This prevents a configuration change from publishing an ambiguous prior attempt
+to a second system. A page already checkpointed by the old provider can still
+finish its Slack notification after a switch.
+
 The database host, port, name, and mandatory TLS setting are separate non-secret
 environment variables. A complete `DATABASE_URL` is intentionally never
 constructed in Terraform, so the password cannot leak into plans or state.
@@ -305,13 +339,13 @@ Prerequisites:
 - A `zip` command-line utility used by `npm run build:lambda`.
 - The built Lambda artifact.
 - The built review console assets (`npm run build:web`).
-- Existing Slack signing, Slack bot-token, database, OpenAI, and Notion Secrets
-  Manager secret ARNs.
-- A Notion data source shared with the integration and containing the required
-  title and rich-text incident ID properties.
+- Existing Slack signing, Slack bot-token, database, OpenAI, and selected
+  publication-provider Secrets Manager secret ARNs.
+- Either a Confluence Cloud space accessible to the dedicated publisher account
+  or a Notion data source shared with the Notion integration.
 - An existing PostgreSQL endpoint. For the current Supabase deployment, use the
   transaction-pooler hostname, port 6543, and empty VPC input lists.
-- Database migrations through `0006_approved_report_publication.sql` applied before the
+- Database migrations through `0007_configurable_report_publisher.sql` applied before the
   updated workflow is deployed or invoked.
 
 Create an ignored variable file:
@@ -440,7 +474,7 @@ order by approved_at desc
 limit 5;
 
 select id, incident_id, report_revision_id, status, attempt_count,
-       notion_page_url, slack_message_ts, last_error_code,
+       publisher, published_page_url, slack_message_ts, last_error_code,
        created_at, completed_at, failed_at
 from report_publications
 order by created_at desc
@@ -448,10 +482,25 @@ limit 5;
 ```
 
 The final expected publication status is `COMPLETE`, with both
-`notion_page_url` and `slack_message_ts` populated. `NOTION_PUBLISHED` means the
-Notion page is durable but Slack delivery is still retrying. `FAILED` requires
+`published_page_url` and `slack_message_ts` populated. `PAGE_PUBLISHED` means the
+provider page is durable but Slack delivery is still retrying. `FAILED` requires
 operator diagnosis before an audited retry. Migration 0006 backfills `PENDING`
-jobs for revisions approved before this feature was deployed.
+jobs for older approvals; migration 0007 preserves Notion checkpoints and makes
+new unattempted jobs eligible for the configured provider.
+
+After switching providers, inspect pinned incomplete jobs explicitly:
+
+```sql
+select id, publisher, status, attempt_count, last_error_code
+from report_publications
+where status in ('PENDING', 'FAILED')
+  and publisher is not null
+  and publisher <> 'CONFLUENCE';
+```
+
+Do not reset `publisher` automatically. An earlier request may have created a
+page even when the worker received a network timeout. Resolve the provider page
+manually before an audited retry or reassignment.
 
 ## Production state and CI/CD
 
@@ -502,8 +551,8 @@ Deploy immutable artifacts by commit SHA:
   PostgreSQL, not in workflow state.
 - Publication uses a once-per-minute scheduler rather than holding a workflow
   open during human review. PostgreSQL is the durable queue, an expiring lease
-  handles worker death, Notion is checkpointed before Slack, and default batch
-  size one stays below Notion's average request-rate limit.
+  handles worker death, the external page is checkpointed before Slack, and
+  default batch size one bounds provider and database pressure.
 
 Lambda can scale faster than Slack, GitHub, model providers, or PostgreSQL.
 Raise reserved concurrency only after checking all four budgets. Cap concurrency
@@ -522,7 +571,7 @@ Pass one or more SNS topic ARNs through `alarm_action_arns` to route alerts.
   failure or exhausts infrastructure retries.
 - **Publication errors:** alarms on unhandled scheduled-worker failures.
 - **Publication retries exhausted:** a log-derived alarm identifies an approved
-  report that could not complete Notion or Slack delivery.
+  report that could not complete provider or Slack delivery.
 
 The configured evidence-retention period sets `retention_expires_at`; this
 release does not yet run an expiry deletion processor. Do not describe the data

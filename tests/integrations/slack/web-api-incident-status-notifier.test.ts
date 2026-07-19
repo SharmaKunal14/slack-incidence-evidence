@@ -17,7 +17,7 @@ function jsonResponse(value: unknown, status = 200): Response {
 }
 
 describe('SlackWebApiIncidentStatusNotifier', () => {
-  it('posts the final Notion link with the revision idempotency ID', async () => {
+  it('posts the final provider link with the revision idempotency ID', async () => {
     const request = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
@@ -36,7 +36,8 @@ describe('SlackWebApiIncidentStatusNotifier', () => {
         revisionId,
         channelId: 'C001',
         threadTs: '1721178000.000100',
-        notionPageUrl:
+        publisher: 'NOTION',
+        reportPageUrl:
           'https://www.notion.so/Incident-report-0123456789abcdef0123456789abcdef',
       }),
     ).resolves.toEqual({ messageTs: '1721178002.000300' });
@@ -51,7 +52,32 @@ describe('SlackWebApiIncidentStatusNotifier', () => {
     expect(parsedBody['text']).toContain('https://www.notion.so/');
   });
 
-  it('rejects a non-Notion publication URL before calling Slack', async () => {
+  it('accepts a Confluence Cloud report link', async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        jsonResponse({ ok: true, channel: 'C001', ts: '1721178002.000300' }),
+      );
+    const notifier = new SlackWebApiIncidentStatusNotifier(
+      { workspaceId: 'T001', botToken },
+      { request },
+    );
+
+    await expect(
+      notifier.notifyReportPublished({
+        workspaceId: 'T001',
+        incidentId,
+        revisionId: '617b5728-8404-4934-a616-1a319ba72b7f',
+        channelId: 'C001',
+        threadTs: '1721178000.000100',
+        publisher: 'CONFLUENCE',
+        reportPageUrl:
+          'https://incident-copilot.atlassian.net/wiki/spaces/IR/pages/12345',
+      }),
+    ).resolves.toEqual({ messageTs: '1721178002.000300' });
+  });
+
+  it('rejects an unapproved publication URL before calling Slack', async () => {
     const request = vi.fn<typeof fetch>();
     const notifier = new SlackWebApiIncidentStatusNotifier(
       { workspaceId: 'T001', botToken },
@@ -65,7 +91,8 @@ describe('SlackWebApiIncidentStatusNotifier', () => {
         revisionId: '617b5728-8404-4934-a616-1a319ba72b7f',
         channelId: 'C001',
         threadTs: '1721178000.000100',
-        notionPageUrl: 'https://attacker.example/report',
+        publisher: 'NOTION',
+        reportPageUrl: 'https://attacker.example/report',
       }),
     ).rejects.toBeInstanceOf(z.ZodError);
     expect(request).not.toHaveBeenCalled();

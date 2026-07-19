@@ -6,6 +6,7 @@ import type {
 import {
   ReportPublicationProviderError,
   type ApprovedReportPublisher,
+  type ReportPublicationProvider,
 } from '../../src/application/ports/approved-report-publisher.js';
 import type { IncidentReportPublishedNotifier } from '../../src/application/ports/incident-report-published-notifier.js';
 import {
@@ -25,8 +26,9 @@ function job(
     revisionId: '617b5728-8404-4934-a616-1a319ba72b7f',
     status: 'PENDING',
     attemptCount: 1,
-    notionPageId: null,
-    notionPageUrl: null,
+    publisher: 'NOTION',
+    publishedPageId: null,
+    publishedPageUrl: null,
     workspaceId: 'T001',
     channelId: 'C001',
     threadTs: '1721178000.000100',
@@ -52,10 +54,13 @@ function job(
   };
 }
 
-function dependencies(inputJob: ApprovedReportPublicationJob): {
+function dependencies(
+  inputJob: ApprovedReportPublicationJob,
+  provider: ReportPublicationProvider = 'NOTION',
+): {
   readonly repository: ApprovedReportPublicationRepository;
   readonly claimNext: ReturnType<typeof vi.fn>;
-  readonly markNotionPublished: ReturnType<typeof vi.fn>;
+  readonly markPagePublished: ReturnType<typeof vi.fn>;
   readonly markComplete: ReturnType<typeof vi.fn>;
   readonly recordFailure: ReturnType<typeof vi.fn>;
   readonly publisher: ApprovedReportPublisher;
@@ -67,8 +72,8 @@ function dependencies(inputJob: ApprovedReportPublicationJob): {
     .fn<ApprovedReportPublicationRepository['claimNext']>()
     .mockResolvedValueOnce(inputJob)
     .mockResolvedValue(null);
-  const markNotionPublished =
-    vi.fn<ApprovedReportPublicationRepository['markNotionPublished']>();
+  const markPagePublished =
+    vi.fn<ApprovedReportPublicationRepository['markPagePublished']>();
   const markComplete =
     vi.fn<ApprovedReportPublicationRepository['markComplete']>();
   const recordFailure =
@@ -86,15 +91,15 @@ function dependencies(inputJob: ApprovedReportPublicationJob): {
   return {
     repository: {
       claimNext,
-      markNotionPublished,
+      markPagePublished,
       markComplete,
       recordFailure,
     },
     claimNext,
-    markNotionPublished,
+    markPagePublished,
     markComplete,
     recordFailure,
-    publisher: { publish },
+    publisher: { provider, publish },
     publish,
     notifier: { notifyReportPublished },
     notifyReportPublished,
@@ -120,7 +125,7 @@ async function execute(
 }
 
 describe('PublishApprovedReports', () => {
-  it('checkpoints Notion before sending and completing the Slack notification', async () => {
+  it('checkpoints the provider page before sending and completing the Slack notification', async () => {
     const deps = dependencies(job());
 
     await expect(execute(deps)).resolves.toEqual({
@@ -130,10 +135,11 @@ describe('PublishApprovedReports', () => {
       terminalFailures: 0,
     });
     expect(deps.publish).toHaveBeenCalledOnce();
-    expect(deps.markNotionPublished).toHaveBeenCalledWith(
+    expect(deps.markPagePublished).toHaveBeenCalledWith(
       expect.objectContaining({
         jobId: job().id,
         workerId: 'scheduled-event-id',
+        publisher: 'NOTION',
       }),
     );
     expect(deps.notifyReportPublished).toHaveBeenCalledWith({
@@ -142,31 +148,58 @@ describe('PublishApprovedReports', () => {
       revisionId: job().revisionId,
       channelId: 'C001',
       threadTs: '1721178000.000100',
-      notionPageUrl:
+      publisher: 'NOTION',
+      reportPageUrl:
         'https://www.notion.so/Checkout-outage-0123456789abcdef0123456789abcdef',
     });
     expect(deps.markComplete).toHaveBeenCalledWith(
       expect.objectContaining({ slackMessageTs: '1721178002.000300' }),
     );
-    expect(deps.markNotionPublished.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(deps.markPagePublished.mock.invocationCallOrder[0]).toBeLessThan(
       deps.notifyReportPublished.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(deps.claimNext).toHaveBeenCalledWith(
+      expect.objectContaining({ publisher: 'NOTION' }),
     );
   });
 
-  it('resumes at Slack when the Notion checkpoint already exists', async () => {
+  it('resumes at Slack when a provider checkpoint already exists', async () => {
     const deps = dependencies(
       job({
-        status: 'NOTION_PUBLISHED',
-        notionPageId: '01234567-89ab-cdef-0123-456789abcdef',
-        notionPageUrl:
+        status: 'PAGE_PUBLISHED',
+        publishedPageId: '01234567-89ab-cdef-0123-456789abcdef',
+        publishedPageUrl:
           'https://www.notion.so/Checkout-0123456789abcdef0123456789abcdef',
       }),
     );
 
     await expect(execute(deps)).resolves.toMatchObject({ completed: 1 });
     expect(deps.publish).not.toHaveBeenCalled();
-    expect(deps.markNotionPublished).not.toHaveBeenCalled();
+    expect(deps.markPagePublished).not.toHaveBeenCalled();
     expect(deps.notifyReportPublished).toHaveBeenCalledOnce();
+  });
+
+  it('finishes Slack delivery for a Notion checkpoint after switching to Confluence', async () => {
+    const deps = dependencies(
+      job({
+        status: 'PAGE_PUBLISHED',
+        publisher: 'NOTION',
+        publishedPageId: '01234567-89ab-cdef-0123-456789abcdef',
+        publishedPageUrl:
+          'https://www.notion.so/Checkout-0123456789abcdef0123456789abcdef',
+      }),
+      'CONFLUENCE',
+    );
+
+    await expect(execute(deps)).resolves.toMatchObject({ completed: 1 });
+    expect(deps.publish).not.toHaveBeenCalled();
+    expect(deps.notifyReportPublished).toHaveBeenCalledWith(
+      expect.objectContaining({
+        publisher: 'NOTION',
+        reportPageUrl:
+          'https://www.notion.so/Checkout-0123456789abcdef0123456789abcdef',
+      }),
+    );
   });
 
   it('persists a bounded provider retry without notifying Slack', async () => {
@@ -202,7 +235,7 @@ describe('PublishApprovedReports', () => {
       completed: 0,
       terminalFailures: 1,
     });
-    expect(deps.markNotionPublished).toHaveBeenCalledOnce();
+    expect(deps.markPagePublished).toHaveBeenCalledOnce();
     expect(deps.recordFailure).toHaveBeenCalledWith(
       expect.objectContaining({
         errorCode: 'SLACK_NOT_IN_CHANNEL',

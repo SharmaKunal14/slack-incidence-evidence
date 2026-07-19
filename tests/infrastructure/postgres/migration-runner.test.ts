@@ -54,6 +54,7 @@ describe('runMigrations', () => {
         '0004_incident_report_drafts.sql',
         '0005_human_review.sql',
         '0006_approved_report_publication.sql',
+        '0007_configurable_report_publisher.sql',
       ],
       alreadyApplied: 0,
     });
@@ -79,6 +80,9 @@ describe('runMigrations', () => {
     );
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('CREATE TABLE report_publications'),
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('ADD COLUMN publisher TEXT'),
     );
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO schema_migrations'),

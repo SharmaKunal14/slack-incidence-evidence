@@ -61,6 +61,8 @@ export interface NotionApprovedReportPublisherOptions {
 
 /** Creates one complete, private-by-inheritance Notion page per incident. */
 export class NotionApprovedReportPublisher implements ApprovedReportPublisher {
+  public readonly provider = 'NOTION' as const;
+
   private readonly request: typeof fetch;
   private readonly timeoutMs: number;
   private readonly dataSourceId: string;

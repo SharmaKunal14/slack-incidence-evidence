@@ -1,6 +1,9 @@
-import type { ApprovedReportDocument } from './approved-report-publisher.js';
+import type {
+  ApprovedReportDocument,
+  ReportPublicationProvider,
+} from './approved-report-publisher.js';
 
-export type ApprovedReportPublicationStatus = 'PENDING' | 'NOTION_PUBLISHED';
+export type ApprovedReportPublicationStatus = 'PENDING' | 'PAGE_PUBLISHED';
 
 export interface ApprovedReportPublicationJob {
   readonly id: string;
@@ -9,8 +12,9 @@ export interface ApprovedReportPublicationJob {
   readonly revisionId: string;
   readonly status: ApprovedReportPublicationStatus;
   readonly attemptCount: number;
-  readonly notionPageId: string | null;
-  readonly notionPageUrl: string | null;
+  readonly publisher: ReportPublicationProvider | null;
+  readonly publishedPageId: string | null;
+  readonly publishedPageUrl: string | null;
   readonly workspaceId: string;
   readonly channelId: string;
   readonly threadTs: string;
@@ -23,10 +27,12 @@ export interface ApprovedReportPublicationRepository {
     readonly claimedAt: Date;
     readonly leaseExpiresAt: Date;
     readonly maxAttempts: number;
+    readonly publisher: ReportPublicationProvider;
   }): Promise<ApprovedReportPublicationJob | null>;
-  markNotionPublished(input: {
+  markPagePublished(input: {
     readonly jobId: string;
     readonly workerId: string;
+    readonly publisher: ReportPublicationProvider;
     readonly pageId: string;
     readonly pageUrl: string;
     readonly publishedAt: Date;

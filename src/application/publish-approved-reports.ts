@@ -45,6 +45,7 @@ export class PublishApprovedReports {
         claimedAt,
         leaseExpiresAt: addSeconds(claimedAt, input.leaseSeconds),
         maxAttempts: input.maxAttempts,
+        publisher: this.publisher.provider,
       });
       if (job === null) {
         break;
@@ -52,14 +53,18 @@ export class PublishApprovedReports {
       claimed += 1;
 
       try {
-        const page = await this.ensureNotionPage(job, input.workerId);
+        if (job.publisher === null) {
+          throw new Error('Publication job has no assigned provider');
+        }
+        const page = await this.ensurePublishedPage(job, input.workerId);
         const slack = await this.notifier.notifyReportPublished({
           workspaceId: job.workspaceId,
           incidentId: job.incidentId,
           revisionId: job.revisionId,
           channelId: job.channelId,
           threadTs: job.threadTs,
-          notionPageUrl: page.pageUrl,
+          publisher: job.publisher,
+          reportPageUrl: page.pageUrl,
         });
         await this.publications.markComplete({
           jobId: job.id,
@@ -98,20 +103,27 @@ export class PublishApprovedReports {
     return { claimed, completed, retryScheduled, terminalFailures };
   }
 
-  private async ensureNotionPage(
+  private async ensurePublishedPage(
     job: ApprovedReportPublicationJob,
     workerId: string,
   ): Promise<{ readonly pageId: string; readonly pageUrl: string }> {
-    if (job.notionPageId !== null && job.notionPageUrl !== null) {
-      return { pageId: job.notionPageId, pageUrl: job.notionPageUrl };
+    if (job.publishedPageId !== null && job.publishedPageUrl !== null) {
+      if (job.publisher === null) {
+        throw new Error('Published page checkpoint has no provider');
+      }
+      return { pageId: job.publishedPageId, pageUrl: job.publishedPageUrl };
     }
-    if (job.notionPageId !== null || job.notionPageUrl !== null) {
-      throw new Error('Publication job has an incomplete Notion checkpoint');
+    if (job.publishedPageId !== null || job.publishedPageUrl !== null) {
+      throw new Error('Publication job has an incomplete page checkpoint');
+    }
+    if (job.publisher !== this.publisher.provider) {
+      throw new Error('Publication job is assigned to a different provider');
     }
     const page = await this.publisher.publish(job.document);
-    await this.publications.markNotionPublished({
+    await this.publications.markPagePublished({
       jobId: job.id,
       workerId,
+      publisher: this.publisher.provider,
       pageId: page.pageId,
       pageUrl: page.pageUrl,
       publishedAt: this.clock.now(),

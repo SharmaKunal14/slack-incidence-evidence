@@ -3,14 +3,17 @@ import type { Context, ScheduledEvent } from 'aws-lambda';
 import { Pool } from 'pg';
 import { PublishApprovedReports } from '../application/publish-approved-reports.js';
 import { systemClock } from '../application/ports/clock.js';
+import type { ApprovedReportPublisher } from '../application/ports/approved-report-publisher.js';
 import { loadApprovedReportPublicationLambdaEnvironment } from '../config/environment.js';
 import {
   parseDatabaseConnectionSecret,
+  parseConfluenceApiSecret,
   parseNotionApiSecret,
   parseSlackBotTokenSecret,
 } from '../config/runtime-secrets.js';
 import { PostgresApprovedReportPublicationRepository } from '../infrastructure/postgres/approved-report-publication-repository.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
+import { ConfluenceApprovedReportPublisher } from '../integrations/confluence/confluence-approved-report-publisher.js';
 import { NotionApprovedReportPublisher } from '../integrations/notion/notion-approved-report-publisher.js';
 import { SlackWebApiIncidentStatusNotifier } from '../integrations/slack/web-api-incident-status-notifier.js';
 import { createLogger } from '../observability/logger.js';
@@ -54,14 +57,40 @@ async function buildHandler(): Promise<ApprovedReportPublicationHandler> {
   let database: Pool | undefined;
   try {
     const secretReader = new SecretsManagerSecretReader(secrets);
-    const [databaseValue, slackValue, notionValue] = await Promise.all([
+    const publisherSecretArn =
+      environment.REPORT_PUBLICATION_PROVIDER === 'NOTION'
+        ? environment.NOTION_API_SECRET_ARN
+        : environment.CONFLUENCE_API_SECRET_ARN;
+    const [databaseValue, slackValue, publisherValue] = await Promise.all([
       secretReader.readString(environment.DATABASE_SECRET_ARN),
       secretReader.readString(environment.SLACK_BOT_TOKEN_SECRET_ARN),
-      secretReader.readString(environment.NOTION_API_SECRET_ARN),
+      secretReader.readString(publisherSecretArn),
     ]);
     const databaseSecret = parseDatabaseConnectionSecret(databaseValue);
     const slackSecret = parseSlackBotTokenSecret(slackValue);
-    const notionSecret = parseNotionApiSecret(notionValue);
+    let publisher: ApprovedReportPublisher;
+    if (environment.REPORT_PUBLICATION_PROVIDER === 'NOTION') {
+      const notionSecret = parseNotionApiSecret(publisherValue);
+      publisher = new NotionApprovedReportPublisher({
+        apiToken: notionSecret.apiToken,
+        dataSourceId: environment.NOTION_DATA_SOURCE_ID,
+        titleProperty: environment.NOTION_TITLE_PROPERTY,
+        incidentIdProperty: environment.NOTION_INCIDENT_ID_PROPERTY,
+        timeoutMs: environment.NOTION_TIMEOUT_MS,
+      });
+    } else {
+      const confluenceSecret = parseConfluenceApiSecret(publisherValue);
+      publisher = new ConfluenceApprovedReportPublisher({
+        baseUrl: environment.CONFLUENCE_BASE_URL,
+        email: confluenceSecret.email,
+        apiToken: confluenceSecret.apiToken,
+        spaceId: environment.CONFLUENCE_SPACE_ID,
+        ...(environment.CONFLUENCE_PARENT_PAGE_ID === undefined
+          ? {}
+          : { parentPageId: environment.CONFLUENCE_PARENT_PAGE_ID }),
+        timeoutMs: environment.CONFLUENCE_TIMEOUT_MS,
+      });
+    }
     secrets.destroy();
 
     database = new Pool({
@@ -88,13 +117,7 @@ async function buildHandler(): Promise<ApprovedReportPublicationHandler> {
 
     const publications = new PublishApprovedReports(
       new PostgresApprovedReportPublicationRepository(database),
-      new NotionApprovedReportPublisher({
-        apiToken: notionSecret.apiToken,
-        dataSourceId: environment.NOTION_DATA_SOURCE_ID,
-        titleProperty: environment.NOTION_TITLE_PROPERTY,
-        incidentIdProperty: environment.NOTION_INCIDENT_ID_PROPERTY,
-        timeoutMs: environment.NOTION_TIMEOUT_MS,
-      }),
+      publisher,
       new SlackWebApiIncidentStatusNotifier({
         workspaceId: slackSecret.workspaceId,
         botToken: slackSecret.botToken,

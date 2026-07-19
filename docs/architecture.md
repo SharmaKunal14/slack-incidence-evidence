@@ -154,7 +154,7 @@ Neither Slack retries nor queue delivery provide exactly-once execution. Correct
 A derived artifact must never disclose evidence to an audience broader than the
 evidence's permitted audience. The current single-workspace path accepts public
 Slack channels and publishes only a human-approved immutable revision into one
-operator-configured Notion data source. It does not yet calculate destination
+operator-configured Confluence space or Notion data source. It does not yet calculate destination
 readers or compare ACLs, so external multi-tenant production remains blocked
 until that policy is enforceable.
 
@@ -534,8 +534,11 @@ Only operational metadata is allowed in standard logs. Identifiers should be has
    fixed, content-free readiness message to the incident's original thread.
 9. **Review to publication:** approval commits a publication outbox record in
    the same transaction. A scheduled, leased worker creates or reconciles the
-   page in one configured Notion data source, checkpoints its external ID and
-   URL, and then posts the link to the incident's original Slack thread.
+   page using the configured Confluence or Notion adapter, checkpoints its
+   provider, external ID, and URL, and then posts the link to the incident's
+   original Slack thread. Provider assignment is durable after the first
+   attempt so a configuration switch cannot silently duplicate an ambiguous
+   external side effect in another system.
 
 ## Idempotency and consistency
 
@@ -755,7 +758,7 @@ requires acknowledgement of known contradictions and open questions, and
 atomically records approval, the incident transition, and a publication outbox
 record. The model runtime has no approval or publication port. External delivery
 is asynchronous, leased, checkpointed, and restricted to the configured Notion
-data source and original Slack thread.
+or Confluence destination and original Slack thread.
 
 ## Architecture fitness checks
 

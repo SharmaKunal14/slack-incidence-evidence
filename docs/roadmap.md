@@ -396,7 +396,7 @@ workflow, not a general document editor.
 
 ## Stage 6 — Controlled publication and follow-up actions
 
-Status: **In progress — Notion report publication and Slack completion are implemented; GitHub follow-up actions and destination ACL inspection are not.**
+Status: **In progress — configurable Confluence/Notion report publication and Slack completion are implemented; GitHub follow-up actions and destination ACL inspection are not.**
 
 ### User outcome
 
@@ -405,11 +405,11 @@ After human approval, the system publishes one source-linked Markdown report and
 ### Scope
 
 - Approved-revision transactional outbox and scheduled leased worker.
-- Deterministic readable renderer and one configured Notion data source.
-- Slack completion message linking to the reviewed Notion page.
+- Deterministic readable renderers and one configured Confluence or Notion destination.
+- Slack completion message linking to the reviewed provider page.
 - GitHub issue creation with description, owner, priority, due date, linked claim/failure mode, verification method, and incident link.
 - Stable external idempotency keys and exact incident-ID reconciliation.
-- Notion and Slack external resource checkpoints.
+- Provider-neutral page and Slack external resource checkpoints.
 - Destination audience inspection and policy enforcement (not yet implemented).
 - Publication audit events beyond durable job state (not yet implemented).
 
@@ -418,7 +418,8 @@ After human approval, the system publishes one source-linked Markdown report and
 - An unreviewed or superseded draft cannot be published.
 - A worker retry cannot create a second document or issue.
 - Unknown destination visibility blocks external multi-tenant production; the
-  current development path relies on one operator-approved Notion data source.
+  current development path relies on one operator-approved Confluence space or
+  Notion data source.
 - Publication records the exact approved revision and source set.
 - Revoked destination permission produces a clear recoverable state.
 - A complete demonstration runs Slack trigger to reviewed report to GitHub follow-up issue.

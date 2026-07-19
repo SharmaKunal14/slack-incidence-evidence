@@ -3,6 +3,7 @@ locals {
   node_env                    = var.environment == "production" ? "production" : "development"
   worker_vpc_enabled          = length(var.worker_subnet_ids) > 0 && length(var.worker_security_group_ids) > 0
   publication_database_secret = coalesce(var.publication_database_secret_arn, var.database_secret_arn)
+  publication_provider_secret = var.publication_provider == "NOTION" ? var.notion_api_secret_arn : var.confluence_api_secret_arn
 }
 
 # -----------------------------------------------------------------------------
@@ -919,10 +920,13 @@ data "aws_iam_policy_document" "approved_report_publication" {
     resources = [var.slack_bot_token_secret_arn]
   }
 
-  statement {
-    sid       = "ReadNotionApiToken"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = [var.notion_api_secret_arn]
+  dynamic "statement" {
+    for_each = local.publication_provider_secret == null ? [] : [local.publication_provider_secret]
+    content {
+      sid       = "ReadReportPublisherCredentials"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = [statement.value]
+    }
   }
 
   dynamic "statement" {
@@ -1318,7 +1322,7 @@ resource "aws_lambda_function" "incident_review_notification" {
 
 resource "aws_lambda_function" "approved_report_publication" {
   function_name = "${local.name_prefix}-approved-report-publication"
-  description   = "Publishes approved immutable reports to Notion and then posts the durable page link to Slack."
+  description   = "Publishes approved immutable reports to the configured provider and then posts the durable page link to Slack."
   role          = aws_iam_role.approved_report_publication.arn
   runtime       = "nodejs22.x"
   architectures = [var.lambda_architecture]
@@ -1332,7 +1336,7 @@ resource "aws_lambda_function" "approved_report_publication" {
   reserved_concurrent_executions = var.publication_reserved_concurrency
 
   environment {
-    variables = {
+    variables = merge({
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
       DATABASE_HOST                       = var.database_host
       DATABASE_NAME                       = var.database_name
@@ -1342,17 +1346,26 @@ resource "aws_lambda_function" "approved_report_publication" {
       DATABASE_SSL                        = "true"
       LOG_LEVEL                           = var.log_level
       NODE_ENV                            = local.node_env
-      NOTION_API_SECRET_ARN               = var.notion_api_secret_arn
-      NOTION_DATA_SOURCE_ID               = var.notion_data_source_id
-      NOTION_INCIDENT_ID_PROPERTY         = var.notion_incident_id_property
-      NOTION_TIMEOUT_MS                   = tostring(var.notion_timeout_milliseconds)
-      NOTION_TITLE_PROPERTY               = var.notion_title_property
       PUBLICATION_BATCH_SIZE              = tostring(var.publication_batch_size)
       PUBLICATION_LEASE_SECONDS           = tostring(var.publication_lease_seconds)
       PUBLICATION_MAX_ATTEMPTS            = tostring(var.publication_max_attempts)
+      REPORT_PUBLICATION_PROVIDER         = var.publication_provider
       PUBLICATION_RETRY_BASE_SECONDS      = tostring(var.publication_retry_base_seconds)
       SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
-    }
+      }, var.publication_provider == "NOTION" ? {
+      NOTION_API_SECRET_ARN       = var.notion_api_secret_arn == null ? "" : var.notion_api_secret_arn
+      NOTION_DATA_SOURCE_ID       = var.notion_data_source_id == null ? "" : var.notion_data_source_id
+      NOTION_INCIDENT_ID_PROPERTY = var.notion_incident_id_property
+      NOTION_TIMEOUT_MS           = tostring(var.notion_timeout_milliseconds)
+      NOTION_TITLE_PROPERTY       = var.notion_title_property
+      } : merge({
+        CONFLUENCE_API_SECRET_ARN = var.confluence_api_secret_arn == null ? "" : var.confluence_api_secret_arn
+        CONFLUENCE_BASE_URL       = var.confluence_base_url == null ? "" : var.confluence_base_url
+        CONFLUENCE_SPACE_ID       = var.confluence_space_id == null ? "" : var.confluence_space_id
+        CONFLUENCE_TIMEOUT_MS     = tostring(var.confluence_timeout_milliseconds)
+        }, var.confluence_parent_page_id == null ? {} : {
+        CONFLUENCE_PARENT_PAGE_ID = var.confluence_parent_page_id
+    }))
   }
 
   tracing_config {
@@ -1381,8 +1394,23 @@ resource "aws_lambda_function" "approved_report_publication" {
       error_message = "publication_lease_seconds must outlive publication_timeout_seconds."
     }
     precondition {
-      condition     = var.notion_title_property != var.notion_incident_id_property
+      condition     = var.publication_provider != "NOTION" || var.notion_title_property != var.notion_incident_id_property
       error_message = "Notion title and incident ID properties must be distinct."
+    }
+    precondition {
+      condition = var.publication_provider != "NOTION" || (
+        var.notion_api_secret_arn != null &&
+        var.notion_data_source_id != null
+      )
+      error_message = "The Notion provider requires notion_api_secret_arn and notion_data_source_id."
+    }
+    precondition {
+      condition = var.publication_provider != "CONFLUENCE" || (
+        var.confluence_api_secret_arn != null &&
+        var.confluence_base_url != null &&
+        var.confluence_space_id != null
+      )
+      error_message = "The Confluence provider requires confluence_api_secret_arn, confluence_base_url, and confluence_space_id."
     }
     precondition {
       condition     = var.environment != "production" || var.publication_database_secret_arn != null
@@ -1607,7 +1635,7 @@ resource "aws_cloudwatch_log_metric_filter" "approved_report_publication_exhaust
 
 resource "aws_cloudwatch_metric_alarm" "approved_report_publication_exhausted" {
   alarm_name          = "${local.name_prefix}-approved-report-publication-exhausted"
-  alarm_description   = "An approved report exhausted bounded Notion or Slack publication retries and requires operator action."
+  alarm_description   = "An approved report exhausted bounded provider or Slack publication retries and requires operator action."
   namespace           = "IncidentEvidenceCopilot"
   metric_name         = "ApprovedReportPublicationExhausted"
   statistic           = "Sum"
