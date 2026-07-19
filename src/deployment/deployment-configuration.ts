@@ -26,6 +26,8 @@ const deploymentEnvironmentSchema = z.object({
   AWS_ACCOUNT_ID: accountIdSchema,
   AWS_REGION: regionSchema,
   AWS_DEPLOY_ROLE_ARN: z.string().min(1),
+  AWS_LAMBDA_ROLE_PERMISSIONS_BOUNDARY_ARN: z.string().min(1),
+  AWS_WORKFLOW_ROLE_PERMISSIONS_BOUNDARY_ARN: z.string().min(1),
   TF_STATE_BUCKET: bucketSchema,
   TF_STATE_KEY: stateKeySchema,
   TF_STATE_KMS_KEY_ARN: z.string().min(1),
@@ -52,7 +54,10 @@ const reservedTerraformInputs = new Set([
   'environment',
   'expected_aws_account_id',
   'lambda_artifact_path',
+  'project_name',
   'review_web_artifact_directory',
+  'lambda_role_permissions_boundary_arn',
+  'workflow_role_permissions_boundary_arn',
 ]);
 
 function parseTerraformInputs(value: string): Record<string, unknown> {
@@ -105,6 +110,27 @@ export async function prepareDeploymentConfiguration(
   if (!expectedRoleArn.test(environment.AWS_DEPLOY_ROLE_ARN)) {
     throw new Error(
       'AWS deploy role ARN must belong to the deployment account',
+    );
+  }
+  const expectedBoundaryArn = new RegExp(
+    `^arn:aws:iam::${environment.AWS_ACCOUNT_ID}:policy/[A-Za-z0-9+=,.@_/-]{1,512}$`,
+  );
+  if (
+    !expectedBoundaryArn.test(
+      environment.AWS_LAMBDA_ROLE_PERMISSIONS_BOUNDARY_ARN,
+    )
+  ) {
+    throw new Error(
+      'Lambda role permissions boundary ARN must belong to the deployment account',
+    );
+  }
+  if (
+    !expectedBoundaryArn.test(
+      environment.AWS_WORKFLOW_ROLE_PERMISSIONS_BOUNDARY_ARN,
+    )
+  ) {
+    throw new Error(
+      'Workflow role permissions boundary ARN must belong to the deployment account',
     );
   }
   validateArn(
@@ -221,6 +247,11 @@ export async function prepareDeploymentConfiguration(
         aws_region: environment.AWS_REGION,
         environment: environment.DEPLOYMENT_ENVIRONMENT,
         expected_aws_account_id: environment.AWS_ACCOUNT_ID,
+        project_name: 'incident-copilot',
+        lambda_role_permissions_boundary_arn:
+          environment.AWS_LAMBDA_ROLE_PERMISSIONS_BOUNDARY_ARN,
+        workflow_role_permissions_boundary_arn:
+          environment.AWS_WORKFLOW_ROLE_PERMISSIONS_BOUNDARY_ARN,
         lambda_artifact_path: '../../artifacts/incident-copilot-lambda.zip',
         review_web_artifact_directory: '../../artifacts/review-web',
       },

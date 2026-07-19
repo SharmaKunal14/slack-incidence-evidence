@@ -37,19 +37,21 @@ environment but cannot create or enforce its protection rules.
 
 Each environment requires these GitHub **variables**:
 
-| Variable                        | Purpose                                                                          |
-| ------------------------------- | -------------------------------------------------------------------------------- |
-| `AWS_ACCOUNT_ID`                | Exact 12-digit account permitted by both OIDC and Terraform.                     |
-| `AWS_REGION`                    | Deployment and state region, currently `ap-southeast-2`.                         |
-| `AWS_DEPLOY_ROLE_ARN`           | Environment-specific OIDC role ARN.                                              |
-| `TF_STATE_BUCKET`               | Existing encrypted and versioned Terraform state bucket.                         |
-| `TF_STATE_KEY`                  | Unique state path, for example `incident-copilot/development/terraform.tfstate`. |
-| `TF_STATE_KMS_KEY_ARN`          | Customer-managed KMS key for state and lock objects.                             |
-| `TF_INPUTS_JSON`                | Non-secret Terraform inputs described below.                                     |
-| `MIGRATION_DATABASE_SECRET_ARN` | Secrets Manager ARN for the migration database user.                             |
-| `MIGRATION_DATABASE_HOST`       | Session-capable PostgreSQL endpoint.                                             |
-| `MIGRATION_DATABASE_PORT`       | Session endpoint port, normally `5432` for Supabase.                             |
-| `MIGRATION_DATABASE_NAME`       | PostgreSQL database name.                                                        |
+| Variable                                     | Purpose                                                                          |
+| -------------------------------------------- | -------------------------------------------------------------------------------- |
+| `AWS_ACCOUNT_ID`                             | Exact 12-digit account permitted by both OIDC and Terraform.                     |
+| `AWS_REGION`                                 | Deployment and state region, currently `ap-southeast-2`.                         |
+| `AWS_DEPLOY_ROLE_ARN`                        | Environment-specific OIDC role ARN.                                              |
+| `AWS_LAMBDA_ROLE_PERMISSIONS_BOUNDARY_ARN`   | Boundary required on every Terraform-created Lambda IAM role.                    |
+| `AWS_WORKFLOW_ROLE_PERMISSIONS_BOUNDARY_ARN` | Boundary required on the Terraform-created Step Functions IAM role.              |
+| `TF_STATE_BUCKET`                            | Existing encrypted and versioned Terraform state bucket.                         |
+| `TF_STATE_KEY`                               | Unique state path, for example `incident-copilot/development/terraform.tfstate`. |
+| `TF_STATE_KMS_KEY_ARN`                       | Customer-managed KMS key for state and lock objects.                             |
+| `TF_INPUTS_JSON`                             | Non-secret Terraform inputs described below.                                     |
+| `MIGRATION_DATABASE_SECRET_ARN`              | Secrets Manager ARN for the migration database user.                             |
+| `MIGRATION_DATABASE_HOST`                    | Session-capable PostgreSQL endpoint.                                             |
+| `MIGRATION_DATABASE_PORT`                    | Session endpoint port, normally `5432` for Supabase.                             |
+| `MIGRATION_DATABASE_NAME`                    | PostgreSQL database name.                                                        |
 
 Do not store passwords, tokens, signing secrets, private keys, CA private keys,
 connection strings, or secret JSON values in GitHub. Secret ARNs are identifiers
@@ -119,6 +121,12 @@ repository or subject. Because an environment subject does not also encode the
 branch, the GitHub Environment's deployment-branch restriction is part of the
 authorization boundary.
 
+Create the role and its mandatory runtime-role permissions boundary with the
+version-controlled bootstrap stack in
+`infrastructure/bootstrap/deployment-role.json`. The CloudShell procedure and
+cutover commands are in `infrastructure/bootstrap/README.md`. Do not assemble
+the Terraform provisioning policy incrementally from access-denied failures.
+
 The deployment role needs:
 
 - read/write/delete access only to its state object and `.tflock` object;
@@ -148,6 +156,10 @@ The state bucket must have:
 - a policy denying non-TLS requests;
 - no lifecycle rule that expires current state or lock objects; and
 - recovery access held outside the normal deployment role.
+
+The deployment-role bootstrap stack consumes the existing state bucket, state
+key, state KMS key, and migration secret as parameters. It deliberately does
+not own them, so a stack update cannot delete or replace Terraform state.
 
 The pipeline enables native S3 lockfiles with `use_lockfile = true`. It does not
 use the deprecated DynamoDB locking path.
@@ -190,6 +202,9 @@ still required before enabling unattended staging-to-production promotion.
   enabled.
 - If `terraform apply` partially succeeds, rerun or repair the same release;
   do not restore an older state file over successfully changed infrastructure.
+- After an IAM-denied partial apply, inspect the same remote state, deploy or
+  update the bootstrap stack, switch the GitHub Environment to its role and
+  boundary outputs, and rerun. Do not delete partially created resources.
 
 ## Environment activation order
 

@@ -173,8 +173,9 @@ data "aws_iam_policy_document" "step_functions_assume_role" {
 }
 
 resource "aws_iam_role" "step_functions" {
-  name               = "${local.name_prefix}-workflow-role"
-  assume_role_policy = data.aws_iam_policy_document.step_functions_assume_role.json
+  name                 = "${local.name_prefix}-workflow-role"
+  assume_role_policy   = data.aws_iam_policy_document.step_functions_assume_role.json
+  permissions_boundary = var.workflow_role_permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "step_functions_logging" {
@@ -502,8 +503,9 @@ data "aws_iam_policy_document" "lambda_assume_role" {
 }
 
 resource "aws_iam_role" "ingress" {
-  name               = "${local.name_prefix}-slack-ingress-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+  name                 = "${local.name_prefix}-slack-ingress-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role.json
+  permissions_boundary = var.lambda_role_permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "ingress" {
@@ -547,8 +549,9 @@ resource "aws_iam_role_policy" "ingress" {
 }
 
 resource "aws_iam_role" "worker" {
-  name               = "${local.name_prefix}-incident-worker-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+  name                 = "${local.name_prefix}-incident-worker-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role.json
+  permissions_boundary = var.lambda_role_permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "worker" {
@@ -627,8 +630,9 @@ resource "aws_iam_role_policy" "worker" {
 }
 
 resource "aws_iam_role" "slack_evidence_collector" {
-  name               = "${local.name_prefix}-slack-evidence-collector-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+  name                 = "${local.name_prefix}-slack-evidence-collector-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role.json
+  permissions_boundary = var.lambda_role_permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "slack_evidence_collector" {
@@ -690,8 +694,9 @@ resource "aws_iam_role_policy" "slack_evidence_collector" {
 }
 
 resource "aws_iam_role" "incident_analysis" {
-  name               = "${local.name_prefix}-incident-analysis-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+  name                 = "${local.name_prefix}-incident-analysis-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role.json
+  permissions_boundary = var.lambda_role_permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "incident_analysis" {
@@ -753,8 +758,9 @@ resource "aws_iam_role_policy" "incident_analysis" {
 }
 
 resource "aws_iam_role" "incident_report" {
-  name               = "${local.name_prefix}-incident-report-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+  name                 = "${local.name_prefix}-incident-report-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role.json
+  permissions_boundary = var.lambda_role_permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "incident_report" {
@@ -816,8 +822,9 @@ resource "aws_iam_role_policy" "incident_report" {
 }
 
 resource "aws_iam_role" "incident_review_notification" {
-  name               = "${local.name_prefix}-incident-review-notification-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+  name                 = "${local.name_prefix}-incident-review-notification-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role.json
+  permissions_boundary = var.lambda_role_permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "incident_review_notification" {
@@ -879,8 +886,9 @@ resource "aws_iam_role_policy" "incident_review_notification" {
 }
 
 resource "aws_iam_role" "approved_report_publication" {
-  name               = "${local.name_prefix}-approved-report-publication-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+  name                 = "${local.name_prefix}-approved-report-publication-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role.json
+  permissions_boundary = var.lambda_role_permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "approved_report_publication" {
