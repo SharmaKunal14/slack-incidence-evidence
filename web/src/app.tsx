@@ -54,7 +54,10 @@ import {
   type RevisionDetail,
   type Statement,
 } from './contracts.js';
-import { reconcileRevisionStatements } from './revision-view.js';
+import {
+  reconcileRevisionStatements,
+  requiresPreservedRevisionFetch,
+} from './revision-view.js';
 import { safeSourceUrl } from './safe-source-url.js';
 
 type InboxFilter = 'ALL' | 'NEEDS_REVIEW' | 'APPROVED';
@@ -495,6 +498,11 @@ function IncidentWorkspace({
   const [selectedVersionId, setSelectedVersionId] = useState(revisionIdentity);
   const selectedIsOriginal = selectedVersionId === bundle.reportDraft.id;
   const selectedIsLatest = selectedVersionId === revisionIdentity;
+  const selectedRequiresFetch = requiresPreservedRevisionFetch(
+    selectedVersionId,
+    bundle.reportDraft.id,
+    revisionIdentity,
+  );
   const selectedRevisionQuery = useQuery({
     queryKey: [
       'incident-review-revision',
@@ -509,7 +517,7 @@ function IncidentWorkspace({
           `/review/incidents/${encodeURIComponent(bundle.incident.id)}/revisions/${encodeURIComponent(selectedVersionId)}`,
         ),
       ).revision,
-    enabled: !selectedIsOriginal && !selectedIsLatest,
+    enabled: selectedRequiresFetch,
   });
   const selectedRevision: RevisionDetail | null = selectedIsOriginal
     ? null
@@ -757,13 +765,13 @@ function IncidentWorkspace({
               </select>
             </label>
           </div>
-          {selectedRevisionQuery.isPending && (
+          {selectedRequiresFetch && selectedRevisionQuery.isPending && (
             <p className="version-message">
               <LoaderCircle className="spin" size={15} /> Loading preserved
               revision…
             </p>
           )}
-          {selectedRevisionQuery.isError && (
+          {selectedRequiresFetch && selectedRevisionQuery.isError && (
             <p className="version-message version-message-error">
               <AlertCircle size={15} /> This preserved revision could not be
               loaded.

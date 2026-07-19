@@ -21,6 +21,17 @@ export interface RevisionStatementView {
   readonly classification: string;
 }
 
+export function requiresPreservedRevisionFetch(
+  selectedVersionId: string,
+  originalDraftId: string,
+  latestRevisionId: string,
+): boolean {
+  return (
+    selectedVersionId !== originalDraftId &&
+    selectedVersionId !== latestRevisionId
+  );
+}
+
 export function reconcileRevisionStatements(
   sources: readonly RevisionSourceStatement[],
   revisionStatements: readonly SavedRevisionStatement[] | null,

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { reconcileRevisionStatements } from '../../web/src/revision-view.js';
+import {
+  reconcileRevisionStatements,
+  requiresPreservedRevisionFetch,
+} from '../../web/src/revision-view.js';
 
 const sources = [
   {
@@ -97,5 +100,37 @@ describe('revision statement reconciliation', () => {
         },
       ]),
     ).toThrow('Saved revision statement does not match its source');
+  });
+});
+
+describe('preserved revision loading', () => {
+  const originalDraftId = 'original-draft';
+  const latestRevisionId = 'latest-revision';
+
+  it('does not fetch the original or already-loaded latest revision', () => {
+    expect(
+      requiresPreservedRevisionFetch(
+        originalDraftId,
+        originalDraftId,
+        latestRevisionId,
+      ),
+    ).toBe(false);
+    expect(
+      requiresPreservedRevisionFetch(
+        latestRevisionId,
+        originalDraftId,
+        latestRevisionId,
+      ),
+    ).toBe(false);
+  });
+
+  it('fetches only a selected historical revision', () => {
+    expect(
+      requiresPreservedRevisionFetch(
+        'historical-revision',
+        originalDraftId,
+        latestRevisionId,
+      ),
+    ).toBe(true);
   });
 });
