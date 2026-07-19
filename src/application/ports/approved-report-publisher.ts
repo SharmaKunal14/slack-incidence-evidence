@@ -27,7 +27,10 @@ export interface PublishedReportPage {
   readonly pageUrl: string;
 }
 
+export type ReportPublicationProvider = 'NOTION' | 'CONFLUENCE';
+
 export interface ApprovedReportPublisher {
+  readonly provider: ReportPublicationProvider;
   publish(document: ApprovedReportDocument): Promise<PublishedReportPage>;
 }
 

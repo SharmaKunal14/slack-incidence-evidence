@@ -5,6 +5,7 @@ import type {
   ApprovedReportPublicationStatus,
 } from '../../application/ports/approved-report-publication-repository.js';
 import type { ApprovedReportPublicationSection } from '../../application/ports/approved-report-publisher.js';
+import type { ReportPublicationProvider } from '../../application/ports/approved-report-publisher.js';
 import {
   parseReviewClassification,
   parseSectionType,
@@ -19,8 +20,9 @@ interface PublicationRow {
   readonly report_revision_id: string;
   readonly status: ApprovedReportPublicationStatus;
   readonly attempt_count: number;
-  readonly notion_page_id: string | null;
-  readonly notion_page_url: string | null;
+  readonly publisher: ReportPublicationProvider | null;
+  readonly published_page_id: string | null;
+  readonly published_page_url: string | null;
   readonly title: string;
   readonly severity: string;
   readonly source_workspace_id: string;
@@ -48,6 +50,7 @@ export class PostgresApprovedReportPublicationRepository implements ApprovedRepo
     readonly claimedAt: Date;
     readonly leaseExpiresAt: Date;
     readonly maxAttempts: number;
+    readonly publisher: ReportPublicationProvider;
   }): Promise<ApprovedReportPublicationJob | null> {
     const client = await this.pool.connect();
     try {
@@ -61,7 +64,7 @@ export class PostgresApprovedReportPublicationRepository implements ApprovedRepo
               lease_expires_at = NULL,
               updated_at = $1,
               failed_at = $1
-          WHERE status IN ('PENDING', 'NOTION_PUBLISHED')
+          WHERE status IN ('PENDING', 'PAGE_PUBLISHED')
             AND attempt_count >= $2
             AND lease_expires_at IS NOT NULL
             AND lease_expires_at <= $1
@@ -78,7 +81,16 @@ export class PostgresApprovedReportPublicationRepository implements ApprovedRepo
           WITH candidate AS (
             SELECT publication.id
             FROM report_publications publication
-            WHERE publication.status IN ('PENDING', 'NOTION_PUBLISHED')
+            WHERE (
+                publication.status = 'PAGE_PUBLISHED'
+                OR (
+                  publication.status = 'PENDING'
+                  AND (
+                    publication.publisher IS NULL
+                    OR publication.publisher = $5
+                  )
+                )
+              )
               AND publication.next_attempt_at <= $1
               AND (
                 publication.lease_expires_at IS NULL
@@ -91,6 +103,7 @@ export class PostgresApprovedReportPublicationRepository implements ApprovedRepo
           )
           UPDATE report_publications publication
           SET attempt_count = publication.attempt_count + 1,
+              publisher = COALESCE(publication.publisher, $5),
               lease_owner = $2,
               lease_expires_at = $3,
               updated_at = $1
@@ -103,6 +116,7 @@ export class PostgresApprovedReportPublicationRepository implements ApprovedRepo
           input.workerId,
           input.leaseExpiresAt,
           input.maxAttempts,
+          input.publisher,
         ],
       );
       const jobId = claimed.rows[0]?.id;
@@ -122,9 +136,10 @@ export class PostgresApprovedReportPublicationRepository implements ApprovedRepo
     }
   }
 
-  public async markNotionPublished(input: {
+  public async markPagePublished(input: {
     readonly jobId: string;
     readonly workerId: string;
+    readonly publisher: ReportPublicationProvider;
     readonly pageId: string;
     readonly pageUrl: string;
     readonly publishedAt: Date;
@@ -132,15 +147,16 @@ export class PostgresApprovedReportPublicationRepository implements ApprovedRepo
     const result = await this.pool.query(
       `
         UPDATE report_publications
-        SET status = 'NOTION_PUBLISHED',
-            notion_page_id = $1,
-            notion_page_url = $2,
+        SET status = 'PAGE_PUBLISHED',
+            published_page_id = $1,
+            published_page_url = $2,
             last_error_code = NULL,
             updated_at = $3
         WHERE id = $4
           AND lease_owner = $5
           AND lease_expires_at > $3
           AND status = 'PENDING'
+          AND publisher = $6
       `,
       [
         input.pageId,
@@ -148,9 +164,10 @@ export class PostgresApprovedReportPublicationRepository implements ApprovedRepo
         input.publishedAt,
         input.jobId,
         input.workerId,
+        input.publisher,
       ],
     );
-    requireUpdated(result.rowCount, 'Notion publication checkpoint');
+    requireUpdated(result.rowCount, 'Page publication checkpoint');
   }
 
   public async markComplete(input: {
@@ -173,7 +190,7 @@ export class PostgresApprovedReportPublicationRepository implements ApprovedRepo
         WHERE id = $3
           AND lease_owner = $4
           AND lease_expires_at > $2
-          AND status = 'NOTION_PUBLISHED'
+          AND status = 'PAGE_PUBLISHED'
       `,
       [input.slackMessageTs, input.completedAt, input.jobId, input.workerId],
     );
@@ -200,7 +217,7 @@ export class PostgresApprovedReportPublicationRepository implements ApprovedRepo
             failed_at = CASE WHEN $1::boolean THEN $4 ELSE NULL END
         WHERE id = $5
           AND lease_owner = $6
-          AND status IN ('PENDING', 'NOTION_PUBLISHED')
+          AND status IN ('PENDING', 'PAGE_PUBLISHED')
       `,
       [
         input.terminal,
@@ -229,8 +246,9 @@ async function loadPublication(
         publication.report_revision_id,
         publication.status,
         publication.attempt_count,
-        publication.notion_page_id,
-        publication.notion_page_url,
+        publication.publisher,
+        publication.published_page_id,
+        publication.published_page_url,
         incident.title,
         incident.severity,
         incident.source_workspace_id,
@@ -303,8 +321,9 @@ async function loadPublication(
     revisionId: row.report_revision_id,
     status: row.status,
     attemptCount: row.attempt_count,
-    notionPageId: row.notion_page_id,
-    notionPageUrl: row.notion_page_url,
+    publisher: row.publisher,
+    publishedPageId: row.published_page_id,
+    publishedPageUrl: row.published_page_url,
     workspaceId: row.source_workspace_id,
     channelId: row.source_channel_id,
     threadTs,

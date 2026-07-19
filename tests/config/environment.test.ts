@@ -223,6 +223,7 @@ describe('Lambda environment configuration', () => {
     expect(
       loadApprovedReportPublicationLambdaEnvironment(source),
     ).toMatchObject({
+      REPORT_PUBLICATION_PROVIDER: 'NOTION',
       PUBLICATION_BATCH_SIZE: 2,
       PUBLICATION_MAX_ATTEMPTS: 8,
       PUBLICATION_LEASE_SECONDS: 180,
@@ -241,6 +242,46 @@ describe('Lambda environment configuration', () => {
       loadApprovedReportPublicationLambdaEnvironment({
         ...source,
         PUBLICATION_BATCH_SIZE: '11',
+      }),
+    ).toThrow();
+  });
+
+  it('loads only the selected Confluence publication contract', () => {
+    const source = {
+      REPORT_PUBLICATION_PROVIDER: 'CONFLUENCE',
+      DATABASE_SECRET_ARN: 'database-secret-arn',
+      DATABASE_HOST: 'pooler.example.test',
+      DATABASE_NAME: 'postgres',
+      SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
+      CONFLUENCE_API_SECRET_ARN: 'confluence-secret-arn',
+      CONFLUENCE_BASE_URL: 'https://incident-copilot.atlassian.net',
+      CONFLUENCE_SPACE_ID: '123456789',
+      CONFLUENCE_PARENT_PAGE_ID: '987654321',
+      CONFLUENCE_TIMEOUT_MS: '12000',
+    };
+
+    expect(
+      loadApprovedReportPublicationLambdaEnvironment(source),
+    ).toMatchObject({
+      REPORT_PUBLICATION_PROVIDER: 'CONFLUENCE',
+      CONFLUENCE_BASE_URL: 'https://incident-copilot.atlassian.net',
+      CONFLUENCE_SPACE_ID: '123456789',
+      CONFLUENCE_PARENT_PAGE_ID: '987654321',
+      CONFLUENCE_TIMEOUT_MS: 12_000,
+    });
+    expect(
+      loadApprovedReportPublicationLambdaEnvironment(source),
+    ).not.toHaveProperty('NOTION_API_SECRET_ARN');
+    expect(() =>
+      loadApprovedReportPublicationLambdaEnvironment({
+        ...source,
+        CONFLUENCE_BASE_URL: 'https://internal.example.test',
+      }),
+    ).toThrow();
+    expect(() =>
+      loadApprovedReportPublicationLambdaEnvironment({
+        ...source,
+        CONFLUENCE_SPACE_ID: '../admin',
       }),
     ).toThrow();
   });

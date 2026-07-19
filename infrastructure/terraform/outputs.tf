@@ -64,7 +64,7 @@ output "incident_review_api_lambda_name" {
 }
 
 output "approved_report_publication_lambda_name" {
-  description = "Scheduled Notion publication and Slack completion notification Lambda function name."
+  description = "Scheduled report publication and Slack completion notification Lambda function name."
   value       = aws_lambda_function.approved_report_publication.function_name
 }
 

@@ -12,7 +12,8 @@ questions, and produces a versioned source-linked postmortem draft. An
 authenticated, tenant-authorized console lets a human inspect evidence, create
 immutable corrected revisions, browse every preserved version, acknowledge
 contradictions and unknowns, and approve exactly one revision. Approval queues
-durable publication to a private Notion data source and a final Slack link.
+durable publication to a configured Confluence space or private Notion data
+source and a final Slack link.
 Selected-channel collection and GitHub retrieval remain later increments.
 
 ## Implemented
@@ -69,8 +70,9 @@ Selected-channel collection and GitHub retrieval remain later increments.
 - Tenant-authorized revision history which loads one bounded immutable version
   at a time and keeps historical content read-only.
 - A transactional approval-to-publication outbox with PostgreSQL leases,
-  bounded retries, a Notion checkpoint, exact incident-ID page lookup, and an
-  idempotent final Slack thread notification.
+  bounded retries, provider-neutral page checkpoints, configurable Confluence
+  or Notion publication, exact incident identity lookup, and an idempotent final
+  Slack thread notification.
 - Secrets Manager runtime loading with narrow, validated JSON secret contracts.
 - Terraform for API Gateway, eight independently scaled Lambdas, encrypted SQS
   FIFO/DLQ, a checkpointed Standard workflow, least-privilege IAM, bounded
@@ -111,7 +113,7 @@ flowchart LR
     Review --> ReviewAPI["JWT-authorized review API"]
     ReviewAPI --> Postgres
     Postgres --> Publisher["Scheduled publication Lambda"]
-    Publisher --> Notion["Private Notion data source"]
+    Publisher --> Destination["Confluence space or Notion data source"]
     Publisher --> SlackAPI
 ```
 
@@ -231,8 +233,9 @@ certificate verified by each database-using Lambda. Those inputs and an OpenAI
 API secret must exist before the AWS path can process a real incident. The
 current Step Functions definition collects and analyzes only the triggering
 Slack thread, generates an internal draft, and notifies Slack that human review
-is required. Human revision, history, approval, Notion publication, and final
-Slack notification are implemented; selected-channel discovery is not.
+is required. Human revision, history, approval, configurable Confluence/Notion
+publication, and final Slack notification are implemented; selected-channel
+discovery is not.
 
 ## Security posture
 
@@ -260,7 +263,7 @@ The next product increments are:
 3. Integrate a GitHub App for deployments, commits, pull requests, and workflows.
 4. Expand the labelled evaluation corpus and calibrate semantic quality with
    human review rather than treating structural coverage as accuracy.
-5. Validate the authenticated review and Notion publication experience with
+5. Validate the authenticated review and configured publication experience with
    real reviewers and measure review time, edit distance, and delivery failures.
 
 The project intentionally excludes Kubernetes, Kafka, a vector database, a graph

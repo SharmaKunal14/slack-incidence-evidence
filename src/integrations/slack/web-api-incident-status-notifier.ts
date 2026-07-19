@@ -46,22 +46,30 @@ const publishedNotificationSchema = z
     revisionId: z.uuid(),
     channelId: z.string().regex(/^C[A-Z0-9]{1,63}$/),
     threadTs: slackTimestampSchema,
-    notionPageUrl: z.url().superRefine((value, context) => {
-      const url = new URL(value);
-      if (
-        url.protocol !== 'https:' ||
-        url.username !== '' ||
-        url.password !== '' ||
-        (url.hostname !== 'notion.so' && !url.hostname.endsWith('.notion.so'))
-      ) {
-        context.addIssue({
-          code: 'custom',
-          message: 'Published report URL must be a Notion HTTPS URL',
-        });
-      }
-    }),
+    publisher: z.enum(['NOTION', 'CONFLUENCE']),
+    reportPageUrl: z.url(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const url = new URL(value.reportPageUrl);
+    const trustedHost =
+      value.publisher === 'NOTION'
+        ? url.hostname === 'notion.so' || url.hostname.endsWith('.notion.so')
+        : url.hostname.endsWith('.atlassian.net');
+    if (
+      url.protocol !== 'https:' ||
+      url.username !== '' ||
+      url.password !== '' ||
+      url.port !== '' ||
+      !trustedHost
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Published report URL does not match its approved provider',
+        path: ['reportPageUrl'],
+      });
+    }
+  });
 
 const postMessageResponseSchema = z.discriminatedUnion('ok', [
   z
@@ -200,7 +208,7 @@ export class SlackWebApiIncidentStatusNotifier
       text: [
         'Final incident report approved and published.',
         `Reference: ${input.incidentId}`,
-        `Notion report: ${input.notionPageUrl}`,
+        `${providerName(input.publisher)} report: ${input.reportPageUrl}`,
       ].join('\n'),
     });
     return { messageTs };
@@ -262,6 +270,10 @@ export class SlackWebApiIncidentStatusNotifier
     }
     return parsed.data.ts;
   }
+}
+
+function providerName(provider: 'NOTION' | 'CONFLUENCE'): string {
+  return provider === 'NOTION' ? 'Notion' : 'Confluence';
 }
 
 function parseReviewAppBaseUrl(value: string | undefined): URL | null {

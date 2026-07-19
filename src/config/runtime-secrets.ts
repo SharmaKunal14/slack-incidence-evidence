@@ -48,6 +48,17 @@ const notionApiSecretSchema = z
   })
   .strict();
 
+const confluenceApiSecretSchema = z
+  .object({
+    email: z.email().max(254),
+    apiToken: z
+      .string()
+      .min(1)
+      .max(4096)
+      .regex(/^[!-~]+$/),
+  })
+  .strict();
+
 export interface SlackSigningSecret {
   readonly signingSecret: string;
 }
@@ -68,6 +79,11 @@ export interface OpenAiApiSecret {
 }
 
 export interface NotionApiSecret {
+  readonly apiToken: string;
+}
+
+export interface ConfluenceApiSecret {
+  readonly email: string;
   readonly apiToken: string;
 }
 
@@ -108,6 +124,14 @@ export function parseOpenAiApiSecret(value: string): OpenAiApiSecret {
 export function parseNotionApiSecret(value: string): NotionApiSecret {
   try {
     return notionApiSecretSchema.parse(parseJson(value));
+  } catch {
+    throw new InvalidRuntimeSecretError();
+  }
+}
+
+export function parseConfluenceApiSecret(value: string): ConfluenceApiSecret {
+  try {
+    return confluenceApiSecretSchema.parse(parseJson(value));
   } catch {
     throw new InvalidRuntimeSecretError();
   }

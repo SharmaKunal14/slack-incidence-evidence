@@ -1,7 +1,7 @@
 # Threat model
 
 Status: active; collection, AI extraction, human revision, and approval controls implemented
-Last updated: 2026-07-18
+Last updated: 2026-07-19
 
 ## Scope
 
@@ -14,7 +14,7 @@ Slack signed request -> API Gateway -> ingress Lambda -> SQS FIFO -> worker Lamb
 Triggering-thread history collection, structured model extraction,
 evidence-constrained draft generation, a content-free ready notification, and
 tenant-authorized human revision/approval are implemented. This model also
-includes human-approved Notion publication and anticipates selected-channel
+includes configurable human-approved Confluence/Notion publication and anticipates selected-channel
 Slack collection, GitHub evidence,
 and follow-up issue creation.
 Planned controls are not credited as current protection.
@@ -530,9 +530,12 @@ Publication controls still required:
 
 The current development path implements a single configured destination,
 human approval, a transactional outbox, and durable external IDs. It does not
-inspect the Notion reader set or revalidate Slack source ACLs at publication
+inspect the Confluence/Notion reader set or revalidate Slack source ACLs at publication
 time. That is a known release blocker for external multi-tenant production, not
-an assurance supplied by the integration token.
+an assurance supplied by a provider credential. Confluence development uses a
+dedicated, space-restricted service account and API token; a distributable
+multi-tenant product requires centrally managed OAuth 2.0 rather than customer
+API-token collection.
 
 Paraphrasing private evidence does not make it public.
 

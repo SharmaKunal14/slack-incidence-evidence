@@ -34,6 +34,7 @@ describe('PostgresApprovedReportPublicationRepository', () => {
         claimedAt,
         leaseExpiresAt,
         maxAttempts: 8,
+        publisher: 'CONFLUENCE',
       }),
     ).rejects.toThrow('abandoned publication leases exhausted retries');
     expect(query.mock.calls[1]?.[0]).toEqual(
@@ -60,8 +61,9 @@ describe('PostgresApprovedReportPublicationRepository', () => {
             report_revision_id: revisionId,
             status: 'PENDING',
             attempt_count: 1,
-            notion_page_id: null,
-            notion_page_url: null,
+            publisher: 'CONFLUENCE',
+            published_page_id: null,
+            published_page_url: null,
             title: 'Checkout outage',
             severity: 'SEV1',
             source_workspace_id: 'T001',
@@ -97,10 +99,12 @@ describe('PostgresApprovedReportPublicationRepository', () => {
         claimedAt,
         leaseExpiresAt,
         maxAttempts: 8,
+        publisher: 'CONFLUENCE',
       }),
     ).resolves.toMatchObject({
       id: jobId,
       attemptCount: 1,
+      publisher: 'CONFLUENCE',
       threadTs: '1721178000.000100',
       document: {
         title: 'Checkout outage',
@@ -121,6 +125,7 @@ describe('PostgresApprovedReportPublicationRepository', () => {
     expect(query.mock.calls[2]?.[0]).toEqual(
       expect.stringContaining('FOR UPDATE SKIP LOCKED'),
     );
+    expect(query.mock.calls[2]?.[1]).toContain('CONFLUENCE');
     expect(query.mock.calls[3]?.[0]).toEqual(
       expect.stringContaining("incident.status = 'APPROVED'"),
     );
@@ -128,21 +133,20 @@ describe('PostgresApprovedReportPublicationRepository', () => {
     expect(release).toHaveBeenCalledOnce();
   });
 
-  it('requires the active lease when checkpointing Notion', async () => {
+  it('requires the active lease and assigned provider when checkpointing a page', async () => {
     const query = vi.fn().mockResolvedValue(result([], 0));
     const pool = { query } as unknown as Pool;
 
     await expect(
-      new PostgresApprovedReportPublicationRepository(pool).markNotionPublished(
-        {
-          jobId,
-          workerId: 'stale-worker',
-          pageId: '12345678-1234-1234-1234-123456789abc',
-          pageUrl:
-            'https://www.notion.so/Report-12345678123412341234123456789abc',
-          publishedAt: claimedAt,
-        },
-      ),
+      new PostgresApprovedReportPublicationRepository(pool).markPagePublished({
+        jobId,
+        workerId: 'stale-worker',
+        publisher: 'CONFLUENCE',
+        pageId: '12345678-1234-1234-1234-123456789abc',
+        pageUrl:
+          'https://www.notion.so/Report-12345678123412341234123456789abc',
+        publishedAt: claimedAt,
+      }),
     ).rejects.toThrow('lost its lease');
     expect(query.mock.calls[0]?.[0]).toEqual(
       expect.stringContaining('lease_expires_at > $3'),

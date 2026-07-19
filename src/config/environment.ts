@@ -81,9 +81,28 @@ const incidentReviewApiLambdaEnvironmentSchema =
       .default(524_288),
   });
 
-const approvedReportPublicationLambdaEnvironmentSchema =
-  lambdaPostgresEnvironmentSchema
+const approvedReportPublicationBaseEnvironmentSchema =
+  lambdaPostgresEnvironmentSchema.extend({
+    PUBLICATION_BATCH_SIZE: z.coerce.number().int().min(1).max(10).default(1),
+    PUBLICATION_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(8),
+    PUBLICATION_LEASE_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(30)
+      .max(900)
+      .default(180),
+    PUBLICATION_RETRY_BASE_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(30)
+      .max(3_600)
+      .default(60),
+  });
+
+const notionPublicationEnvironmentSchema =
+  approvedReportPublicationBaseEnvironmentSchema
     .extend({
+      REPORT_PUBLICATION_PROVIDER: z.literal('NOTION'),
       NOTION_API_SECRET_ARN: z.string().trim().min(1),
       NOTION_DATA_SOURCE_ID: z
         .string()
@@ -104,25 +123,6 @@ const approvedReportPublicationLambdaEnvironmentSchema =
         .min(1_000)
         .max(30_000)
         .default(10_000),
-      PUBLICATION_BATCH_SIZE: z.coerce.number().int().min(1).max(10).default(1),
-      PUBLICATION_MAX_ATTEMPTS: z.coerce
-        .number()
-        .int()
-        .min(1)
-        .max(20)
-        .default(8),
-      PUBLICATION_LEASE_SECONDS: z.coerce
-        .number()
-        .int()
-        .min(30)
-        .max(900)
-        .default(180),
-      PUBLICATION_RETRY_BASE_SECONDS: z.coerce
-        .number()
-        .int()
-        .min(30)
-        .max(3_600)
-        .default(60),
     })
     .refine(
       (value) =>
@@ -132,6 +132,47 @@ const approvedReportPublicationLambdaEnvironmentSchema =
         path: ['NOTION_INCIDENT_ID_PROPERTY'],
       },
     );
+
+const confluencePublicationEnvironmentSchema =
+  approvedReportPublicationBaseEnvironmentSchema.extend({
+    REPORT_PUBLICATION_PROVIDER: z.literal('CONFLUENCE'),
+    CONFLUENCE_API_SECRET_ARN: z.string().trim().min(1),
+    CONFLUENCE_BASE_URL: z.url().superRefine((value, context) => {
+      const url = new URL(value);
+      if (
+        url.protocol !== 'https:' ||
+        !url.hostname.endsWith('.atlassian.net') ||
+        url.port !== '' ||
+        url.username !== '' ||
+        url.password !== '' ||
+        url.pathname !== '/' ||
+        url.search !== '' ||
+        url.hash !== ''
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'Confluence base URL must be a plain HTTPS atlassian.net origin',
+        });
+      }
+    }),
+    CONFLUENCE_SPACE_ID: z.string().regex(/^[1-9][0-9]{0,29}$/u),
+    CONFLUENCE_PARENT_PAGE_ID: z
+      .string()
+      .regex(/^[1-9][0-9]{0,29}$/u)
+      .optional(),
+    CONFLUENCE_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(30_000)
+      .default(10_000),
+  });
+
+const approvedReportPublicationLambdaEnvironmentSchema = z.discriminatedUnion(
+  'REPORT_PUBLICATION_PROVIDER',
+  [notionPublicationEnvironmentSchema, confluencePublicationEnvironmentSchema],
+);
 
 const slackEvidenceCollectorLambdaEnvironmentSchema =
   lambdaPostgresEnvironmentSchema.extend({
@@ -352,7 +393,10 @@ export function loadIncidentReviewApiLambdaEnvironment(
 export function loadApprovedReportPublicationLambdaEnvironment(
   source: NodeJS.ProcessEnv = process.env,
 ): ApprovedReportPublicationLambdaEnvironment {
-  return approvedReportPublicationLambdaEnvironmentSchema.parse(source);
+  return approvedReportPublicationLambdaEnvironmentSchema.parse({
+    ...source,
+    REPORT_PUBLICATION_PROVIDER: source.REPORT_PUBLICATION_PROVIDER ?? 'NOTION',
+  });
 }
 
 export function loadSlackEvidenceCollectorLambdaEnvironment(

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   InvalidRuntimeSecretError,
+  parseConfluenceApiSecret,
   parseDatabaseConnectionSecret,
   parseOpenAiApiSecret,
   parseNotionApiSecret,
@@ -45,6 +46,17 @@ describe('runtime secret contracts', () => {
     expect(
       parseNotionApiSecret(JSON.stringify({ apiToken: 'notion-token' })),
     ).toEqual({ apiToken: 'notion-token' });
+    expect(
+      parseConfluenceApiSecret(
+        JSON.stringify({
+          email: 'publisher@example.com',
+          apiToken: 'confluence-token',
+        }),
+      ),
+    ).toEqual({
+      email: 'publisher@example.com',
+      apiToken: 'confluence-token',
+    });
   });
 
   it('rejects unexpected fields to catch a miswired secret', () => {
@@ -72,6 +84,15 @@ describe('runtime secret contracts', () => {
     expect(() =>
       parseNotionApiSecret(
         JSON.stringify({ apiToken: 'value', databasePassword: 'wrong' }),
+      ),
+    ).toThrow(InvalidRuntimeSecretError);
+    expect(() =>
+      parseConfluenceApiSecret(
+        JSON.stringify({
+          email: 'publisher@example.com',
+          apiToken: 'value',
+          databasePassword: 'wrong',
+        }),
       ),
     ).toThrow(InvalidRuntimeSecretError);
   });
