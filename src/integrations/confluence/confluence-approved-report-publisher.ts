@@ -293,7 +293,13 @@ function renderStorageBody(document: ApprovedReportDocument): string {
         (sectionTotal, statement) => sectionTotal + statement.text.length,
         0,
       ),
-    0,
+    document.questionAnswers.reduce(
+      (total, answer) => total + answer.question.length + answer.answer.length,
+      document.remainingOpenQuestions.reduce(
+        (total, question) => total + question.length,
+        0,
+      ),
+    ),
   );
   if (reportCharacterCount > MAX_REPORT_CHARACTERS) {
     throw new ReportPublicationProviderError('CONFLUENCE_REPORT_TOO_LARGE');
@@ -321,6 +327,25 @@ function renderStorageBody(document: ApprovedReportDocument): string {
             .join('')}</ul>`;
     return `<h2>${SECTION_HEADINGS[sectionType]}</h2>${statements}`;
   }).join('');
+  const questionAnswerMarkup =
+    document.questionAnswers.length === 0
+      ? ''
+      : [
+          '<h2>Reviewed questions and answers</h2>',
+          ...document.questionAnswers.map(
+            (answer) =>
+              `<h3>${escapeStorageText(answer.question)}</h3><p>${renderStorageParagraphText(answer.answer)}</p>`,
+          ),
+        ].join('');
+  const remainingQuestionMarkup =
+    document.remainingOpenQuestions.length === 0
+      ? ''
+      : [
+          '<h2>Remaining open questions</h2>',
+          `<ul>${document.remainingOpenQuestions
+            .map((question) => `<li>${escapeStorageText(question)}</li>`)
+            .join('')}</ul>`,
+        ].join('');
 
   const body = [
     '<p><strong>Final human-approved incident report</strong></p>',
@@ -332,6 +357,8 @@ function renderStorageBody(document: ApprovedReportDocument): string {
     metadataRow('Incident reference', document.incidentId),
     '</tbody></table>',
     sectionMarkup,
+    questionAnswerMarkup,
+    remainingQuestionMarkup,
   ].join('');
   if (Buffer.byteLength(body, 'utf8') > MAX_STORAGE_BODY_BYTES) {
     throw new ReportPublicationProviderError(
@@ -352,6 +379,13 @@ function escapeStorageText(value: string): string {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function renderStorageParagraphText(value: string): string {
+  return escapeStorageText(value)
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\r', '\n')
+    .replaceAll('\n', '<br/>');
 }
 
 function classificationLabel(

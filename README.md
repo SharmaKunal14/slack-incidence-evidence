@@ -233,9 +233,9 @@ certificate verified by each database-using Lambda. Those inputs and an OpenAI
 API secret must exist before the AWS path can process a real incident. The
 current Step Functions definition collects and analyzes only the triggering
 Slack thread, generates an internal draft, and notifies Slack that human review
-is required. Human revision, history, approval, configurable Confluence/Notion
-publication, and final Slack notification are implemented; selected-channel
-discovery is not.
+is required. Human statement revision, reviewed answers to open questions,
+immutable history, approval, configurable Confluence/Notion publication, and
+final Slack notification are implemented; selected-channel discovery is not.
 
 ## Security posture
 

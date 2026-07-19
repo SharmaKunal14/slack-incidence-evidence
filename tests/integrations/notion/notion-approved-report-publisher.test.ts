@@ -27,6 +27,13 @@ function document(): ApprovedReportDocument {
     severity: 'SEV1',
     revisionNumber: 2,
     approvedAt: new Date('2026-07-19T01:00:00.000Z'),
+    questionAnswers: [
+      {
+        question: 'Who approved the emergency change?',
+        answer: 'The incident commander approved it.',
+      },
+    ],
+    remainingOpenQuestions: ['Which team owns the follow-up?'],
     sections: [
       {
         sectionType: 'executive_summary' as const,
@@ -110,6 +117,10 @@ describe('NotionApprovedReportPublisher', () => {
     expect(createBody.children.length).toBeLessThanOrEqual(100);
     expect(createInit.body).toContain('Root cause');
     expect(createInit.body).toContain('Human confirmed');
+    expect(createInit.body).toContain('Reviewed questions and answers');
+    expect(createInit.body).toContain('The incident commander approved it.');
+    expect(createInit.body).toContain('Remaining open questions');
+    expect(createInit.body).toContain('Which team owns the follow-up?');
   });
 
   it('returns the existing exact incident page without creating another', async () => {

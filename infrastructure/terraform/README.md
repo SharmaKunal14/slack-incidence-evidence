@@ -370,7 +370,7 @@ Prerequisites:
   or a Notion data source shared with the Notion integration.
 - An existing PostgreSQL endpoint. For the current Supabase deployment, use the
   transaction-pooler hostname, port 6543, and empty VPC input lists.
-- Database migrations through `0007_configurable_report_publisher.sql` applied before the
+- Database migrations through `0008_review_question_answers.sql` applied before the
   updated workflow is deployed or invoked.
 
 Create an ignored variable file:

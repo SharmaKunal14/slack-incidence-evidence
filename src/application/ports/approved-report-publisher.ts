@@ -13,6 +13,11 @@ export interface ApprovedReportPublicationSection {
   readonly statements: readonly ApprovedReportPublicationStatement[];
 }
 
+export interface ApprovedReportQuestionAnswer {
+  readonly question: string;
+  readonly answer: string;
+}
+
 export interface ApprovedReportDocument {
   readonly incidentId: string;
   readonly title: string;
@@ -20,6 +25,8 @@ export interface ApprovedReportDocument {
   readonly revisionNumber: number;
   readonly approvedAt: Date;
   readonly sections: readonly ApprovedReportPublicationSection[];
+  readonly questionAnswers: readonly ApprovedReportQuestionAnswer[];
+  readonly remainingOpenQuestions: readonly string[];
 }
 
 export interface PublishedReportPage {

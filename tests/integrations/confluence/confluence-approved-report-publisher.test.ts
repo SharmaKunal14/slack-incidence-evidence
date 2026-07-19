@@ -44,6 +44,14 @@ function document(
     severity: 'SEV1',
     revisionNumber: 2,
     approvedAt: new Date('2026-07-19T01:00:00.000Z'),
+    questionAnswers: [
+      {
+        question: 'Who approved the <break-glass> change?',
+        answer:
+          'The incident commander & security lead approved it.\nRecorded at 01:14 UTC.',
+      },
+    ],
+    remainingOpenQuestions: ['Which <service owner> owns the follow-up?'],
     sections: [
       {
         sectionType: 'executive_summary',
@@ -146,6 +154,21 @@ describe('ConfluenceApprovedReportPublisher', () => {
       body: { representation: 'storage' },
     });
     expect(createBody.body.value).toContain('<h2>Root cause</h2>');
+    expect(createBody.body.value).toContain(
+      '<h2>Reviewed questions and answers</h2>',
+    );
+    expect(createBody.body.value).toContain(
+      'Who approved the &lt;break-glass&gt; change?',
+    );
+    expect(createBody.body.value).toContain(
+      'The incident commander &amp; security lead approved it.<br/>Recorded at 01:14 UTC.',
+    );
+    expect(createBody.body.value).toContain(
+      '<h2>Remaining open questions</h2>',
+    );
+    expect(createBody.body.value).toContain(
+      'Which &lt;service owner&gt; owns the follow-up?',
+    );
     expect(createBody.body.value).toContain(
       '&lt;script&gt;alert(&quot;unsafe&quot;)&lt;/script&gt; &amp; recovery completed.',
     );

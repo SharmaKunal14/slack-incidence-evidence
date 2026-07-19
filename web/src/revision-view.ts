@@ -21,6 +21,17 @@ export interface RevisionStatementView {
   readonly classification: string;
 }
 
+export interface RevisionSourceQuestion {
+  readonly id: string;
+  readonly question: string;
+}
+
+export interface SavedRevisionQuestionAnswer {
+  readonly questionId: string;
+  readonly question: string;
+  readonly answer: string;
+}
+
 export function requiresPreservedRevisionFetch(
   selectedVersionId: string,
   originalDraftId: string,
@@ -96,4 +107,38 @@ export function reconcileRevisionStatements(
     });
   }
   return views;
+}
+
+export function reconcileRevisionQuestionAnswers(
+  questions: readonly RevisionSourceQuestion[],
+  savedAnswers: readonly SavedRevisionQuestionAnswer[] | null,
+): ReadonlyMap<string, string> {
+  const questionById = new Map<string, RevisionSourceQuestion>();
+  for (const question of questions) {
+    if (questionById.has(question.id)) {
+      throw new Error('Incident contains duplicate open-question identifiers');
+    }
+    questionById.set(question.id, question);
+  }
+
+  const answers = new Map(questions.map((question) => [question.id, '']));
+  if (savedAnswers === null) {
+    return answers;
+  }
+  const savedQuestionIds = new Set<string>();
+  for (const saved of savedAnswers) {
+    const source = questionById.get(saved.questionId);
+    if (source === undefined) {
+      throw new Error('Saved revision references an unknown open question');
+    }
+    if (savedQuestionIds.has(saved.questionId)) {
+      throw new Error('Saved revision contains duplicate question answers');
+    }
+    if (saved.question !== source.question) {
+      throw new Error('Saved question answer does not match its source');
+    }
+    savedQuestionIds.add(saved.questionId);
+    answers.set(saved.questionId, saved.answer);
+  }
+  return answers;
 }

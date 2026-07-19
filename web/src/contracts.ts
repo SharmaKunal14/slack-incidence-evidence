@@ -83,6 +83,21 @@ const revisionStatementSchema = z
   })
   .strict();
 
+const revisionQuestionAnswerSchema = z
+  .object({
+    questionId: z.string(),
+    question: z.string(),
+    answer: z.string().min(1).max(4_000),
+  })
+  .strict();
+
+const revisionDetailSchema = revisionSummarySchema
+  .extend({
+    statements: z.array(revisionStatementSchema).max(300),
+    questionAnswers: z.array(revisionQuestionAnswerSchema).max(100),
+  })
+  .strict();
+
 export const bundleSchema = z
   .object({
     incident: z
@@ -152,10 +167,7 @@ export const bundleSchema = z
       z.object({ id: z.string(), question: z.string() }).strict(),
     ),
     revisions: z.array(revisionSummarySchema).max(50),
-    latestRevision: revisionSummarySchema
-      .extend({ statements: z.array(revisionStatementSchema).max(300) })
-      .strict()
-      .nullable(),
+    latestRevision: revisionDetailSchema.nullable(),
   })
   .strict();
 
@@ -173,9 +185,7 @@ export const revisionResponseSchema = z
 
 export const revisionDetailResponseSchema = z
   .object({
-    revision: revisionSummarySchema
-      .extend({ statements: z.array(revisionStatementSchema).max(300) })
-      .strict(),
+    revision: revisionDetailSchema,
   })
   .strict();
 

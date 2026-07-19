@@ -86,6 +86,18 @@ describe('PostgresApprovedReportPublicationRepository', () => {
           },
         ]),
       )
+      .mockResolvedValueOnce(
+        result([
+          {
+            question: 'Who approved the emergency change?',
+            answer: 'The incident commander approved it at 01:14 UTC.',
+          },
+          {
+            question: 'Which team owns the follow-up?',
+            answer: null,
+          },
+        ]),
+      )
       .mockResolvedValueOnce(result([]));
     const release = vi.fn();
     const client = { query, release } as unknown as PoolClient;
@@ -109,6 +121,13 @@ describe('PostgresApprovedReportPublicationRepository', () => {
       document: {
         title: 'Checkout outage',
         revisionNumber: 2,
+        questionAnswers: [
+          {
+            question: 'Who approved the emergency change?',
+            answer: 'The incident commander approved it at 01:14 UTC.',
+          },
+        ],
+        remainingOpenQuestions: ['Which team owns the follow-up?'],
         sections: [
           {
             sectionType: 'root_cause',

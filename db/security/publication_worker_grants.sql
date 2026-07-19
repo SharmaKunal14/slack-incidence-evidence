@@ -20,6 +20,9 @@ GRANT SELECT ON TABLE
   report_publications,
   report_revisions,
   report_revision_statements,
+  report_revision_question_answers,
+  analysis_open_questions,
+  incident_report_drafts,
   incidents
 TO :"publication_role";
 

@@ -113,8 +113,15 @@ export interface ReviewRevisionStatement {
   readonly classification: ReviewClassification | null;
 }
 
+export interface ReviewQuestionAnswer {
+  readonly questionId: string;
+  readonly question: string;
+  readonly answer: string;
+}
+
 export interface ReportRevisionDetail extends ReportRevisionSummary {
   readonly statements: readonly ReviewRevisionStatement[];
+  readonly questionAnswers: readonly ReviewQuestionAnswer[];
 }
 
 export interface IncidentReviewBundle {
@@ -163,6 +170,13 @@ export interface ResolvedReviewStatement {
   readonly timelineEventIds: readonly string[];
 }
 
+export interface ResolvedReviewQuestionAnswer {
+  readonly id: string;
+  readonly questionId: string;
+  readonly question: string;
+  readonly answer: string;
+}
+
 export interface ReportRevision {
   readonly id: string;
   readonly tenantId: string;
@@ -209,6 +223,17 @@ export const createReportRevisionCommandSchema = z
     clientRequestId: z.uuid(),
     acknowledgedContradictions: z.boolean(),
     acknowledgedOpenQuestions: z.boolean(),
+    questionAnswers: z
+      .array(
+        z
+          .object({
+            questionId: safeIdSchema,
+            answer: reviewTextSchema,
+          })
+          .strict(),
+      )
+      .max(100)
+      .default([]),
     decisions: z
       .array(
         z
@@ -254,6 +279,15 @@ export const createReportRevisionCommandSchema = z
       context.addIssue({
         code: 'custom',
         message: 'Duplicate statement decision',
+      });
+    }
+    const questionIds = command.questionAnswers.map(
+      (answer) => answer.questionId,
+    );
+    if (new Set(questionIds).size !== questionIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Duplicate open-question answer',
       });
     }
   });
