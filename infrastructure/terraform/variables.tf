@@ -18,11 +18,20 @@ variable "project_name" {
 variable "environment" {
   description = "Deployment environment name."
   type        = string
-  default     = "development"
 
   validation {
     condition     = contains(["development", "staging", "production"], var.environment)
     error_message = "environment must be development, staging, or production."
+  }
+}
+
+variable "expected_aws_account_id" {
+  description = "Exact AWS account permitted for this deployment. The provider refuses credentials for any other account."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.expected_aws_account_id))
+    error_message = "expected_aws_account_id must be a 12-digit AWS account ID."
   }
 }
 

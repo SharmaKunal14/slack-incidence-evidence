@@ -359,7 +359,7 @@ compiled for Amazon Linux and the chosen architecture. Terraform uses
 
 Prerequisites:
 
-- Terraform 1.4 or newer.
+- Terraform 1.10 or newer. Automated deployments use native S3 lockfiles.
 - AWS credentials for a non-production account.
 - A `zip` command-line utility used by `npm run build:lambda`.
 - The built Lambda artifact.
@@ -528,6 +528,10 @@ page even when the worker received a network timeout. Resolve the provider page
 manually before an audited retry or reassignment.
 
 ## Production state and CI/CD
+
+The checked-in GitHub Actions pipeline, environment variables, OIDC boundary,
+state bootstrap, migration ordering, and promotion gates are documented in
+[the deployment pipeline runbook](../../docs/deployment-pipeline.md).
 
 This reusable root intentionally omits a hard-coded backend because backend
 configuration differs by AWS account and cannot use normal input variables.

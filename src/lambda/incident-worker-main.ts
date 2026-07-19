@@ -11,6 +11,7 @@ import {
   parseSlackBotTokenSecret,
 } from '../config/runtime-secrets.js';
 import { PostgresIncidentRepository } from '../infrastructure/postgres/incident-repository.js';
+import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { SfnIncidentWorkflowStarter } from '../infrastructure/workflow/sfn-incident-workflow-starter.js';
 import { SlackWebApiIncidentStatusNotifier } from '../integrations/slack/web-api-incident-status-notifier.js';
@@ -93,9 +94,9 @@ async function buildHandler(): Promise<IncidentWorkerHandler> {
       logger.error({ err: error }, 'idle PostgreSQL client failed');
     });
 
-    // Fail closed if migrations are absent. SQS retains the record and Lambda
-    // retries it; the worker never starts a workflow without its system record.
-    await database.query('SELECT 1 FROM incidents LIMIT 1');
+    // SQS retains the record while an incompatible release is blocked from
+    // starting work; retries can recover after migrations complete.
+    await assertDatabaseSchemaCompatible(database);
     const processIncidentReview = new ProcessIncidentReview(
       new PostgresIncidentRepository(database),
       systemClock,

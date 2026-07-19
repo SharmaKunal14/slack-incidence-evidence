@@ -5,6 +5,7 @@ import { systemClock } from '../application/ports/clock.js';
 import { uuidGenerator } from '../application/ports/id-generator.js';
 import { loadWorkerEnvironment } from '../config/environment.js';
 import { PostgresIncidentRepository } from '../infrastructure/postgres/incident-repository.js';
+import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SqsIncidentJobConsumer } from '../infrastructure/queue/sqs-incident-job-consumer.js';
 import { createLogger } from '../observability/logger.js';
 
@@ -51,7 +52,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 try {
   // Fail before polling if the database or migrations are unavailable. Leaving
   // SQS messages untouched allows another healthy worker to process them.
-  await database.query('SELECT 1 FROM incidents LIMIT 1');
+  await assertDatabaseSchemaCompatible(database);
   await consumer.run(async (job) => {
     const result = await processIncidentReview.execute(job);
     logger.info(
