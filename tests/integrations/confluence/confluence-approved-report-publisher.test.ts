@@ -30,7 +30,7 @@ function page(title = pageTitle): Record<string, unknown> {
     title,
     spaceId,
     _links: {
-      webui: `/wiki/spaces/IR/pages/${pageId}/Incident+report`,
+      webui: `/spaces/IR/pages/${pageId}/Incident+report`,
     },
   };
 }
@@ -268,5 +268,23 @@ describe('ConfluenceApprovedReportPublisher', () => {
           spaceId,
         }),
     ).toThrow();
+  });
+
+  it('rejects an untrusted page URL returned by Confluence', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      response({
+        results: [
+          {
+            ...page(),
+            _links: { webui: 'https://attacker.example/report' },
+          },
+        ],
+        _links: {},
+      }),
+    );
+
+    await expect(publisher(request).publish(document())).rejects.toMatchObject({
+      code: 'CONFLUENCE_INVALID_PAGE_URL',
+    });
   });
 });
