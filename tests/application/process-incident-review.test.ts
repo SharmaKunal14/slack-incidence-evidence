@@ -5,19 +5,30 @@ import type {
   IncidentRepository,
 } from '../../src/application/ports/incident-repository.js';
 import type { Incident } from '../../src/domain/incident.js';
+import type { CreateIncidentSource } from '../../src/domain/incident-source.js';
 import type { IncidentReviewJob } from '../../src/domain/incident-review-job.js';
 
 class InMemoryIncidentRepository implements IncidentRepository {
   private readonly bySourceEvent = new Map<string, Incident>();
+  private readonly sourceIds = new Map<string, readonly string[]>();
 
-  public createIfAbsent(incident: Incident): Promise<CreateIncidentResult> {
+  public createIfAbsent(
+    incident: Incident,
+    sources: readonly CreateIncidentSource[] = [],
+  ): Promise<CreateIncidentResult> {
     const key = `${incident.tenantId}:${incident.sourceEventId}`;
     const existing = this.bySourceEvent.get(key);
     if (existing !== undefined) {
-      return Promise.resolve({ created: false, incident: existing });
+      return Promise.resolve({
+        created: false,
+        incident: existing,
+        sourceIds: this.sourceIds.get(key) ?? [],
+      });
     }
     this.bySourceEvent.set(key, incident);
-    return Promise.resolve({ created: true, incident });
+    const sourceIds = sources.map((source) => source.id);
+    this.sourceIds.set(key, sourceIds);
+    return Promise.resolve({ created: true, incident, sourceIds });
   }
 
   public save(incident: Incident, expectedVersion: number): Promise<void> {
@@ -73,10 +84,12 @@ describe('ProcessIncidentReview', () => {
     await expect(useCase.execute(job)).resolves.toEqual({
       incidentId: 'incident-1',
       outcome: 'started',
+      sourceIds: ['incident-2'],
     });
     await expect(useCase.execute(job)).resolves.toEqual({
       incidentId: 'incident-1',
       outcome: 'already_started',
+      sourceIds: ['incident-2'],
     });
   });
 });

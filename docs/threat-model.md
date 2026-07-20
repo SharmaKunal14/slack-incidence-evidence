@@ -197,11 +197,13 @@ Implemented controls:
 
 - accept `app_mention` review commands only when the channel ID begins with `C`;
 - ignore `G`-prefixed private/group conversations, `D`-prefixed DMs, and unknown prefixes; and
+- constrain modal selectors to non-shared public channels, then independently
+  require Slack conversation metadata to confirm a public, non-shared channel
+  in which the workspace-bound bot is a member before selected history is read;
 - do not provide a configuration flag that silently bypasses the policy.
 
 Required before onboarding external workspaces or expanding history collection:
 
-- resolve conversation metadata using the authorized Slack API and installation policy;
 - fail closed when the API cannot establish the conversation type;
 - treat Slack Connect as a separate policy case; and
 - do not use the ID prefix as the final source-authorization decision.
@@ -390,8 +392,9 @@ Implemented controls:
   retention deadline.
 
 Known gap: the deadline is recorded but not enforced by a deletion process yet.
-Slack uninstall/revocation handling, conversation metadata authorization, and
-backup-deletion semantics are also not implemented. The bot token has the union
+Slack uninstall lifecycle handling, reviewer Slack-to-Cognito identity mapping,
+and backup-deletion semantics are also not implemented. Token revocation is
+recorded as a terminal per-source coverage outcome. The bot token has the union
 of the app's Slack scopes even though separate Lambda roles restrict which
 application adapter receives it; AWS IAM cannot narrow capabilities inside that
 Slack-issued token.

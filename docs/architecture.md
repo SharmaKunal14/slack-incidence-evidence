@@ -1,7 +1,7 @@
 # Incident Evidence Copilot architecture
 
-Status: triggering-thread collection, structured AI extraction, review-ready draft generation, and human revision/approval implemented
-Last updated: 2026-07-18
+Status: explicitly scoped multi-channel collection, structured AI extraction, review-ready draft generation, and human revision/approval implemented
+Last updated: 2026-07-20
 
 ## Purpose
 
@@ -111,13 +111,20 @@ Explicitly out of scope:
 - Bounded retrieval of the triggering public Slack thread, stable source
   permalinks, canonical artifact identities, retention deadlines, durable page
   checkpoints, and explicit Slack rate-limit waits.
+- A signed Slack message shortcut and short-lived-trigger modal with a bounded
+  seven-day window, one primary public channel, up to four additional public
+  channels, optional anchor permalinks, reviewer selection, and retention
+  acknowledgement.
+- Tenant-scoped incident source, collection run, checkpoint, and coverage
+  records plus an inline Step Functions Map with maximum concurrency five.
+- Server-side public-channel metadata and bot-membership authorization,
+  per-source terminal outcomes, bounded transient retries, and partial-evidence
+  continuation with explicit report and review-console coverage warnings.
 - Dependency direction that keeps domain logic independent of Fastify, Slack, AWS, PostgreSQL, and model vendors.
 
 ### Deliberately not implemented yet
 
 - Slack OAuth installation and token lifecycle management.
-- Explicitly selected Slack channel-history collection beyond the triggering
-  thread.
 - GitHub App evidence collection.
 - A human-labelled semantic evaluation corpus, provider quality baselines, and
   a quality/cost dashboard.
@@ -233,12 +240,14 @@ sequenceDiagram
         Worker->>DB: Transition incident to COLLECTING
         Worker->>SFN: Start deterministic incident execution
         SFN-->>Worker: Started or already exists
-        loop One bounded page until complete
-            SFN->>Collector: tenant + incident + job IDs
-            Collector->>WebAPI: conversations.replies (limit 15)
+        par Up to five selected sources
+          loop One bounded page until source terminal
+            SFN->>Collector: tenant + incident + job + source IDs
+            Collector->>WebAPI: conversations.history/replies (limit 15)
             Collector->>WebAPI: chat.getPermalink
             Collector->>DB: Upsert artifacts + advance cursor atomically
             Collector-->>SFN: status + counts only
+          end
         end
         SFN->>Analysis: tenant + incident + job IDs
         Analysis->>DB: Load bounded evidence + acquire versioned lease
@@ -353,11 +362,11 @@ Responsibilities:
 - on a FIFO failure, report the failed and all unprocessed records for
   redelivery.
 
-The triggering-thread collector, analysis, report, and notification stages separate provider
-throttling, retryable dependency failures, and terminal safe failures. Roadmap
-responsibilities include selected-channel collection, reviewer authorization,
-approval, and publication. Those steps must also be checkpointed so a retry
-does not repeat completed external side effects.
+The selected-source collector, analysis, report, and notification stages
+separate provider throttling, retryable dependency failures, and terminal safe
+failures. Reviewer authorization, approval, and publication use their own
+durable idempotency boundaries so retries do not repeat completed external side
+effects.
 
 ### PostgreSQL
 
@@ -481,8 +490,9 @@ Rules:
 | Tenant              | Isolation root and lifecycle                                              | organisation identity                                   | schema implemented                                     |
 | Slack installation  | Workspace grant and encrypted bot-token metadata                          | token ciphertext, scopes, installing user               | schema implemented; OAuth flow is roadmap              |
 | Incident            | Stable idempotency, tenant/source identity, lifecycle, optimistic version | Slack identifiers and requested title                   | schema and repository implemented                      |
-| Source artifact     | Tenant-safe source metadata and optional snapshot                         | restricted Slack content                                | triggering-thread collection implemented               |
-| Slack collection    | Durable page cursor, counts, state, and safe failure code                 | Slack source identifiers                                | schema and repository implemented                      |
+| Source artifact     | Tenant-safe source metadata and optional snapshot                         | restricted Slack content                                | selected-channel and anchor collection implemented     |
+| Incident source     | Stable scope identity, requested window, permission and terminal state    | Slack source identifiers                                | schema and repository implemented                      |
+| Source collection   | Durable run, page cursor, rate state, missing periods and coverage entry  | Slack source identifiers and coverage outcome           | schema and repository implemented                      |
 | Analysis run        | Immutable manifest, lease, attempts, model/usage, and outcome             | provider request metadata                               | schema and repository implemented                      |
 | Timeline event      | Normalised event/report time, classification, and citations               | generated incident detail                               | structured model extraction implemented                |
 | Claim               | Structured incident statement, classification, and review state           | generated or human-authored incident detail             | model generation implemented; review roadmap           |
@@ -523,7 +533,7 @@ Only operational metadata is allowed in standard logs. Identifiers should be has
    each artifact retains its canonical source identity and permalink. The
    current single-workspace secret is not a replacement for a production OAuth
    installation lifecycle.
-6. **Analysis Lambda to model provider:** restricted triggering-thread data
+6. **Analysis Lambda to model provider:** restricted explicitly selected data
    leaves the product boundary using a dedicated secret and fixed endpoint. A
    production tenant/provider policy and data-processing review remain required.
 7. **Report Lambda to model provider:** restricted structured claims, timeline,
@@ -636,13 +646,14 @@ Unsafe fields include `requestBody`, `messageText`, `authorization`, `cookie`, `
 The first AWS topology is:
 
 - API Gateway HTTP API with one `POST /integrations/slack/events` route;
-- an ingress Lambda with only log, signing-secret-read, and queue-send access;
+- an ingress Lambda with log, signing-secret-read, workspace bot-token-read,
+  modal-open, and queue-send access;
 - SQS FIFO plus a FIFO dead-letter queue;
 - a worker Lambda with bounded concurrency, database access, and
   `states:StartExecution` permission;
-- a Step Functions Standard workflow that invokes one bounded Slack thread page
-  per task, owns pagination/rate-limit waits, and then invokes structured
-  extraction;
+- a Step Functions Standard workflow with an inline Map capped at five sources;
+  each task invokes one bounded Slack page, owns pagination/rate-limit waits,
+  and then invokes structured extraction;
 - a Slack evidence collector Lambda with bounded concurrency, database access,
   and workspace-bound Slack bot-token access;
 - an analysis Lambda with a separate role, database/OpenAI secret access,
@@ -729,8 +740,9 @@ connection hazard if concurrency is left unbounded. Fargate remains a valid
 measured migration target for sustained workloads or stages that do not fit
 Lambda; it is not needed merely to make the diagram look more conventional.
 
-The current Step Functions machine performs triggering-thread collection,
-structured extraction, report generation, and review-ready notification. Its
+The current Step Functions machine performs explicitly selected channel and
+anchor-thread collection, structured extraction, report generation, and
+review-ready notification. Its
 task input/output is bounded and source/model content stays in PostgreSQL. Each
 future state must likewise arrive with a bounded
 contract, retry policy, idempotency boundary, and implemented stage rather than

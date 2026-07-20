@@ -125,6 +125,18 @@ describe('PostgresIncidentReportRepository', () => {
       )
       .mockResolvedValueOnce(
         result([{ id: 'question-1', question: 'What changed?' }]),
+      )
+      .mockResolvedValueOnce(
+        result([
+          {
+            source_id: 'source-1',
+            display_name: 'incident-checkout',
+            provider_source_id: 'C001',
+            source_state: 'COMPLETE',
+            collected_message_count: 46,
+            completion_or_failure_reason: 'WINDOW_COLLECTED',
+          },
+        ]),
       );
     const pool = { query } as unknown as Pool;
 
@@ -157,6 +169,15 @@ describe('PostgresIncidentReportRepository', () => {
         },
       ],
       openQuestions: [{ id: 'question-1', question: 'What changed?' }],
+      coverage: [
+        {
+          sourceId: 'source-1',
+          sourceName: '#incident-checkout',
+          state: 'COMPLETE',
+          messageCount: 46,
+          reason: 'WINDOW_COLLECTED',
+        },
+      ],
     });
 
     expect(query).toHaveBeenNthCalledWith(

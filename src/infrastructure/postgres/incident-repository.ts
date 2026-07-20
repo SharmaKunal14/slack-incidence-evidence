@@ -9,6 +9,7 @@ import type {
   IncidentSeverity,
   IncidentStatus,
 } from '../../domain/incident.js';
+import type { CreateIncidentSource } from '../../domain/incident-source.js';
 
 interface IncidentRow {
   readonly id: string;
@@ -19,6 +20,8 @@ interface IncidentRow {
   readonly source_message_ts: string | null;
   readonly source_thread_ts: string | null;
   readonly requested_by_user_id: string;
+  readonly reviewer_user_id: string | null;
+  readonly evidence_retention_days: number | null;
   readonly title: string;
   readonly status: IncidentStatus;
   readonly severity: IncidentSeverity;
@@ -38,6 +41,8 @@ const INCIDENT_COLUMNS = `
   source_message_ts,
   source_thread_ts,
   requested_by_user_id,
+  reviewer_user_id,
+  evidence_retention_days,
   title,
   status,
   severity,
@@ -87,6 +92,12 @@ function toIncident(row: IncidentRow): Incident {
       ? {}
       : { sourceThreadTs: row.source_thread_ts }),
     requestedByUserId: row.requested_by_user_id,
+    ...(row.reviewer_user_id === null
+      ? {}
+      : { reviewerUserId: row.reviewer_user_id }),
+    ...(row.evidence_retention_days === null
+      ? {}
+      : { evidenceRetentionDays: row.evidence_retention_days }),
     title: row.title,
     status: row.status,
     severity: row.severity,
@@ -131,7 +142,13 @@ export class PostgresIncidentRepository implements IncidentRepository {
 
   public async createIfAbsent(
     incident: Incident,
+    sources: readonly CreateIncidentSource[] = [],
   ): Promise<CreateIncidentResult> {
+    if (sources.length > 5) {
+      throw new IncidentPersistenceError(
+        'An incident must have at most five evidence sources',
+      );
+    }
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -158,6 +175,8 @@ export class PostgresIncidentRepository implements IncidentRepository {
             source_message_ts,
             source_thread_ts,
             requested_by_user_id,
+            reviewer_user_id,
+            evidence_retention_days,
             title,
             status,
             severity,
@@ -168,7 +187,7 @@ export class PostgresIncidentRepository implements IncidentRepository {
             version
           )
           VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
           )
           ON CONFLICT (tenant_id, source_event_id) DO NOTHING
           RETURNING ${INCIDENT_COLUMNS}
@@ -182,6 +201,8 @@ export class PostgresIncidentRepository implements IncidentRepository {
           incident.sourceMessageTs ?? null,
           incident.sourceThreadTs ?? null,
           incident.requestedByUserId,
+          incident.reviewerUserId ?? null,
+          incident.evidenceRetentionDays ?? null,
           incident.title,
           incident.status,
           incident.severity,
@@ -194,30 +215,104 @@ export class PostgresIncidentRepository implements IncidentRepository {
       );
 
       const insertedRow = inserted.rows[0];
+      let persistedIncident: Incident;
+      let created = false;
       if (insertedRow !== undefined) {
-        await client.query('COMMIT');
-        return { created: true, incident: toIncident(insertedRow) };
-      }
-
-      // This is deliberately a second statement. If a concurrent transaction
-      // won the unique-key race, READ COMMITTED takes a new snapshot here and
-      // can see the committed winner after INSERT ... DO NOTHING returns.
-      const existing = await client.query<IncidentRow>(
-        `
+        persistedIncident = toIncident(insertedRow);
+        created = true;
+      } else {
+        // This is deliberately a second statement. If a concurrent transaction
+        // won the unique-key race, READ COMMITTED takes a new snapshot here and
+        // can see the committed winner after INSERT ... DO NOTHING returns.
+        const existing = await client.query<IncidentRow>(
+          `
           SELECT ${INCIDENT_COLUMNS}
           FROM incidents
           WHERE tenant_id = $1
             AND source_event_id = $2
           LIMIT 1
         `,
-        [incident.tenantId, incident.sourceEventId],
+          [incident.tenantId, incident.sourceEventId],
+        );
+        persistedIncident = requireSingleIncident(
+          existing.rows,
+          'An incident idempotency conflict occurred but the persisted incident was not found',
+        );
+      }
+
+      if (sources.length === 0) {
+        await client.query('COMMIT');
+        return { created, incident: persistedIncident };
+      }
+
+      for (const source of sources) {
+        await client.query(
+          `
+            INSERT INTO incident_sources (
+              id,
+              tenant_id,
+              incident_id,
+              provider,
+              source_kind,
+              source_role,
+              provider_source_id,
+              idempotency_identity,
+              requested_start_at,
+              requested_end_at,
+              anchor_thread_timestamps
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ON CONFLICT (tenant_id, incident_id, idempotency_identity) DO NOTHING
+          `,
+          [
+            source.id,
+            persistedIncident.tenantId,
+            persistedIncident.id,
+            source.provider,
+            source.sourceKind,
+            source.sourceRole,
+            source.providerSourceId,
+            source.idempotencyIdentity,
+            source.requestedStartAt,
+            source.requestedEndAt,
+            source.anchorThreadTimestamps,
+          ],
+        );
+      }
+      const persistedSources = await client.query<{
+        readonly id: string;
+        readonly idempotency_identity: string;
+      }>(
+        `
+          SELECT id, idempotency_identity
+          FROM incident_sources
+          WHERE tenant_id = $1
+            AND incident_id = $2
+          ORDER BY source_role = 'PRIMARY' DESC, id
+        `,
+        [persistedIncident.tenantId, persistedIncident.id],
       );
-      const persisted = requireSingleIncident(
-        existing.rows,
-        'An incident idempotency conflict occurred but the persisted incident was not found',
+      const expectedIdentities = new Set(
+        sources.map((source) => source.idempotencyIdentity),
       );
+      if (
+        persistedSources.rows.length !== expectedIdentities.size ||
+        persistedSources.rows.some(
+          (source) => !expectedIdentities.has(source.idempotency_identity),
+        )
+      ) {
+        throw new IncidentPersistenceError(
+          'Duplicate incident delivery did not match its persisted evidence scope',
+        );
+      }
       await client.query('COMMIT');
-      return { created: false, incident: persisted };
+      return {
+        created,
+        incident: persistedIncident,
+        ...(sources.length === 0
+          ? {}
+          : { sourceIds: persistedSources.rows.map((source) => source.id) }),
+      };
     } catch (error) {
       await rollbackQuietly(client);
       throw error;

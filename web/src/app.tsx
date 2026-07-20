@@ -1022,6 +1022,40 @@ function EvidenceWorkspace({
         </div>
         <span className="evidence-total">{bundle.evidence.length} sources</span>
       </div>
+      <section className="coverage-panel" aria-labelledby="coverage-title">
+        <div className="coverage-heading">
+          <div>
+            <p className="eyebrow">Collection manifest</p>
+            <h3 id="coverage-title">Evidence coverage</h3>
+          </div>
+          {(bundle.evidenceCoverage.length === 0 ||
+            bundle.evidenceCoverage.some(
+              (source) => source.state !== 'COMPLETE',
+            )) && (
+            <span className="coverage-partial">
+              <TriangleAlert size={13} /> Partial
+            </span>
+          )}
+        </div>
+        <ul className="coverage-list">
+          {bundle.evidenceCoverage.length === 0 && (
+            <li data-state="PARTIAL">
+              <span className="coverage-source">Slack evidence</span>
+              <span>Legacy coverage unavailable</span>
+            </li>
+          )}
+          {bundle.evidenceCoverage.map((source) => (
+            <li key={source.sourceId} data-state={source.state}>
+              <span className="coverage-source">{source.sourceName}</span>
+              <span>{coverageDetail(source)}</span>
+            </li>
+          ))}
+          <li data-state="NOT_CONFIGURED">
+            <span className="coverage-source">GitHub repository</span>
+            <span>Not configured</span>
+          </li>
+        </ul>
+      </section>
       <Tabs.Root
         className="evidence-tabs"
         value={activeTab}
@@ -1227,6 +1261,25 @@ function EvidenceWorkspace({
       </Tabs.Root>
     </aside>
   );
+}
+
+function coverageDetail(source: Bundle['evidenceCoverage'][number]): string {
+  if (source.state === 'COMPLETE') {
+    return `${source.messageCount} ${source.messageCount === 1 ? 'message' : 'messages'} collected`;
+  }
+  if (source.reason === 'REVIEWER_EXCLUDED' || source.state === 'EXCLUDED') {
+    return 'Excluded by reviewer';
+  }
+  if (source.state === 'INACCESSIBLE') {
+    return 'Access unavailable';
+  }
+  if (source.state === 'REVOKED') {
+    return 'Authorization revoked';
+  }
+  if (source.state === 'PARTIAL') {
+    return `${source.messageCount} messages collected · Partial`;
+  }
+  return source.reason?.toLowerCase().replaceAll('_', ' ') ?? source.state;
 }
 
 function EvidenceTrigger({

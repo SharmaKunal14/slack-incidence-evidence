@@ -15,7 +15,9 @@ import {
 
 interface IncidentEvidenceConfigurationRow {
   readonly title: string;
-  readonly collection_status: string | null;
+  readonly source_count: number | string;
+  readonly nonterminal_source_count: number | string;
+  readonly legacy_collection_status: string | null;
 }
 
 interface EvidenceRow {
@@ -89,13 +91,23 @@ export class PostgresIncidentAnalysisRepository implements IncidentAnalysisRepos
   ): Promise<IncidentAnalysisEvidenceBundle> {
     const incident = await this.pool.query<IncidentEvidenceConfigurationRow>(
       `
-        SELECT i.title, c.status AS collection_status
+        SELECT
+          i.title,
+          COUNT(source.id) AS source_count,
+          COUNT(source.id) FILTER (
+            WHERE source.status IN ('PLANNED', 'COLLECTING')
+          ) AS nonterminal_source_count,
+          MAX(legacy.status) AS legacy_collection_status
         FROM incidents i
-        LEFT JOIN slack_thread_collections c
-          ON c.tenant_id = i.tenant_id
-         AND c.incident_id = i.id
+        LEFT JOIN incident_sources source
+          ON source.tenant_id = i.tenant_id
+         AND source.incident_id = i.id
+        LEFT JOIN slack_thread_collections legacy
+          ON legacy.tenant_id = i.tenant_id
+         AND legacy.incident_id = i.id
         WHERE i.tenant_id = $1
           AND i.id = $2
+        GROUP BY i.id
         LIMIT 1
       `,
       [tenantId, incidentId],
@@ -104,9 +116,17 @@ export class PostgresIncidentAnalysisRepository implements IncidentAnalysisRepos
     if (configuration === undefined) {
       throw new IncidentAnalysisConfigurationError('Incident was not found');
     }
-    if (configuration.collection_status !== 'COMPLETE') {
+    if (
+      Number(configuration.source_count) === 0 &&
+      configuration.legacy_collection_status !== 'COMPLETE'
+    ) {
       throw new IncidentAnalysisConfigurationError(
-        'Slack evidence collection must complete before analysis',
+        'Incident has no planned evidence sources',
+      );
+    }
+    if (Number(configuration.nonterminal_source_count) !== 0) {
+      throw new IncidentAnalysisConfigurationError(
+        'All evidence sources must reach a terminal state before analysis',
       );
     }
 

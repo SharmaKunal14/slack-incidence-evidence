@@ -49,6 +49,9 @@ export function createIncidentWorkerHandler(
           tenantId: job.tenantId,
           incidentId: result.incidentId,
           jobId: job.jobId,
+          ...(result.sourceIds === undefined
+            ? {}
+            : { sourceIds: result.sourceIds }),
         });
 
         await dependencies.statusNotifier.notifyAccepted({

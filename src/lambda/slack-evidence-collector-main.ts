@@ -2,6 +2,7 @@ import type { Context } from 'aws-lambda';
 import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { Pool } from 'pg';
 import { CollectSlackThreadPage } from '../application/collect-slack-thread-page.js';
+import { CollectSlackSourcePage } from '../application/collect-slack-source-page.js';
 import { systemClock } from '../application/ports/clock.js';
 import { uuidGenerator } from '../application/ports/id-generator.js';
 import { loadSlackEvidenceCollectorLambdaEnvironment } from '../config/environment.js';
@@ -10,9 +11,11 @@ import {
   parseSlackBotTokenSecret,
 } from '../config/runtime-secrets.js';
 import { PostgresSlackThreadCollectionRepository } from '../infrastructure/postgres/slack-thread-collection-repository.js';
+import { PostgresIncidentSourceCollectionRepository } from '../infrastructure/postgres/incident-source-collection-repository.js';
 import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { SlackThreadWebApiSource } from '../integrations/slack/web-api-slack-thread-source.js';
+import { SlackChannelWebApiSource } from '../integrations/slack/web-api-slack-channel-source.js';
 import { createLogger } from '../observability/logger.js';
 import {
   createSlackEvidenceCollectorHandler,
@@ -23,7 +26,7 @@ const environment = loadSlackEvidenceCollectorLambdaEnvironment();
 const logger = createLogger(environment.LOG_LEVEL);
 let handlerPromise: Promise<SlackEvidenceCollectorHandler> | undefined;
 
-/** Step Functions composition root for one checkpointed Slack thread page. */
+/** Step Functions composition root for one checkpointed Slack source page. */
 export async function handler(
   event: unknown,
   context: Context,
@@ -105,7 +108,18 @@ async function buildHandler(): Promise<SlackEvidenceCollectorHandler> {
       environment.EVIDENCE_RETENTION_DAYS,
       environment.SLACK_THREAD_MAX_PAGES,
     );
-    return createSlackEvidenceCollectorHandler({ collector, logger });
+    const sourceCollector = new CollectSlackSourcePage(
+      new PostgresIncidentSourceCollectionRepository(database),
+      new SlackChannelWebApiSource(slackBotSecret),
+      systemClock,
+      uuidGenerator,
+      environment.SLACK_THREAD_MAX_PAGES,
+    );
+    return createSlackEvidenceCollectorHandler({
+      collector,
+      sourceCollector,
+      logger,
+    });
   } catch (error) {
     if (database !== undefined) {
       await database.end();

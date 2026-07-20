@@ -175,6 +175,49 @@ describe('API Gateway Slack ingress Lambda', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it('uses the short-lived shortcut trigger to open the scoping modal before acknowledging', async () => {
+    const execute = vi.fn<Execute>();
+    const open = vi.fn().mockResolvedValue(undefined);
+    const payload = JSON.stringify({
+      type: 'message_action',
+      callback_id: 'scope_incident',
+      trigger_id: 'trigger-1',
+      team: { id: 'T001' },
+      user: { id: 'U001' },
+      channel: { id: 'C001' },
+      message: { ts: '1721178000.000100' },
+    });
+    const body = new URLSearchParams({ payload }).toString();
+    const handler = createSlackIngressHandler({
+      ...dependencies(execute),
+      incidentScopeModal: { open },
+      evidenceRetentionDays: 45,
+    });
+
+    const response = await handler(
+      eventFor(body, {
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          'x-slack-request-timestamp': timestamp,
+          'x-slack-signature': sign(body),
+        },
+      }),
+    );
+
+    expect(structured(response).statusCode).toBe(200);
+    expect(open).toHaveBeenCalledWith({
+      triggerId: 'trigger-1',
+      workspaceId: 'T001',
+      userId: 'U001',
+      channelId: 'C001',
+      messageTs: '1721178000.000100',
+      defaultStartedAt: new Date('2026-07-17T00:00:00.000Z'),
+      defaultEndedAt: now,
+      evidenceRetentionDays: 45,
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it('rejects an invalid signature without parsing or enqueueing the request', async () => {
     const body = incidentMention();
     const execute = vi.fn<Execute>();

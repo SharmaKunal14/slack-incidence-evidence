@@ -243,64 +243,90 @@ resource "aws_sfn_state_machine" "incident_workflow" {
 
   definition = jsonencode({
     Comment = "Checkpointed evidence collection, AI extraction, report generation, and content-free review notification. Raw evidence and model output remain in PostgreSQL, never workflow state."
-    StartAt = "CollectSlackThreadPage"
+    StartAt = "CollectIncidentSources"
     States = {
-      CollectSlackThreadPage = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::lambda:invoke"
-        Parameters = {
-          FunctionName = aws_lambda_function.slack_evidence_collector.arn
-          Payload = {
-            "version.$"    = "$.version"
-            "tenantId.$"   = "$.tenantId"
-            "incidentId.$" = "$.incidentId"
-            "jobId.$"      = "$.jobId"
+      CollectIncidentSources = {
+        Type           = "Map"
+        ItemsPath      = "$.sourceIds"
+        MaxConcurrency = 5
+        ItemSelector = {
+          "version.$"    = "$.version"
+          "tenantId.$"   = "$.tenantId"
+          "incidentId.$" = "$.incidentId"
+          "jobId.$"      = "$.jobId"
+          "sourceId.$"   = "$$.Map.Item.Value"
+        }
+        ItemProcessor = {
+          ProcessorConfig = {
+            Mode = "INLINE"
+          }
+          StartAt = "CollectSlackSourcePage"
+          States = {
+            CollectSlackSourcePage = {
+              Type     = "Task"
+              Resource = "arn:aws:states:::lambda:invoke"
+              Parameters = {
+                FunctionName = aws_lambda_function.slack_evidence_collector.arn
+                Payload = {
+                  "version.$"    = "$.version"
+                  "tenantId.$"   = "$.tenantId"
+                  "incidentId.$" = "$.incidentId"
+                  "jobId.$"      = "$.jobId"
+                  "sourceId.$"   = "$.sourceId"
+                }
+              }
+              OutputPath = "$.Payload"
+              Retry = [{
+                ErrorEquals     = ["States.TaskFailed"]
+                IntervalSeconds = 2
+                MaxAttempts     = 3
+                BackoffRate     = 2
+              }]
+              Next = "SourceCollectionStatus"
+            }
+            SourceCollectionStatus = {
+              Type = "Choice"
+              Choices = [
+                {
+                  Variable     = "$.status"
+                  StringEquals = "CONTINUE"
+                  Next         = "WaitBetweenSourcePages"
+                },
+                {
+                  Variable     = "$.status"
+                  StringEquals = "RATE_LIMITED"
+                  Next         = "WaitForSlackRateLimit"
+                },
+                {
+                  Variable     = "$.status"
+                  StringEquals = "COMPLETE"
+                  Next         = "SourceCollectionComplete"
+                }
+              ]
+              Default = "UnexpectedSourceCollectionStatus"
+            }
+            WaitBetweenSourcePages = {
+              Type    = "Wait"
+              Seconds = 1
+              Next    = "CollectSlackSourcePage"
+            }
+            WaitForSlackRateLimit = {
+              Type        = "Wait"
+              SecondsPath = "$.retryAfterSeconds"
+              Next        = "CollectSlackSourcePage"
+            }
+            SourceCollectionComplete = {
+              Type = "Succeed"
+            }
+            UnexpectedSourceCollectionStatus = {
+              Type  = "Fail"
+              Error = "UnexpectedSourceCollectionStatus"
+              Cause = "The Slack collector returned an unsupported safe status."
+            }
           }
         }
-        OutputPath = "$.Payload"
-        Retry = [{
-          ErrorEquals     = ["States.TaskFailed"]
-          IntervalSeconds = 2
-          MaxAttempts     = 3
-          BackoffRate     = 2
-        }]
-        Next = "CollectionStatus"
-      }
-      CollectionStatus = {
-        Type = "Choice"
-        Choices = [
-          {
-            Variable     = "$.status"
-            StringEquals = "CONTINUE"
-            Next         = "WaitBetweenPages"
-          },
-          {
-            Variable     = "$.status"
-            StringEquals = "RATE_LIMITED"
-            Next         = "WaitForSlackRateLimit"
-          },
-          {
-            Variable     = "$.status"
-            StringEquals = "COMPLETE"
-            Next         = "AnalyzeIncidentEvidence"
-          },
-          {
-            Variable     = "$.status"
-            StringEquals = "FAILED"
-            Next         = "SlackEvidenceCollectionFailed"
-          }
-        ]
-        Default = "SlackEvidenceCollectionFailed"
-      }
-      WaitBetweenPages = {
-        Type    = "Wait"
-        Seconds = 1
-        Next    = "CollectSlackThreadPage"
-      }
-      WaitForSlackRateLimit = {
-        Type        = "Wait"
-        SecondsPath = "$.retryAfterSeconds"
-        Next        = "CollectSlackThreadPage"
+        ResultPath = "$.collectionResults"
+        Next       = "AnalyzeIncidentEvidence"
       }
       AnalyzeIncidentEvidence = {
         Type     = "Task"
@@ -468,11 +494,6 @@ resource "aws_sfn_state_machine" "incident_workflow" {
         Error = "IncidentReportFailed"
         Cause = "Evidence-constrained report generation reached a durable terminal failure; inspect the redacted report failure code."
       }
-      SlackEvidenceCollectionFailed = {
-        Type  = "Fail"
-        Error = "SlackEvidenceCollectionFailed"
-        Cause = "Slack thread evidence could not be collected; inspect the durable collection failure code."
-      }
     }
   })
 
@@ -525,6 +546,12 @@ data "aws_iam_policy_document" "ingress" {
     sid       = "ReadSlackSigningSecret"
     actions   = ["secretsmanager:GetSecretValue"]
     resources = [var.slack_signing_secret_arn]
+  }
+
+  statement {
+    sid       = "ReadSlackBotTokenForModals"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.slack_bot_token_secret_arn]
   }
 
   dynamic "statement" {
@@ -965,7 +992,7 @@ resource "aws_iam_role_policy" "approved_report_publication" {
 
 resource "aws_lambda_function" "ingress" {
   function_name = "${local.name_prefix}-slack-ingress"
-  description   = "Authenticates Slack events, enqueues a versioned incident job, and acknowledges immediately."
+  description   = "Authenticates Slack requests, opens scope modals, and durably enqueues submitted incident jobs."
   role          = aws_iam_role.ingress.arn
   runtime       = "nodejs22.x"
   architectures = [var.lambda_architecture]
@@ -982,8 +1009,10 @@ resource "aws_lambda_function" "ingress" {
     variables = {
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
       INCIDENT_QUEUE_URL                  = aws_sqs_queue.incident_jobs.id
+      EVIDENCE_RETENTION_DAYS             = tostring(var.evidence_retention_days)
       LOG_LEVEL                           = var.log_level
       NODE_ENV                            = local.node_env
+      SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
       SLACK_SIGNING_SECRET_ARN            = var.slack_signing_secret_arn
     }
   }
@@ -1061,7 +1090,7 @@ resource "aws_lambda_function" "worker" {
 
 resource "aws_lambda_function" "slack_evidence_collector" {
   function_name = "${local.name_prefix}-slack-evidence-collector"
-  description   = "Collects and checkpoints one bounded page of triggering Slack thread evidence."
+  description   = "Collects and checkpoints one bounded page for one explicitly selected Slack source."
   role          = aws_iam_role.slack_evidence_collector.arn
   runtime       = "nodejs22.x"
   architectures = [var.lambda_architecture]

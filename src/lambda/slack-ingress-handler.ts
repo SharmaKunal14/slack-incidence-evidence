@@ -4,21 +4,33 @@ import type {
 } from 'aws-lambda';
 import type { Logger } from 'pino';
 import type { Clock } from '../application/ports/clock.js';
+import type { IncidentScopeModal } from '../application/ports/incident-scope-modal.js';
 import type {
   RequestIncidentReview,
   RequestIncidentReviewCommand,
+  RequestScopedIncidentReview,
 } from '../application/request-incident-review.js';
 import {
   InvalidSlackPayloadError,
   parseSlackRequest,
 } from '../integrations/slack/event-parser.js';
 import type { SlackSignatureVerifier } from '../integrations/slack/signature-verifier.js';
+import {
+  InvalidSlackInteractionError,
+  parseSlackInteraction,
+} from '../integrations/slack/interaction-parser.js';
 
 export interface SlackIngressDependencies {
   readonly clock: Clock;
   readonly logger: Logger;
   readonly signatureVerifier: SlackSignatureVerifier;
   readonly requestIncidentReview: Pick<RequestIncidentReview, 'execute'>;
+  readonly requestScopedIncidentReview?: Pick<
+    RequestScopedIncidentReview,
+    'execute'
+  >;
+  readonly incidentScopeModal?: IncidentScopeModal;
+  readonly evidenceRetentionDays?: number;
 }
 
 export type SlackIngressHandler = (
@@ -40,6 +52,9 @@ export function createSlackIngressHandler(
     // as base64. Slack signs the original bytes, so verification must happen
     // before JSON parsing or any other transformation.
     const rawBody = reconstructRawBody(event);
+    if (rawBody.byteLength > 1_048_576) {
+      return jsonResponse(413, { error: 'request_too_large' });
+    }
     const verification = dependencies.signatureVerifier.verify({
       rawBody,
       timestamp: findHeader(event.headers, 'x-slack-request-timestamp'),
@@ -57,9 +72,15 @@ export function createSlackIngressHandler(
 
     let payload: unknown;
     try {
-      payload = JSON.parse(rawBody.toString('utf8')) as unknown;
+      payload = parseRequestPayload(event, rawBody);
     } catch {
-      return jsonResponse(400, { error: 'invalid_json' });
+      return jsonResponse(400, {
+        error: isFormRequest(event) ? 'invalid_request_body' : 'invalid_json',
+      });
+    }
+
+    if (isFormRequest(event)) {
+      return handleInteraction(payload, dependencies);
     }
 
     let parsed;
@@ -119,10 +140,120 @@ export function createSlackIngressHandler(
   };
 }
 
+async function handleInteraction(
+  payload: unknown,
+  dependencies: SlackIngressDependencies,
+): Promise<APIGatewayProxyResultV2> {
+  let parsed;
+  try {
+    parsed = parseSlackInteraction(payload, dependencies.clock.now());
+  } catch (error) {
+    if (
+      error instanceof InvalidSlackInteractionError &&
+      error.fieldErrors.length > 0
+    ) {
+      return jsonResponse(200, {
+        response_action: 'errors',
+        errors: Object.fromEntries(
+          error.fieldErrors.map(({ blockId, message }) => [blockId, message]),
+        ),
+      });
+    }
+    return jsonResponse(400, { error: 'invalid_slack_interaction' });
+  }
+
+  if (parsed.kind === 'ignored') {
+    dependencies.logger.debug(
+      { interactionType: parsed.interactionType },
+      'ignored Slack interaction',
+    );
+    return jsonResponse(200, { ok: true });
+  }
+
+  if (parsed.kind === 'open_incident_scope') {
+    if (dependencies.incidentScopeModal === undefined) {
+      dependencies.logger.error('Slack incident scope modal is not configured');
+      return jsonResponse(503, { error: 'modal_unavailable' });
+    }
+    const endedAt = dependencies.clock.now();
+    try {
+      await dependencies.incidentScopeModal.open({
+        triggerId: parsed.triggerId,
+        workspaceId: parsed.workspaceId,
+        userId: parsed.userId,
+        channelId: parsed.channelId,
+        messageTs: parsed.messageTs,
+        ...(parsed.threadTs === undefined ? {} : { threadTs: parsed.threadTs }),
+        defaultStartedAt: new Date(endedAt.getTime() - 60 * 60_000),
+        defaultEndedAt: endedAt,
+        evidenceRetentionDays: dependencies.evidenceRetentionDays ?? 30,
+      });
+      dependencies.logger.info(
+        { workspaceId: parsed.workspaceId },
+        'opened Slack incident scope modal',
+      );
+      return jsonResponse(200, { ok: true });
+    } catch {
+      dependencies.logger.error('failed to open Slack incident scope modal');
+      return jsonResponse(503, { error: 'modal_unavailable' });
+    }
+  }
+
+  if (dependencies.requestScopedIncidentReview === undefined) {
+    dependencies.logger.error(
+      'scoped incident queue publisher is not configured',
+    );
+    return jsonResponse(503, { error: 'queue_unavailable' });
+  }
+  try {
+    const jobId = await dependencies.requestScopedIncidentReview.execute(
+      parsed.command,
+    );
+    dependencies.logger.info(
+      {
+        jobId,
+        sourceEventId: parsed.command.eventId,
+        workspaceId: parsed.command.workspaceId,
+        sourceCount: parsed.command.channels.length,
+      },
+      'accepted scoped incident review request',
+    );
+    return jsonResponse(200, {});
+  } catch {
+    dependencies.logger.error(
+      'failed to enqueue scoped incident review request',
+    );
+    return jsonResponse(503, { error: 'queue_unavailable' });
+  }
+}
+
 function reconstructRawBody(event: APIGatewayProxyEventV2): Buffer {
   return Buffer.from(
     event.body ?? '',
     event.isBase64Encoded === true ? 'base64' : 'utf8',
+  );
+}
+
+function parseRequestPayload(
+  event: APIGatewayProxyEventV2,
+  rawBody: Buffer,
+): unknown {
+  const body = rawBody.toString('utf8');
+  if (!isFormRequest(event)) {
+    return JSON.parse(body) as unknown;
+  }
+  const encodedPayload = new URLSearchParams(body).get('payload');
+  if (encodedPayload === null || encodedPayload.length > 1_000_000) {
+    throw new Error('invalid Slack interaction body');
+  }
+  return JSON.parse(encodedPayload) as unknown;
+}
+
+function isFormRequest(event: APIGatewayProxyEventV2): boolean {
+  return (
+    findHeader(event.headers, 'content-type')
+      ?.toLowerCase()
+      .startsWith('application/x-www-form-urlencoded') ?? false
   );
 }
 

@@ -34,6 +34,9 @@ export class SfnIncidentWorkflowStarter implements IncidentWorkflowStarter {
             tenantId: input.tenantId,
             incidentId: input.incidentId,
             jobId: input.jobId,
+            ...(input.sourceIds === undefined
+              ? {}
+              : { sourceIds: input.sourceIds }),
           }),
         }),
       );

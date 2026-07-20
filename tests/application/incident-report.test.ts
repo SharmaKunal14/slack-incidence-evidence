@@ -93,6 +93,32 @@ describe('incident report validation and rendering', () => {
     expect(markdown).toContain('Human review is required');
   });
 
+  it('states partial evidence coverage explicitly in deterministic Markdown', () => {
+    const markdown = renderIncidentReportMarkdown(validReport(), {
+      ...manifest,
+      coverage: [
+        {
+          sourceId: 'source-1',
+          sourceName: '#incident-checkout',
+          state: 'COMPLETE',
+          messageCount: 46,
+          reason: 'WINDOW_COLLECTED',
+        },
+        {
+          sourceId: 'source-2',
+          sourceName: '#database-alerts',
+          state: 'INACCESSIBLE',
+          messageCount: 0,
+          reason: 'SLACK_NO_PERMISSION',
+        },
+      ],
+    });
+
+    expect(markdown).toContain('## Evidence coverage');
+    expect(markdown).toContain('Evidence coverage is partial');
+    expect(markdown).toContain('#database-alerts** — Access unavailable');
+  });
+
   it('rejects fabricated source references', () => {
     const report = validReport();
     report.sections[0]!.statements[0]!.claimIds = ['fabricated-claim'];

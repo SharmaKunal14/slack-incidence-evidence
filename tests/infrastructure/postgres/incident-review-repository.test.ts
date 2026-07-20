@@ -335,6 +335,9 @@ function reviewReadPool(
     if (sql.includes('FROM source_artifacts artifact')) {
       return Promise.resolve(result([]));
     }
+    if (sql.includes('FROM incident_sources source')) {
+      return Promise.resolve(result([]));
+    }
     if (sql.includes('FROM analysis_open_questions')) {
       return Promise.resolve(result([]));
     }

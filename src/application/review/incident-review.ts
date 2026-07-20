@@ -60,6 +60,16 @@ export interface ReviewEvidence {
   readonly sourceUri: string | null;
 }
 
+export interface ReviewEvidenceCoverage {
+  readonly sourceId: string;
+  readonly provider: string;
+  readonly sourceName: string;
+  readonly state: string;
+  readonly messageCount: number;
+  readonly permissionOutcome: string;
+  readonly reason: string | null;
+}
+
 export interface ReviewClaim {
   readonly id: string;
   readonly statement: string;
@@ -143,6 +153,7 @@ export interface IncidentReviewBundle {
   readonly claims: readonly ReviewClaim[];
   readonly timeline: readonly ReviewTimelineEvent[];
   readonly evidence: readonly ReviewEvidence[];
+  readonly evidenceCoverage?: readonly ReviewEvidenceCoverage[];
   readonly openQuestions: readonly {
     readonly id: string;
     readonly question: string;

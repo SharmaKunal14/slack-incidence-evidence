@@ -55,6 +55,8 @@ const databaseMigrationEnvironmentSchema = commonEnvironmentSchema.extend({
 
 const slackIngressLambdaEnvironmentSchema = queueEnvironmentSchema.extend({
   SLACK_SIGNING_SECRET_ARN: z.string().trim().min(1),
+  SLACK_BOT_TOKEN_SECRET_ARN: z.string().trim().min(1),
+  EVIDENCE_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
 });
 
 const lambdaPostgresBaseEnvironmentSchema = commonEnvironmentSchema.extend({

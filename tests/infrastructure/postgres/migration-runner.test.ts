@@ -56,6 +56,7 @@ describe('runMigrations', () => {
         '0006_approved_report_publication.sql',
         '0007_configurable_report_publisher.sql',
         '0008_review_question_answers.sql',
+        '0009_multi_channel_incident_sources.sql',
       ],
       alreadyApplied: 0,
     });
@@ -85,6 +86,16 @@ describe('runMigrations', () => {
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('ADD COLUMN publisher TEXT'),
     );
+    for (const table of [
+      'incident_sources',
+      'source_collection_runs',
+      'source_collection_checkpoints',
+      'source_coverage_manifests',
+    ]) {
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining(`CREATE TABLE ${table}`),
+      );
+    }
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO schema_migrations'),
       expect.arrayContaining([

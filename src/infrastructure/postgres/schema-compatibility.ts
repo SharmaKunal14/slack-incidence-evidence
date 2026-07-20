@@ -9,6 +9,7 @@ export const REQUIRED_SCHEMA_MIGRATIONS = [
   { version: '6', name: '0006_approved_report_publication.sql' },
   { version: '7', name: '0007_configurable_report_publisher.sql' },
   { version: '8', name: '0008_review_question_answers.sql' },
+  { version: '9', name: '0009_multi_channel_incident_sources.sql' },
 ] as const;
 
 interface AppliedMigrationRow extends QueryResultRow {

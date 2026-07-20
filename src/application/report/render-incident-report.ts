@@ -36,6 +36,35 @@ export function renderIncidentReportMarkdown(
     '',
   ];
 
+  if (manifest.coverage !== undefined) {
+    const partial =
+      manifest.coverage.length === 0 ||
+      manifest.coverage.some((source) => source.state !== 'COMPLETE');
+    lines.push('## Evidence coverage', '');
+    if (partial) {
+      lines.push(
+        '> Evidence coverage is partial. Conclusions must be read in light of the unavailable or excluded sources below.',
+        '',
+      );
+    }
+    if (manifest.coverage.length === 0) {
+      lines.push(
+        '_A per-source coverage manifest is unavailable for this legacy incident._',
+        '',
+      );
+    }
+    for (const source of manifest.coverage) {
+      const detail =
+        source.state === 'COMPLETE'
+          ? `${source.messageCount} messages collected`
+          : humanizeCoverageReason(source.state, source.reason);
+      lines.push(
+        `- **${escapeMarkdown(source.sourceName)}** — ${escapeMarkdown(detail)}`,
+      );
+    }
+    lines.push('');
+  }
+
   for (const sectionType of INCIDENT_REPORT_SECTION_TYPES) {
     const section = sectionMap.get(sectionType);
     lines.push(`## ${SECTION_HEADINGS[sectionType]}`, '');
@@ -74,6 +103,22 @@ export function renderIncidentReportMarkdown(
     throw new Error('Rendered incident report exceeds the size limit');
   }
   return markdown;
+}
+
+function humanizeCoverageReason(state: string, reason: string | null): string {
+  if (reason === 'REVIEWER_EXCLUDED') {
+    return 'Excluded by reviewer';
+  }
+  if (state === 'INACCESSIBLE') {
+    return 'Access unavailable';
+  }
+  if (state === 'REVOKED') {
+    return 'Authorization revoked';
+  }
+  if (state === 'PARTIAL') {
+    return 'Partially collected';
+  }
+  return reason?.toLowerCase().replaceAll('_', ' ') ?? state.toLowerCase();
 }
 
 function classificationPrefix(

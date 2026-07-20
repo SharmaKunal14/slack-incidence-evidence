@@ -6,12 +6,19 @@ import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { systemClock } from '../application/ports/clock.js';
 import { uuidGenerator } from '../application/ports/id-generator.js';
-import { RequestIncidentReview } from '../application/request-incident-review.js';
+import {
+  RequestIncidentReview,
+  RequestScopedIncidentReview,
+} from '../application/request-incident-review.js';
 import { loadSlackIngressLambdaEnvironment } from '../config/environment.js';
-import { parseSlackSigningSecret } from '../config/runtime-secrets.js';
+import {
+  parseSlackBotTokenSecret,
+  parseSlackSigningSecret,
+} from '../config/runtime-secrets.js';
 import { SqsIncidentJobPublisher } from '../infrastructure/queue/sqs-incident-job-publisher.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { SlackSignatureVerifier } from '../integrations/slack/signature-verifier.js';
+import { SlackWebApiIncidentScopeModal } from '../integrations/slack/web-api-incident-scope-modal.js';
 import { createLogger } from '../observability/logger.js';
 import {
   createSlackIngressHandler,
@@ -59,12 +66,19 @@ async function buildHandler(): Promise<SlackIngressHandler> {
 
   try {
     const secretReader = new SecretsManagerSecretReader(secrets);
-    const signingSecret = parseSlackSigningSecret(
-      await secretReader.readString(environment.SLACK_SIGNING_SECRET_ARN),
-    );
+    const [signingSecretValue, botTokenValue] = await Promise.all([
+      secretReader.readString(environment.SLACK_SIGNING_SECRET_ARN),
+      secretReader.readString(environment.SLACK_BOT_TOKEN_SECRET_ARN),
+    ]);
+    const signingSecret = parseSlackSigningSecret(signingSecretValue);
+    const botToken = parseSlackBotTokenSecret(botTokenValue);
     secrets.destroy();
+    const publisher = new SqsIncidentJobPublisher(
+      sqs,
+      environment.INCIDENT_QUEUE_URL,
+    );
     const requestIncidentReview = new RequestIncidentReview(
-      new SqsIncidentJobPublisher(sqs, environment.INCIDENT_QUEUE_URL),
+      publisher,
       systemClock,
       uuidGenerator,
     );
@@ -76,6 +90,13 @@ async function buildHandler(): Promise<SlackIngressHandler> {
         signingSecret.signingSecret,
       ),
       requestIncidentReview,
+      requestScopedIncidentReview: new RequestScopedIncidentReview(
+        publisher,
+        systemClock,
+        uuidGenerator,
+      ),
+      incidentScopeModal: new SlackWebApiIncidentScopeModal(botToken),
+      evidenceRetentionDays: environment.EVIDENCE_RETENTION_DAYS,
     });
   } catch (error) {
     secrets.destroy();
