@@ -161,6 +161,19 @@ describe('deployment bootstrap policy', () => {
     }
   });
 
+  it('can read versions only for environment-scoped Lambda functions', async () => {
+    const template = await loadTemplate();
+    const statement = policyStatements(template).find(
+      ({ Sid }) => Sid === 'ManageEnvironmentFunctions',
+    );
+
+    expect(statement?.Action).toContain('lambda:ListVersionsByFunction');
+    expect(statement?.Resource).toEqual({
+      'Fn::Sub':
+        'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-${Environment}-*',
+    });
+  });
+
   it('attaches the permissions boundary to every Terraform-created role', async () => {
     const terraform = `${await readFile(
       resolve('infrastructure/terraform/main.tf'),

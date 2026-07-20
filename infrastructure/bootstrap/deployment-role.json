@@ -622,6 +622,7 @@
                 "lambda:GetPolicy",
                 "lambda:GetRuntimeManagementConfig",
                 "lambda:ListTags",
+                "lambda:ListVersionsByFunction",
                 "lambda:PutFunctionConcurrency",
                 "lambda:PutRuntimeManagementConfig",
                 "lambda:TagResource",
