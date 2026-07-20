@@ -9,7 +9,7 @@ Usage:
     --environment development \
     --github-repository OWNER/REPOSITORY \
     --state-bucket BUCKET \
-    --state-key incident-copilot/development/terraform.tfstate \
+    --state-key incident-copilot/development/application.tfstate \
     --state-kms-key-arn ARN \
     --migration-secret-arn ARN \
     [--migration-secret-kms-key-arn ARN]

@@ -39,25 +39,30 @@ environment but cannot create or enforce its protection rules.
 
 Each environment requires these GitHub **variables**:
 
-| Variable                                     | Purpose                                                                          |
-| -------------------------------------------- | -------------------------------------------------------------------------------- |
-| `AWS_ACCOUNT_ID`                             | Exact 12-digit account permitted by both OIDC and Terraform.                     |
-| `AWS_REGION`                                 | Deployment and state region, currently `ap-southeast-2`.                         |
-| `AWS_DEPLOY_ROLE_ARN`                        | Environment-specific OIDC role ARN.                                              |
-| `AWS_LAMBDA_ROLE_PERMISSIONS_BOUNDARY_ARN`   | Boundary required on every Terraform-created Lambda IAM role.                    |
-| `AWS_WORKFLOW_ROLE_PERMISSIONS_BOUNDARY_ARN` | Boundary required on the Terraform-created Step Functions IAM role.              |
-| `TF_STATE_BUCKET`                            | Existing encrypted and versioned Terraform state bucket.                         |
-| `TF_STATE_KEY`                               | Unique state path, for example `incident-copilot/development/terraform.tfstate`. |
-| `TF_STATE_KMS_KEY_ARN`                       | Customer-managed KMS key for state and lock objects.                             |
-| `TF_INPUTS_JSON`                             | Non-secret Terraform inputs described below.                                     |
-| `MIGRATION_DATABASE_SECRET_ARN`              | Secrets Manager ARN for the migration database user.                             |
-| `MIGRATION_DATABASE_HOST`                    | Session-capable PostgreSQL endpoint.                                             |
-| `MIGRATION_DATABASE_PORT`                    | Session endpoint port, normally `5432` for Supabase.                             |
-| `MIGRATION_DATABASE_NAME`                    | PostgreSQL database name.                                                        |
+| Variable                                     | Purpose                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------- |
+| `AWS_ACCOUNT_ID`                             | Exact 12-digit account permitted by both OIDC and Terraform.        |
+| `AWS_REGION`                                 | Deployment and state region, currently `ap-southeast-2`.            |
+| `AWS_DEPLOY_ROLE_ARN`                        | Environment-specific OIDC role ARN.                                 |
+| `AWS_LAMBDA_ROLE_PERMISSIONS_BOUNDARY_ARN`   | Boundary required on every Terraform-created Lambda IAM role.       |
+| `AWS_WORKFLOW_ROLE_PERMISSIONS_BOUNDARY_ARN` | Boundary required on the Terraform-created Step Functions IAM role. |
+| `TF_STATE_BUCKET`                            | Existing encrypted and versioned Terraform state bucket.            |
+| `TF_STATE_KEY`                               | Existing environment state object.                                  |
+| `TF_STATE_KMS_KEY_ARN`                       | Customer-managed KMS key for state and lock objects.                |
+| `TF_INPUTS_JSON`                             | Non-secret Terraform inputs described below.                        |
+| `MIGRATION_DATABASE_SECRET_ARN`              | Secrets Manager ARN for the migration database user.                |
+| `MIGRATION_DATABASE_HOST`                    | Session-capable PostgreSQL endpoint.                                |
+| `MIGRATION_DATABASE_PORT`                    | Session endpoint port, normally `5432` for Supabase.                |
+| `MIGRATION_DATABASE_NAME`                    | PostgreSQL database name.                                           |
 
 Do not store passwords, tokens, signing secrets, private keys, CA private keys,
 connection strings, or secret JSON values in GitHub. Secret ARNs are identifiers
 and belong in `TF_INPUTS_JSON`; values remain in AWS Secrets Manager.
+
+For an existing environment, `TF_STATE_KEY` must be the key of the state that
+already owns its resources, for example
+`incident-copilot/development/application.tfstate`. A new key creates a separate
+Terraform lineage; it does not adopt existing resources.
 
 ### Terraform input JSON
 
