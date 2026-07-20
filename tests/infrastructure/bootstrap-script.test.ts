@@ -53,7 +53,7 @@ printf '%s\n' "\${FAKE_GITHUB_SUBJECT_PREFIX:?}"
       '--state-bucket',
       'incident-copilot-tfstate-393209814365-ap-southeast-2',
       '--state-key',
-      'incident-copilot/development/terraform.tfstate',
+      'incident-copilot/development/application.tfstate',
       '--state-kms-key-arn',
       'arn:aws:kms:ap-southeast-2:393209814365:key/c98cc529-04fa-4622-9e15-5c1935072888',
       '--migration-secret-arn',

@@ -28,7 +28,7 @@ export AWS_DEFAULT_REGION="$AWS_REGION"
 
 AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 TF_STATE_BUCKET="incident-copilot-tfstate-${AWS_ACCOUNT_ID}-${AWS_REGION}"
-TF_STATE_KEY="incident-copilot/development/terraform.tfstate"
+TF_STATE_KEY="incident-copilot/development/application.tfstate"
 TF_STATE_KMS_KEY_ARN="$(
   aws kms describe-key \
     --key-id alias/incident-copilot-development-terraform-state \
@@ -119,6 +119,23 @@ GitHub. An identity policy cannot override an explicit resource-policy deny.
 
 The failed Terraform apply may have created valid resources and recorded them
 in the remote state. Do not delete the state or manually delete those resources.
+
+For an existing environment, the state object key is part of the environment's
+identity. Reuse the key that already owns the application resources; do not
+invent a new key from an example. Before changing `TF_STATE_KEY`, list the
+environment's state objects and inspect each candidate's lineage and resources:
+
+```bash
+aws s3api list-objects-v2 \
+  --bucket "$TF_STATE_BUCKET" \
+  --prefix "incident-copilot/${DEPLOYMENT_ENVIRONMENT:-development}/" \
+  --query 'Contents[?ends_with(Key, `.tfstate`)].{Key:Key,Modified:LastModified,Size:Size}' \
+  --output table
+```
+
+An empty state under a new key does not adopt existing AWS resources. Terraform
+will instead try to create duplicates. If multiple state objects exist, stop and
+compare their resource addresses and AWS IDs before selecting one.
 
 Inspect the same remote state from CloudShell:
 

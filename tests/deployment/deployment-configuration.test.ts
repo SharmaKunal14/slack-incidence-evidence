@@ -54,7 +54,7 @@ function validEnvironment(): NodeJS.ProcessEnv {
     AWS_LAMBDA_ROLE_PERMISSIONS_BOUNDARY_ARN: `arn:aws:iam::${accountId}:policy/incident-copilot-development-lambda-boundary`,
     AWS_WORKFLOW_ROLE_PERMISSIONS_BOUNDARY_ARN: `arn:aws:iam::${accountId}:policy/incident-copilot-development-workflow-boundary`,
     TF_STATE_BUCKET: 'incident-copilot-state-123456789012',
-    TF_STATE_KEY: 'incident-copilot/development/terraform.tfstate',
+    TF_STATE_KEY: 'incident-copilot/development/application.tfstate',
     TF_STATE_KMS_KEY_ARN: `arn:aws:kms:${region}:${accountId}:key/11111111-2222-3333-4444-555555555555`,
     DATABASE_SECRET_ARN: secretArn('migration-database'),
     DATABASE_HOST: 'session.pooler.example.test',
