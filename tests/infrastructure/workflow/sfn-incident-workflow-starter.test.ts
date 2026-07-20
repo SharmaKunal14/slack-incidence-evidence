@@ -10,6 +10,10 @@ const input = {
   tenantId: 'workspace-T001',
   incidentId: 'incident-001',
   jobId: 'job-001',
+  sourceIds: [
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000002',
+  ],
 };
 
 type Send = (command: unknown) => Promise<unknown>;

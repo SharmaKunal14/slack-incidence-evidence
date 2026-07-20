@@ -1473,6 +1473,71 @@ a {
   font-weight: 750;
 }
 
+.coverage-panel {
+  display: grid;
+  gap: 0.65rem;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 0.8rem;
+  background: #fff;
+}
+
+.coverage-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.coverage-heading h3 {
+  margin: 0.12rem 0 0;
+  font-size: 0.88rem;
+}
+
+.coverage-partial {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 999px;
+  padding: 0.3rem 0.48rem;
+  color: var(--red);
+  background: var(--red-soft);
+  font-size: 0.58rem;
+  font-weight: 760;
+}
+
+.coverage-list {
+  display: grid;
+  gap: 0.42rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.coverage-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.7rem;
+  color: var(--ink-faint);
+  font-size: 0.64rem;
+}
+
+.coverage-list li[data-state='INACCESSIBLE'],
+.coverage-list li[data-state='REVOKED'],
+.coverage-list li[data-state='FAILED'],
+.coverage-list li[data-state='PARTIAL'] {
+  color: var(--red);
+}
+
+.coverage-source {
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .evidence-tab-list {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

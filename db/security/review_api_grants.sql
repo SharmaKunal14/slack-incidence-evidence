@@ -30,6 +30,8 @@ GRANT SELECT ON TABLE
   timeline_events,
   timeline_event_evidence_links,
   source_artifacts,
+  incident_sources,
+  source_coverage_manifests,
   analysis_open_questions,
   report_revisions,
   report_revision_question_answers

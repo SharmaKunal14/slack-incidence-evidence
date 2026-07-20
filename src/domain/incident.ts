@@ -34,6 +34,8 @@ export interface Incident {
   readonly sourceMessageTs?: string;
   readonly sourceThreadTs?: string;
   readonly requestedByUserId: string;
+  readonly reviewerUserId?: string;
+  readonly evidenceRetentionDays?: number;
   readonly title: string;
   readonly status: IncidentStatus;
   readonly severity: IncidentSeverity;
@@ -53,7 +55,11 @@ export interface CreateIncident {
   readonly sourceMessageTs: string;
   readonly sourceThreadTs?: string;
   readonly requestedByUserId: string;
+  readonly reviewerUserId?: string;
+  readonly evidenceRetentionDays?: number;
   readonly title: string;
+  readonly startedAt?: Date;
+  readonly resolvedAt?: Date;
   readonly severity?: IncidentSeverity;
   readonly now: Date;
 }
@@ -105,11 +111,17 @@ export class IncidentAggregate {
         ? {}
         : { sourceThreadTs: input.sourceThreadTs }),
       requestedByUserId: input.requestedByUserId,
+      ...(input.reviewerUserId === undefined
+        ? {}
+        : { reviewerUserId: input.reviewerUserId }),
+      ...(input.evidenceRetentionDays === undefined
+        ? {}
+        : { evidenceRetentionDays: input.evidenceRetentionDays }),
       title,
       status: 'DISCOVERED',
       severity: input.severity ?? 'UNCLASSIFIED',
-      startedAt: null,
-      resolvedAt: null,
+      startedAt: input.startedAt ?? null,
+      resolvedAt: input.resolvedAt ?? null,
       createdAt: input.now,
       updatedAt: input.now,
       version: 0,

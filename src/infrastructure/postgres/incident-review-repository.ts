@@ -102,6 +102,17 @@ interface EvidenceRow {
   readonly source_uri: string | null;
 }
 
+interface CoverageRow {
+  readonly source_id: string;
+  readonly provider: string;
+  readonly provider_source_id: string;
+  readonly display_name: string | null;
+  readonly source_state: string;
+  readonly collected_message_count: number;
+  readonly permission_outcome: string;
+  readonly completion_or_failure_reason: string | null;
+}
+
 interface QuestionRow {
   readonly id: string;
   readonly question: string;
@@ -345,6 +356,7 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       claimResult,
       timelineResult,
       evidenceResult,
+      coverageResult,
       questionResult,
       revisionResult,
     ] = await Promise.all([
@@ -352,6 +364,7 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       this.loadClaims(header),
       this.loadTimeline(header),
       this.loadEvidence(header),
+      this.loadCoverage(header),
       this.loadQuestions(header),
       this.loadRevisions(header),
     ]);
@@ -393,6 +406,18 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       claims: claimResult.rows.map(toClaim),
       timeline: timelineResult.rows.map(toTimelineEvent),
       evidence: evidenceResult.rows.map(toEvidence),
+      evidenceCoverage: coverageResult.rows.map((row) => ({
+        sourceId: row.source_id,
+        provider: row.provider,
+        sourceName:
+          row.display_name === null
+            ? `#${row.provider_source_id}`
+            : `#${row.display_name}`,
+        state: row.source_state,
+        messageCount: row.collected_message_count,
+        permissionOutcome: row.permission_outcome,
+        reason: row.completion_or_failure_reason,
+      })),
       openQuestions: questionResult.rows,
       revisions: revisionResult.rows.map(toRevisionSummary),
       latestRevision,
@@ -971,6 +996,34 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
         header.analysis_run_id,
         MAX_OPEN_QUESTIONS + 1,
       ],
+    );
+  }
+
+  private loadCoverage(
+    header: BundleHeaderRow,
+  ): Promise<QueryResult<CoverageRow>> {
+    return this.pool.query<CoverageRow>(
+      `
+        SELECT
+          source.id AS source_id,
+          source.provider,
+          source.provider_source_id,
+          source.display_name,
+          manifest.source_state,
+          manifest.collected_message_count,
+          manifest.permission_outcome,
+          manifest.completion_or_failure_reason
+        FROM incident_sources source
+        JOIN source_coverage_manifests manifest
+          ON manifest.tenant_id = source.tenant_id
+         AND manifest.incident_id = source.incident_id
+         AND manifest.source_id = source.id
+         AND manifest.manifest_version = 1
+        WHERE source.tenant_id = $1 AND source.incident_id = $2
+        ORDER BY source.source_role = 'PRIMARY' DESC, source.id
+        LIMIT 5
+      `,
+      [header.tenant_id, header.incident_id],
     );
   }
 

@@ -551,7 +551,7 @@ variable "evidence_retention_days" {
 }
 
 variable "slack_thread_max_pages" {
-  description = "Hard per-incident Slack thread page limit; each response contains at most 16 message objects (the parent plus 15 replies)."
+  description = "Hard per-source Slack page limit; history responses contain at most 15 messages and thread responses at most 16 including the parent."
   type        = number
   default     = 100
 

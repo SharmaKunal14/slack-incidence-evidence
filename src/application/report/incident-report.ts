@@ -161,6 +161,13 @@ export interface IncidentReportManifest {
   readonly claims: readonly ReportClaimSource[];
   readonly timeline: readonly ReportTimelineSource[];
   readonly openQuestions: readonly ReportOpenQuestionSource[];
+  readonly coverage?: readonly {
+    readonly sourceId: string;
+    readonly sourceName: string;
+    readonly state: string;
+    readonly messageCount: number;
+    readonly reason: string | null;
+  }[];
 }
 
 export class InvalidReportSourceReferenceError extends Error {

@@ -47,6 +47,15 @@ interface OpenQuestionRow {
   readonly question: string;
 }
 
+interface CoverageRow {
+  readonly source_id: string;
+  readonly display_name: string | null;
+  readonly provider_source_id: string;
+  readonly source_state: string;
+  readonly collected_message_count: number;
+  readonly completion_or_failure_reason: string | null;
+}
+
 interface ReportDraftRow {
   readonly id: string;
   readonly tenant_id: string;
@@ -148,7 +157,7 @@ export class PostgresIncidentReportRepository
       );
     }
 
-    const [claims, timeline, openQuestions] = await Promise.all([
+    const [claims, timeline, openQuestions, coverage] = await Promise.all([
       this.pool.query<ReportClaimRow>(
         `
           SELECT
@@ -206,6 +215,27 @@ export class PostgresIncidentReportRepository
         `,
         [tenantId, incidentId, analysisRunId, sourceLimit],
       ),
+      this.pool.query<CoverageRow>(
+        `
+          SELECT
+            source.id AS source_id,
+            source.display_name,
+            source.provider_source_id,
+            manifest.source_state,
+            manifest.collected_message_count,
+            manifest.completion_or_failure_reason
+          FROM incident_sources source
+          JOIN source_coverage_manifests manifest
+            ON manifest.tenant_id = source.tenant_id
+           AND manifest.incident_id = source.incident_id
+           AND manifest.source_id = source.id
+           AND manifest.manifest_version = 1
+          WHERE source.tenant_id = $1 AND source.incident_id = $2
+          ORDER BY source.source_role = 'PRIMARY' DESC, source.id
+          LIMIT 5
+        `,
+        [tenantId, incidentId],
+      ),
     ]);
 
     return {
@@ -230,6 +260,16 @@ export class PostgresIncidentReportRepository
       openQuestions: openQuestions.rows.map((row) => ({
         id: row.id,
         question: row.question,
+      })),
+      coverage: coverage.rows.map((row) => ({
+        sourceId: row.source_id,
+        sourceName:
+          row.display_name === null
+            ? `#${row.provider_source_id}`
+            : `#${row.display_name}`,
+        state: row.source_state,
+        messageCount: row.collected_message_count,
+        reason: row.completion_or_failure_reason,
       })),
     };
   }

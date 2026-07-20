@@ -6,15 +6,15 @@ a one-prompt transcript summarizer: incident facts, hypotheses, timeline events,
 and evidence references are represented as separate domain concepts so later AI
 stages cannot silently turn speculation into fact.
 
-The current release establishes secure ingestion, collects the triggering
-public Slack thread, extracts an evidence-cited timeline, claims, and open
+The current release establishes secure ingestion, collects an explicitly
+selected set of public Slack channels, extracts an evidence-cited timeline, claims, and open
 questions, and produces a versioned source-linked postmortem draft. An
 authenticated, tenant-authorized console lets a human inspect evidence, create
 immutable corrected revisions, browse every preserved version, acknowledge
 contradictions and unknowns, and approve exactly one revision. Approval queues
 durable publication to a configured Confluence space or private Notion data
 source and a final Slack link.
-Selected-channel collection and GitHub retrieval remain later increments.
+GitHub retrieval remains a later increment.
 
 ## Implemented
 
@@ -22,6 +22,9 @@ Selected-channel collection and GitHub retrieval remain later increments.
   comparison, and five-minute replay protection.
 - `@app generate incident review: <title>` and equivalent RCA/postmortem command
   parsing for public channels.
+- A signed Slack message shortcut and modal for a bounded time window, one
+  primary public channel, up to four additional public channels, anchor threads,
+  a reviewer, and an explicit retention acknowledgement.
 - Immediate Slack acknowledgement followed by durable SQS FIFO handoff.
 - API Gateway HTTP API and Lambda adapters which preserve the same application
   contracts as the local Fastify API and polling worker.
@@ -29,7 +32,7 @@ Selected-channel collection and GitHub retrieval remain later increments.
   batch failure handling for FIFO ordering.
 - At-least-once worker with database-backed idempotency, optimistic locking, and
   deterministic Step Functions execution identity.
-- Checkpointed Slack thread collection in bounded 15-message pages, with
+- Checkpointed Slack channel and anchor-thread collection in bounded 15-message pages, with
   provider-directed rate-limit waits owned by Step Functions rather than a
   sleeping Lambda.
 - Idempotent Slack evidence upserts with stable source IDs, SHA-256 content
@@ -238,11 +241,11 @@ does not provision PostgreSQL, the Slack app, or remote Terraform state. The
 current hosted path uses an existing Supabase transaction pooler with its CA
 certificate verified by each database-using Lambda. Those inputs and an OpenAI
 API secret must exist before the AWS path can process a real incident. The
-current Step Functions definition collects and analyzes only the triggering
-Slack thread, generates an internal draft, and notifies Slack that human review
+current Step Functions definition uses a bounded inline Map to collect up to
+five explicitly selected Slack channels, generates an internal draft, and notifies Slack that human review
 is required. Human statement revision, reviewed answers to open questions,
 immutable history, approval, configurable Confluence/Notion publication, and
-final Slack notification are implemented; selected-channel discovery is not.
+final Slack notification are implemented. Automatic source discovery is intentionally not implemented.
 
 ## Security posture
 

@@ -46,6 +46,8 @@ describe('Lambda environment configuration', () => {
       INCIDENT_QUEUE_URL: 'https://sqs.example.test/queue.fifo',
       SLACK_SIGNING_SECRET_ARN:
         'arn:aws:secretsmanager:region:account:secret:slack',
+      SLACK_BOT_TOKEN_SECRET_ARN:
+        'arn:aws:secretsmanager:region:account:secret:slack-bot',
     });
 
     expect(environment).toMatchObject({
@@ -53,6 +55,8 @@ describe('Lambda environment configuration', () => {
       INCIDENT_QUEUE_URL: 'https://sqs.example.test/queue.fifo',
       SLACK_SIGNING_SECRET_ARN:
         'arn:aws:secretsmanager:region:account:secret:slack',
+      SLACK_BOT_TOKEN_SECRET_ARN:
+        'arn:aws:secretsmanager:region:account:secret:slack-bot',
     });
     expect(environment).not.toHaveProperty('SLACK_SIGNING_SECRET');
   });

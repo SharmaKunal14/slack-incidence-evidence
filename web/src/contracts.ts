@@ -163,6 +163,21 @@ export const bundleSchema = z
         })
         .strict(),
     ),
+    evidenceCoverage: z
+      .array(
+        z
+          .object({
+            sourceId: z.string(),
+            provider: z.string(),
+            sourceName: z.string(),
+            state: z.string(),
+            messageCount: z.number().int().nonnegative(),
+            permissionOutcome: z.string(),
+            reason: z.string().nullable(),
+          })
+          .strict(),
+      )
+      .default([]),
     openQuestions: z.array(
       z.object({ id: z.string(), question: z.string() }).strict(),
     ),

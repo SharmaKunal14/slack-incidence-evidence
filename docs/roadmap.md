@@ -1,7 +1,7 @@
 # Product and engineering roadmap
 
 Status: working plan  
-Last updated: 2026-07-18
+Last updated: 2026-07-20
 
 ## Goal
 
@@ -157,11 +157,16 @@ From a message shortcut or mention, a user selects an incident time window and e
   failure codes, bounded collector concurrency, and workflow-failure alarm.
 - A configurable retention deadline is recorded on each snapshot.
 
-Still missing from this stage are OAuth installation/token lifecycle, trusted
-conversation metadata authorization, the scoping modal, selected-channel time
-windows, reactions, a coverage manifest, and the deletion job that enforces the
-recorded retention deadline. A timestamp alone is not an enforced retention
-policy.
+The multi-channel slice also implements the signed message shortcut, scoping
+modal, bounded selected-channel windows, server-side public-channel and bot
+membership checks, optional anchor threads, durable per-source collection runs
+and checkpoints, a bounded inline Map, partial-source continuation, and an
+explicit coverage manifest in both report Markdown and the review console.
+
+Still missing from this stage are OAuth installation/token lifecycle, reactions,
+reviewer identity mapping between Slack and Cognito, and the deletion job that
+enforces the recorded retention deadline. A timestamp alone is not an enforced
+retention policy.
 
 ### Non-scope
 
