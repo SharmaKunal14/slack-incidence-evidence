@@ -7,7 +7,7 @@ usage() {
 Usage:
   deploy.sh \
     --environment development \
-    --github-subject repo:OWNER/REPOSITORY:environment:development \
+    --github-repository OWNER/REPOSITORY \
     --state-bucket BUCKET \
     --state-key incident-copilot/development/terraform.tfstate \
     --state-kms-key-arn ARN \
@@ -15,7 +15,12 @@ Usage:
     [--migration-secret-kms-key-arn ARN]
 
 The active CloudShell identity must be allowed to deploy a CloudFormation stack
-containing named IAM resources. No secret values are accepted by this script.
+containing named IAM resources. GitHub CLI must be authenticated for the target
+repository. No secret values are accepted by this script.
+
+For compatibility, --github-subject may be supplied instead of
+--github-repository, but it must be copied from the effective GitHub OIDC token
+configuration rather than constructed from repository names.
 EOF
 }
 
@@ -26,6 +31,7 @@ fail() {
 
 project_name='incident-copilot'
 environment=''
+github_repository=''
 github_subject=''
 state_bucket=''
 state_key=''
@@ -43,6 +49,11 @@ while (($# > 0)); do
     --github-subject)
       (($# >= 2)) || fail '--github-subject requires a value'
       github_subject="$2"
+      shift 2
+      ;;
+    --github-repository)
+      (($# >= 2)) || fail '--github-repository requires a value'
+      github_repository="$2"
       shift 2
       ;;
     --state-bucket)
@@ -85,8 +96,17 @@ done
   fail 'project name must be 2-30 lowercase alphanumeric or hyphen characters'
 [[ "$environment" =~ ^(development|staging|production)$ ]] ||
   fail 'environment must be development, staging, or production'
-[[ "$github_subject" =~ ^repo:[^:]+:environment:"$environment"$ ]] ||
-  fail 'GitHub subject must target the selected environment'
+[[ -z "$github_repository" || -z "$github_subject" ]] ||
+  fail 'provide either --github-repository or --github-subject, not both'
+[[ -n "$github_repository" || -n "$github_subject" ]] ||
+  fail '--github-repository or --github-subject is required'
+if [[ -n "$github_repository" ]]; then
+  [[ "$github_repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] ||
+    fail 'GitHub repository must use the OWNER/REPOSITORY format'
+else
+  [[ "$github_subject" =~ ^repo:[^:]+:environment:"$environment"$ ]] ||
+    fail 'GitHub subject must target the selected environment'
+fi
 [[ "$state_bucket" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]] ||
   fail 'state bucket name is invalid'
 [[ -n "$state_key" && "$state_key" != /* && "$state_key" != *'../'* ]] ||
@@ -94,10 +114,31 @@ done
 [[ -n "$state_kms_key_arn" ]] || fail 'state KMS key ARN is required'
 [[ -n "$migration_secret_arn" ]] || fail 'migration secret ARN is required'
 
-for command_name in aws jq; do
+for command_name in aws; do
   command -v "$command_name" >/dev/null 2>&1 ||
     fail "required command is unavailable: $command_name"
 done
+if [[ -n "$github_repository" ]]; then
+  command -v gh >/dev/null 2>&1 || fail 'required command is unavailable: gh'
+
+  github_subject_prefix="$(
+    gh api \
+      "repos/${github_repository}/actions/oidc/customization/sub" \
+      --jq '.sub_claim_prefix'
+  )"
+  legacy_subject_prefix="repo:${github_repository}"
+  if [[ "$github_subject_prefix" != "$legacy_subject_prefix" ]]; then
+    [[ "$github_subject_prefix" =~ ^repo:([^@:/]+)@([0-9]+)/([^@:/]+)@([0-9]+)$ ]] ||
+      fail 'GitHub returned an invalid OIDC subject prefix'
+    resolved_github_owner="${BASH_REMATCH[1]}"
+    resolved_github_repository="${BASH_REMATCH[3]}"
+    [[ "$resolved_github_owner" == "${github_repository%%/*}" ]] ||
+      fail 'GitHub OIDC subject owner does not match the requested repository'
+    [[ "$resolved_github_repository" == "${github_repository#*/}" ]] ||
+      fail 'GitHub OIDC subject repository does not match the requested repository'
+  fi
+  github_subject="${github_subject_prefix}:environment:${environment}"
+fi
 
 script_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 template_path="${script_directory}/deployment-role.json"
@@ -146,6 +187,7 @@ parameters=(
 
 printf 'Deploying bootstrap stack %s in account %s, region %s\n' \
   "$stack_name" "$aws_account_id" "$aws_region"
+printf 'Using GitHub OIDC subject %s\n' "$github_subject"
 
 aws cloudformation deploy \
   --template-file "$template_path" \
