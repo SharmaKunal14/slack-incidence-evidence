@@ -7,9 +7,11 @@ operator responsibility
 
 The `CI` workflow is the only automatic release path:
 
-1. Pull requests run application checks and offline Terraform validation.
-2. A push to `main` runs the same checks and creates one digest-bound release.
-3. Development deploys automatically after both verification jobs pass.
+1. Pull requests do not run this workflow; it starts once when a commit reaches
+   `main`.
+2. The `main` run performs application checks and offline Terraform validation,
+   then creates one digest-bound release.
+3. Development deploys automatically after all verification jobs pass.
 4. Staging deploys the same release only when the repository variable
    `ENABLE_STAGING_DEPLOYMENT` is exactly `true`.
 5. Production deploys the same release only when both staging succeeds and the
@@ -110,11 +112,15 @@ role trust condition is structurally:
   "Condition": {
     "StringEquals": {
       "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-      "token.actions.githubusercontent.com:sub": "repo:SharmaKunal14/slack-incidence-evidence:environment:development"
+      "token.actions.githubusercontent.com:sub": "repo:OWNER@OWNER_ID/REPOSITORY@REPOSITORY_ID:environment:development"
     }
   }
 }
 ```
+
+The owner and repository IDs are part of this repository's current immutable
+GitHub OIDC subject. Resolve the effective `sub_claim_prefix` through GitHub's
+OIDC configuration API during bootstrap; do not infer it from repository names.
 
 Replace the account and environment for other targets. Do not use a wildcard
 repository or subject. Because an environment subject does not also encode the
