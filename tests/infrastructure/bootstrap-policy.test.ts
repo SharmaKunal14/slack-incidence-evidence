@@ -174,6 +174,40 @@ describe('deployment bootstrap policy', () => {
     });
   });
 
+  it('grants scoped AWS reads required by the deployment smoke test', async () => {
+    const template = await loadTemplate();
+    const statements = policyStatements(template);
+    const functions = statements.find(
+      ({ Sid }) => Sid === 'ManageEnvironmentFunctions',
+    );
+    const distribution = statements.find(
+      ({ Sid }) => Sid === 'ManageTaggedReviewDistribution',
+    );
+    const smokeTest = await readFile(
+      resolve('src/deployment/smoke-deployment.ts'),
+      'utf8',
+    );
+
+    expect(smokeTest).toContain("'get-function-configuration'");
+    expect(smokeTest).toContain("'create-invalidation'");
+    expect(smokeTest).toContain("'invalidation-completed'");
+    expect(functions?.Action).toContain('lambda:GetFunctionConfiguration');
+    expect(functions?.Resource).toEqual({
+      'Fn::Sub':
+        'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-${Environment}-*',
+    });
+    expect(distribution?.Action).toEqual(
+      expect.arrayContaining([
+        'cloudfront:CreateInvalidation',
+        'cloudfront:GetInvalidation',
+      ]),
+    );
+    expect(distribution?.Resource).toEqual({
+      'Fn::Sub':
+        'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*',
+    });
+  });
+
   it('grants the provider read access required to manage the environment workflow', async () => {
     const template = await loadTemplate();
     const statements = policyStatements(template);
