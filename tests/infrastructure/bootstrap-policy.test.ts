@@ -174,6 +174,28 @@ describe('deployment bootstrap policy', () => {
     });
   });
 
+  it('grants the provider read access required to manage the environment workflow', async () => {
+    const template = await loadTemplate();
+    const statements = policyStatements(template);
+    const management = statements.find(
+      ({ Sid }) => Sid === 'ManageEnvironmentStateMachine',
+    );
+    const validation = statements.find(
+      ({ Sid }) => Sid === 'ValidateStateMachineDefinition',
+    );
+
+    expect(management?.Action).toContain('states:ListStateMachineVersions');
+    expect(management?.Action).not.toContain('states:DeleteStateMachine');
+    expect(management?.Resource).toEqual({
+      'Fn::Sub':
+        'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-${Environment}-*',
+    });
+    expect(validation).toMatchObject({
+      Action: 'states:ValidateStateMachineDefinition',
+      Resource: '*',
+    });
+  });
+
   it('attaches the permissions boundary to every Terraform-created role', async () => {
     const terraform = `${await readFile(
       resolve('infrastructure/terraform/main.tf'),
