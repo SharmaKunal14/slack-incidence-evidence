@@ -39,6 +39,31 @@ function policyStatements(
 }
 
 describe('deployment bootstrap policy', () => {
+  it('resolves the current GitHub OIDC subject prefix', async () => {
+    const script = await readFile(
+      resolve('infrastructure/bootstrap/deploy.sh'),
+      'utf8',
+    );
+    const runbook = await readFile(
+      resolve('infrastructure/bootstrap/README.md'),
+      'utf8',
+    );
+
+    expect(script).toContain(
+      'repos/${github_repository}/actions/oidc/customization/sub',
+    );
+    expect(script).toContain("--jq '.sub_claim_prefix'");
+    expect(script).toContain(
+      'github_subject="${github_subject_prefix}:environment:${environment}"',
+    );
+    expect(runbook).toContain(
+      "--github-repository 'SharmaKunal14/slack-incidence-evidence'",
+    );
+    expect(runbook).not.toContain(
+      'repo:SharmaKunal14/slack-incidence-evidence:environment:development',
+    );
+  });
+
   it('never grants wildcard actions or administrative managed policies', async () => {
     const template = await loadTemplate();
     const statements = policyStatements(template);

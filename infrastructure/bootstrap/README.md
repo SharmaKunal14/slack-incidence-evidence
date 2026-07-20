@@ -60,16 +60,22 @@ Deploy the bootstrap stack:
 ```bash
 ./infrastructure/bootstrap/deploy.sh \
   --environment development \
-  --github-subject 'repo:SharmaKunal14/slack-incidence-evidence:environment:development' \
+  --github-repository 'SharmaKunal14/slack-incidence-evidence' \
   --state-bucket "$TF_STATE_BUCKET" \
   --state-key "$TF_STATE_KEY" \
   --state-kms-key-arn "$TF_STATE_KMS_KEY_ARN" \
   --migration-secret-arn "$MIGRATION_SECRET_ARN"
 ```
 
-The script validates the active account and region, validates referenced AWS
-resources, deploys the named-IAM CloudFormation stack, enables stack termination
-protection, and prints two outputs.
+The script asks GitHub for the repository's current OIDC `sub_claim_prefix`,
+validates that it belongs to the requested repository, and appends the selected
+environment. This supports both legacy name-based subjects and immutable
+owner/repository-ID subjects. Do not construct the subject manually: repositories
+created or moved after GitHub's immutable-subject rollout use a different value.
+
+The script also validates the active account and region, validates referenced
+AWS resources, deploys the named-IAM CloudFormation stack, enables stack
+termination protection, and prints the stack outputs.
 
 Set those outputs on the existing GitHub Environment:
 
