@@ -619,6 +619,7 @@
                 "lambda:GetFunction",
                 "lambda:GetFunctionCodeSigningConfig",
                 "lambda:GetFunctionConcurrency",
+                "lambda:GetFunctionConfiguration",
                 "lambda:GetPolicy",
                 "lambda:GetRuntimeManagementConfig",
                 "lambda:ListTags",
