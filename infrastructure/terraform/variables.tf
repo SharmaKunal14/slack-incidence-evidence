@@ -561,6 +561,17 @@ variable "slack_thread_max_pages" {
   }
 }
 
+variable "slack_auto_thread_max_count" {
+  description = "Maximum number of non-anchor Slack threads automatically expanded per selected channel."
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.slack_auto_thread_max_count >= 1 && var.slack_auto_thread_max_count <= 500
+    error_message = "slack_auto_thread_max_count must be between 1 and 500."
+  }
+}
+
 variable "incident_analysis_memory_mb" {
   description = "Memory assigned to structured incident analysis."
   type        = number

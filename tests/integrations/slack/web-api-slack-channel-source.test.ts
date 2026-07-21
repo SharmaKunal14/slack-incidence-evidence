@@ -40,8 +40,18 @@ describe('SlackChannelWebApiSource', () => {
         json({
           ok: true,
           messages: [
-            { type: 'message', ts: '1784514600.000100', text: 'inside' },
-            { type: 'message', ts: '1784511000.000100', text: 'outside' },
+            {
+              type: 'message',
+              ts: '1784514600.000100',
+              text: 'inside',
+              reply_count: 2,
+            },
+            {
+              type: 'message',
+              ts: '1784511000.000100',
+              text: 'outside',
+              reply_count: 3,
+            },
           ],
           response_metadata: { next_cursor: '' },
         }),
@@ -62,6 +72,7 @@ describe('SlackChannelWebApiSource', () => {
       outcome: 'page',
       displayName: 'incident-checkout',
       messages: [{ text: 'inside' }],
+      threadRootTimestamps: ['1784514600.000100'],
       nextCursor: null,
     });
     const historyRequest = request.mock.calls[1]?.[0];
@@ -104,6 +115,56 @@ describe('SlackChannelWebApiSource', () => {
       terminalStatus: 'INACCESSIBLE',
     } satisfies Partial<SlackChannelSourceError>);
     expect(request).toHaveBeenCalledOnce();
+  });
+
+  it('does not mistake a broadcast reply for a thread root', async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({
+          ok: true,
+          channel: {
+            id: 'C001',
+            name: 'incident-checkout',
+            is_channel: true,
+            is_private: false,
+            is_member: true,
+            is_ext_shared: false,
+            is_org_shared: false,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          ok: true,
+          messages: [
+            {
+              type: 'message',
+              ts: '1784514600.000100',
+              thread_ts: '1784514500.000050',
+              reply_count: 1,
+              text: 'broadcast reply',
+            },
+          ],
+          response_metadata: { next_cursor: '' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          ok: true,
+          channel: 'C001',
+          permalink: 'https://acme.slack.com/archives/C001/p1784514600000100',
+        }),
+      );
+    const source = new SlackChannelWebApiSource(
+      { workspaceId: 'T001', botToken: 'xoxb-test' },
+      { request },
+    );
+
+    await expect(source.fetchPage(input)).resolves.toMatchObject({
+      outcome: 'page',
+      threadRootTimestamps: [],
+    });
   });
 
   it('returns provider-directed waiting without reading a response body', async () => {

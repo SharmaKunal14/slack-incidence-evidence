@@ -159,9 +159,10 @@ From a message shortcut or mention, a user selects an incident time window and e
 
 The multi-channel slice also implements the signed message shortcut, scoping
 modal, bounded selected-channel windows, server-side public-channel and bot
-membership checks, optional anchor threads, durable per-source collection runs
-and checkpoints, a bounded inline Map, partial-source continuation, and an
-explicit coverage manifest in both report Markdown and the review console.
+membership checks, bounded automatic expansion of in-window threads, optional
+additional anchor threads, durable per-source collection runs and checkpoints,
+a bounded inline Map, partial-source continuation, and an explicit coverage
+manifest in both report Markdown and the review console.
 
 Still missing from this stage are OAuth installation/token lifecycle, reactions,
 reviewer identity mapping between Slack and Cognito, and the deletion job that

@@ -15,6 +15,7 @@ export interface IncidentSourceCollection {
   readonly requestedStartAt: Date;
   readonly requestedEndAt: Date;
   readonly anchorThreadTimestamps: readonly string[];
+  readonly discoveredThreadTimestamps: readonly string[];
   readonly status: IncidentSourceStatus;
   readonly phase: CollectionPhase;
   readonly anchorIndex: number;
@@ -47,6 +48,7 @@ export interface AdvanceIncidentSourceCollectionInput {
   readonly nextPhase: CollectionPhase;
   readonly nextAnchorIndex: number;
   readonly nextCursor: string | null;
+  readonly nextDiscoveredThreadTimestamps: readonly string[];
   readonly completed: boolean;
   readonly observedAt: Date;
 }

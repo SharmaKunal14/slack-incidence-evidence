@@ -59,6 +59,7 @@ evidence_retention_days = 30
 # page of 15 replies. This prevents a bad cursor or an unexpectedly large
 # thread from creating an unbounded workflow.
 slack_thread_max_pages = 100
+slack_auto_thread_max_count = 50
 
 # Leave both empty for Supabase's public TLS endpoint. If a later deployment
 # uses PrivateLink or another private endpoint, populate both lists and provide

@@ -24,6 +24,7 @@ export type FetchSlackChannelPageResult =
   | {
       readonly outcome: 'page';
       readonly messages: readonly SlackChannelSourceMessage[];
+      readonly threadRootTimestamps: readonly string[];
       readonly nextCursor: string | null;
       readonly displayName?: string;
     }

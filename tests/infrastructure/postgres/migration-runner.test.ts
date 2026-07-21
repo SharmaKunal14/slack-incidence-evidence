@@ -57,6 +57,7 @@ describe('runMigrations', () => {
         '0007_configurable_report_publisher.sql',
         '0008_review_question_answers.sql',
         '0009_multi_channel_incident_sources.sql',
+        '0010_auto_discovered_slack_threads.sql',
       ],
       alreadyApplied: 0,
     });

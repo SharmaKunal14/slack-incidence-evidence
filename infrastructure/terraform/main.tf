@@ -1119,6 +1119,7 @@ resource "aws_lambda_function" "slack_evidence_collector" {
       LOG_LEVEL                           = var.log_level
       NODE_ENV                            = local.node_env
       SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
+      SLACK_AUTO_THREAD_MAX_COUNT         = tostring(var.slack_auto_thread_max_count)
       SLACK_THREAD_MAX_PAGES              = tostring(var.slack_thread_max_pages)
     }
   }

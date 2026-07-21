@@ -1,11 +1,11 @@
 display_information:
-  name: Incident Evidence Copilot
-  description: Creates evidence-backed incident review workflows from Slack.
+  name: OnRecord
+  description: Builds evidence-backed incident records your team can trust.
   background_color: '#172033'
 
 features:
   bot_user:
-    display_name: Incident Copilot
+    display_name: OnRecord
     always_online: false
   shortcuts:
     - name: Scope incident evidence

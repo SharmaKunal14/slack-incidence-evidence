@@ -21,6 +21,8 @@ const messageSchema = z
     type: z.literal('message'),
     ts: timestampSchema,
     text: z.string().max(100_000).default(''),
+    reply_count: z.number().int().nonnegative().max(1_000_000).optional(),
+    thread_ts: timestampSchema.optional(),
     user: z
       .string()
       .regex(/^[A-Z][A-Z0-9]{1,63}$/)
@@ -190,6 +192,17 @@ export class SlackChannelWebApiSource implements SlackChannelSource {
       return {
         outcome: 'page',
         messages: withPermalinks,
+        threadRootTimestamps:
+          input.phase === 'CHANNEL'
+            ? messages
+                .filter(
+                  (message) =>
+                    (message.reply_count ?? 0) > 0 &&
+                    (message.thread_ts === undefined ||
+                      message.thread_ts === message.ts),
+                )
+                .map((message) => message.ts)
+            : [],
         nextCursor: nextCursor.length === 0 ? null : nextCursor,
         ...(displayName === undefined ? {} : { displayName }),
       };

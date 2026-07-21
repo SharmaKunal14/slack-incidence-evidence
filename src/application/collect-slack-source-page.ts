@@ -15,6 +15,9 @@ import {
 } from './ports/slack-channel-source.js';
 
 const MAX_RATE_LIMIT_WAIT_SECONDS = 900;
+const MAX_DISCOVERED_THREADS_HARD_LIMIT = 500;
+const DEFAULT_MAX_DISCOVERED_THREADS = 50;
+const slackTimestampPattern = /^\d{1,20}\.\d{1,20}$/u;
 
 export interface CollectSlackSourcePageInput {
   readonly tenantId: string;
@@ -44,9 +47,19 @@ export class CollectSlackSourcePage {
     private readonly clock: Clock,
     private readonly idGenerator: IdGenerator,
     private readonly maxPages = 1_000,
+    private readonly maxDiscoveredThreads = DEFAULT_MAX_DISCOVERED_THREADS,
   ) {
     if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 1_000) {
       throw new Error('Slack source page limit must be between 1 and 1000');
+    }
+    if (
+      !Number.isSafeInteger(maxDiscoveredThreads) ||
+      maxDiscoveredThreads < 1 ||
+      maxDiscoveredThreads > MAX_DISCOVERED_THREADS_HARD_LIMIT
+    ) {
+      throw new Error(
+        'Slack discovered thread limit must be between 1 and 500',
+      );
     }
   }
 
@@ -69,7 +82,7 @@ export class CollectSlackSourcePage {
 
     const threadTs =
       collection.phase === 'ANCHOR_THREAD'
-        ? collection.anchorThreadTimestamps[collection.anchorIndex]
+        ? collectionThreadTimestamps(collection)[collection.anchorIndex]
         : undefined;
     if (collection.phase === 'ANCHOR_THREAD' && threadTs === undefined) {
       return this.finishFailure(collection, 'SLACK_ANCHOR_CHECKPOINT_INVALID');
@@ -101,7 +114,25 @@ export class CollectSlackSourcePage {
       if (page.nextCursor !== null && page.nextCursor === collection.cursor) {
         return this.finishFailure(collection, 'SLACK_CURSOR_DID_NOT_ADVANCE');
       }
-      const next = nextCheckpoint(collection, page.nextCursor);
+      const nextDiscoveredThreadTimestamps =
+        collection.phase === 'CHANNEL'
+          ? mergeDiscoveredThreads(
+              collection,
+              page.threadRootTimestamps,
+              this.maxDiscoveredThreads,
+            )
+          : collection.discoveredThreadTimestamps;
+      if (nextDiscoveredThreadTimestamps === null) {
+        return this.finishFailure(
+          collection,
+          'SLACK_DISCOVERED_THREAD_LIMIT_EXCEEDED',
+        );
+      }
+      const next = nextCheckpoint(
+        collection,
+        page.nextCursor,
+        nextDiscoveredThreadTimestamps,
+      );
       const observedAt = this.clock.now();
       const retentionExpiresAt = new Date(
         observedAt.getTime() + collection.retentionDays * 86_400_000,
@@ -117,6 +148,7 @@ export class CollectSlackSourcePage {
         nextPhase: next.phase,
         nextAnchorIndex: next.anchorIndex,
         nextCursor: next.cursor,
+        nextDiscoveredThreadTimestamps,
         completed: next.phase === 'COMPLETE',
         observedAt,
       });
@@ -227,6 +259,7 @@ export class CollectSlackSourcePage {
 function nextCheckpoint(
   collection: IncidentSourceCollection,
   nextCursor: string | null,
+  discoveredThreadTimestamps: readonly string[],
 ): {
   readonly phase: CollectionPhase;
   readonly anchorIndex: number;
@@ -240,14 +273,48 @@ function nextCheckpoint(
     };
   }
   if (collection.phase === 'CHANNEL') {
-    return collection.anchorThreadTimestamps.length > 0
+    return collectionThreadTimestamps(collection, discoveredThreadTimestamps)
+      .length > 0
       ? { phase: 'ANCHOR_THREAD', anchorIndex: 0, cursor: null }
       : { phase: 'COMPLETE', anchorIndex: 0, cursor: null };
   }
   const nextAnchor = collection.anchorIndex + 1;
-  return nextAnchor < collection.anchorThreadTimestamps.length
+  return nextAnchor <
+    collectionThreadTimestamps(collection, discoveredThreadTimestamps).length
     ? { phase: 'ANCHOR_THREAD', anchorIndex: nextAnchor, cursor: null }
     : { phase: 'COMPLETE', anchorIndex: nextAnchor, cursor: null };
+}
+
+function mergeDiscoveredThreads(
+  collection: IncidentSourceCollection,
+  pageThreadTimestamps: readonly string[],
+  limit: number,
+): readonly string[] | null {
+  const explicitAnchors = new Set(collection.anchorThreadTimestamps);
+  const discovered = new Set(collection.discoveredThreadTimestamps);
+  for (const timestamp of pageThreadTimestamps) {
+    if (!slackTimestampPattern.test(timestamp)) {
+      throw new SlackChannelSourceError('SLACK_INVALID_RESPONSE', true);
+    }
+    if (!explicitAnchors.has(timestamp)) {
+      discovered.add(timestamp);
+    }
+    if (discovered.size > limit) {
+      return null;
+    }
+  }
+  return [...discovered];
+}
+
+function collectionThreadTimestamps(
+  collection: IncidentSourceCollection,
+  discoveredThreadTimestamps = collection.discoveredThreadTimestamps,
+): readonly string[] {
+  const timestamps = new Set(collection.anchorThreadTimestamps);
+  for (const timestamp of discoveredThreadTimestamps) {
+    timestamps.add(timestamp);
+  }
+  return [...timestamps];
 }
 
 function completedResult(

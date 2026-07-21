@@ -23,6 +23,7 @@ interface CollectionRow {
   readonly requested_start_at: Date | string;
   readonly requested_end_at: Date | string;
   readonly anchor_thread_timestamps: string[];
+  readonly discovered_thread_timestamps: string[];
   readonly status: IncidentSourceStatus;
   readonly phase: IncidentSourceCollection['phase'];
   readonly anchor_index: number;
@@ -48,6 +49,7 @@ const COLLECTION_QUERY = `
     source.requested_start_at,
     source.requested_end_at,
     source.anchor_thread_timestamps,
+    checkpoint.discovered_thread_timestamps,
     source.status,
     checkpoint.phase,
     checkpoint.anchor_index,
@@ -274,20 +276,22 @@ export class PostgresIncidentSourceCollectionRepository implements IncidentSourc
           SET phase = $1,
               anchor_index = $2,
               collection_cursor = $3,
+              discovered_thread_timestamps = $4,
               pages_collected = pages_collected + 1,
-              collected_message_count = $4,
-              last_collected_at = COALESCE($5, last_collected_at),
+              collected_message_count = $5,
+              last_collected_at = COALESCE($6, last_collected_at),
               rate_limited_until = NULL,
-              updated_at = $6,
+              updated_at = $7,
               version = version + 1
-          WHERE tenant_id = $7 AND incident_id = $8 AND source_id = $9 AND run_id = $10
-            AND version = $11 AND phase = $12
-            AND collection_cursor IS NOT DISTINCT FROM $13
+          WHERE tenant_id = $8 AND incident_id = $9 AND source_id = $10 AND run_id = $11
+            AND version = $12 AND phase = $13
+            AND collection_cursor IS NOT DISTINCT FROM $14
         `,
         [
           input.nextPhase,
           input.nextAnchorIndex,
           input.nextCursor,
+          input.nextDiscoveredThreadTimestamps,
           messageCount,
           latestMessageAt(input.messages),
           input.observedAt,
@@ -663,6 +667,7 @@ function requireCollection(
     requestedStartAt: toDate(row.requested_start_at),
     requestedEndAt: toDate(row.requested_end_at),
     anchorThreadTimestamps: row.anchor_thread_timestamps,
+    discoveredThreadTimestamps: row.discovered_thread_timestamps,
     status: row.status,
     phase: row.phase,
     anchorIndex: row.anchor_index,

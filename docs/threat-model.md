@@ -5,7 +5,7 @@ Last updated: 2026-07-19
 
 ## Scope
 
-This threat model covers the Incident Evidence Copilot foundation:
+This threat model covers the OnRecord foundation:
 
 ```text
 Slack signed request -> API Gateway -> ingress Lambda -> SQS FIFO -> worker Lambda -> PostgreSQL + Step Functions -> collector + analysis + report + notification Lambdas -> Slack/OpenAI APIs + PostgreSQL -> Cognito-authenticated review console/API
