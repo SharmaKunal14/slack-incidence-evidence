@@ -116,9 +116,9 @@ export class PostgresIncidentSourceCollectionRepository implements IncidentSourc
           INSERT INTO source_collection_runs (
             id, tenant_id, incident_id, source_id, run_version,
             idempotency_identity, status, requested_start_at,
-            requested_end_at, started_at, updated_at
+            requested_end_at, started_at, created_at, updated_at
           )
-          VALUES ($1, $2, $3, $4, 1, $5, 'COLLECTING', $6, $7, $8, $8)
+          VALUES ($1, $2, $3, $4, 1, $5, 'COLLECTING', $6, $7, $8, $8, $8)
           ON CONFLICT (tenant_id, incident_id, source_id, run_version) DO NOTHING
         `,
         [
@@ -149,9 +149,9 @@ export class PostgresIncidentSourceCollectionRepository implements IncidentSourc
       await client.query(
         `
           INSERT INTO source_collection_checkpoints (
-            tenant_id, incident_id, source_id, run_id, phase, updated_at
+            tenant_id, incident_id, source_id, run_id, phase, created_at, updated_at
           )
-          VALUES ($1, $2, $3, $4, $5, $6)
+          VALUES ($1, $2, $3, $4, $5, $6, $6)
           ON CONFLICT (tenant_id, incident_id, source_id, run_id) DO NOTHING
         `,
         [
@@ -177,9 +177,9 @@ export class PostgresIncidentSourceCollectionRepository implements IncidentSourc
         `
           INSERT INTO source_coverage_manifests (
             tenant_id, incident_id, source_id, manifest_version, source_state,
-            requested_start_at, requested_end_at, updated_at
+            requested_start_at, requested_end_at, created_at, updated_at
           )
-          VALUES ($1, $2, $3, 1, 'COLLECTING', $4, $5, $6)
+          VALUES ($1, $2, $3, 1, 'COLLECTING', $4, $5, $6, $6)
           ON CONFLICT (tenant_id, incident_id, source_id, manifest_version) DO NOTHING
         `,
         [

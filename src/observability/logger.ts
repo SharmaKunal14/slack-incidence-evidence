@@ -40,6 +40,7 @@ export function createLogger(level: string): Logger {
 export function serializeError(error: unknown): {
   readonly type: string;
   readonly code?: string;
+  readonly constraint?: string;
 } {
   if (!(error instanceof Error)) {
     return { type: 'UnknownError' };
@@ -51,8 +52,16 @@ export function serializeError(error: unknown): {
     /^[A-Za-z0-9_.-]{1,64}$/.test(candidateCode)
       ? candidateCode
       : undefined;
+  const candidateConstraint = (error as Error & { constraint?: unknown })
+    .constraint;
+  const constraint =
+    typeof candidateConstraint === 'string' &&
+    /^[A-Za-z0-9_]{1,128}$/.test(candidateConstraint)
+      ? candidateConstraint
+      : undefined;
   return {
     type: error.name,
     ...(code === undefined ? {} : { code }),
+    ...(constraint === undefined ? {} : { constraint }),
   };
 }
