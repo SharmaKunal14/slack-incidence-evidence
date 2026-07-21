@@ -30,6 +30,7 @@ import {
 import {
   Component,
   useEffect,
+  useRef,
   useState,
   type ChangeEvent,
   type ReactNode,
@@ -60,6 +61,11 @@ import {
   requiresPreservedRevisionFetch,
 } from './revision-view.js';
 import { safeSourceUrl } from './safe-source-url.js';
+import {
+  clearEvidenceFocus,
+  focusEvidenceSource,
+  type EvidenceFocus,
+} from './evidence-focus.js';
 
 type InboxFilter = 'ALL' | 'NEEDS_REVIEW' | 'APPROVED';
 type EvidenceTab = 'questions' | 'claims' | 'timeline' | 'evidence';
@@ -485,6 +491,11 @@ function IncidentWorkspace({
 }): ReactNode {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<EvidenceTab>('questions');
+  const [pendingEvidenceFocus, setPendingEvidenceFocus] = useState<{
+    readonly id: string;
+    readonly trigger: HTMLButtonElement;
+  } | null>(null);
+  const evidenceFocus = useRef<EvidenceFocus | null>(null);
   const [statementStates, setStatementStates] = useState(() =>
     createStatementStates(bundle),
   );
@@ -649,10 +660,34 @@ function IncidentWorkspace({
   const busy = saveRevision.isPending || approveRevision.isPending;
   const operationError = saveRevision.error ?? approveRevision.error;
 
-  const openSource = (id: string): void => {
+  useEffect(() => {
+    if (pendingEvidenceFocus === null) return;
+    let followUpFrame: number | undefined;
+    const frame = window.requestAnimationFrame(() => {
+      followUpFrame = window.requestAnimationFrame(() => {
+        evidenceFocus.current = focusEvidenceSource(
+          pendingEvidenceFocus.id,
+          pendingEvidenceFocus.trigger,
+        );
+        setPendingEvidenceFocus(null);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (followUpFrame !== undefined) {
+        window.cancelAnimationFrame(followUpFrame);
+      }
+    };
+  }, [activeTab, pendingEvidenceFocus]);
+
+  useEffect(() => () => clearEvidenceFocus(evidenceFocus.current), []);
+
+  const openSource = (id: string, trigger: HTMLButtonElement): void => {
     const targetTab = sourceTab(bundle, id);
+    clearEvidenceFocus(evidenceFocus.current);
+    evidenceFocus.current = null;
     setActiveTab(targetTab);
-    window.setTimeout(() => highlightSource(id), 0);
+    setPendingEvidenceFocus({ id, trigger });
   };
 
   return (
@@ -900,7 +935,7 @@ export function StatementEditor({
 }: {
   readonly editable: boolean;
   readonly onChange: (state: StatementState) => void;
-  readonly onOpenSource: (id: string) => void;
+  readonly onOpenSource: (id: string, trigger: HTMLButtonElement) => void;
   readonly state: StatementState;
   readonly statement: Statement;
 }): ReactNode {
@@ -982,7 +1017,7 @@ export function StatementEditor({
             <button
               className="source-chip"
               key={sourceId}
-              onClick={() => onOpenSource(sourceId)}
+              onClick={(event) => onOpenSource(sourceId, event.currentTarget)}
             >
               <Link2 size={13} aria-hidden="true" /> Source {shortId(sourceId)}
             </button>
@@ -1005,7 +1040,7 @@ function EvidenceWorkspace({
   readonly activeTab: EvidenceTab;
   readonly bundle: Bundle;
   readonly editable: boolean;
-  readonly onOpenSource: (id: string) => void;
+  readonly onOpenSource: (id: string, trigger: HTMLButtonElement) => void;
   readonly onQuestionAnswerChange: (questionId: string, answer: string) => void;
   readonly onTabChange: (tab: EvidenceTab) => void;
   readonly questionAnswers: Readonly<Record<string, string>>;
@@ -1186,7 +1221,9 @@ function EvidenceWorkspace({
                   <button
                     className="source-chip"
                     key={evidenceId}
-                    onClick={() => onOpenSource(evidenceId)}
+                    onClick={(event) =>
+                      onOpenSource(evidenceId, event.currentTarget)
+                    }
                   >
                     <Link2 size={13} /> Evidence {shortId(evidenceId)}
                   </button>
@@ -1214,7 +1251,9 @@ function EvidenceWorkspace({
                   <button
                     className="source-chip"
                     key={evidenceId}
-                    onClick={() => onOpenSource(evidenceId)}
+                    onClick={(event) =>
+                      onOpenSource(evidenceId, event.currentTarget)
+                    }
                   >
                     <Link2 size={13} /> Evidence {shortId(evidenceId)}
                   </button>
@@ -1726,19 +1765,6 @@ function sourceTab(bundle: Bundle, id: string): EvidenceTab {
   if (bundle.claims.some((claim) => claim.id === id)) return 'claims';
   if (bundle.timeline.some((event) => event.id === id)) return 'timeline';
   return 'evidence';
-}
-
-function highlightSource(id: string): void {
-  const source = document.getElementById(`source-${id}`);
-  if (source === null) return;
-  source.classList.add('highlight');
-  source.scrollIntoView({
-    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      ? 'auto'
-      : 'smooth',
-    block: 'center',
-  });
-  window.setTimeout(() => source.classList.remove('highlight'), 2_000);
 }
 
 function userFacingError(error: unknown): string {
