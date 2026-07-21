@@ -97,6 +97,14 @@ jobs:
           terraform -chdir=infrastructure/terraform plan -input=false -lock-timeout=5m -var-file=../../artifacts/deployment.auto.tfvars.json -out=tfplan
           terraform -chdir=infrastructure/terraform show -json tfplan | npm run deployment:check-plan
 
+
+      - name: Show deployment run identity
+        run: |
+          echo "head_sha=$GITHUB_SHA"
+          echo "workflow_sha=$GITHUB_WORKFLOW_SHA"
+          echo "run_id=$GITHUB_RUN_ID"
+          echo "run_attempt=$GITHUB_RUN_ATTEMPT"
+
       - name: Apply forward-only database migrations
         run: npm run db:migrate:aws
 
