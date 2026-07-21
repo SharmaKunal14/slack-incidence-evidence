@@ -1580,6 +1580,7 @@ a {
   max-height: 66rem;
   gap: 0.65rem;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0.85rem;
   scrollbar-color: #c5d0cb transparent;
   scrollbar-width: thin;
@@ -1894,11 +1895,23 @@ a {
   font-size: 0.85rem;
 }
 
-.highlight {
-  border-color: #d99a2f !important;
-  animation: evidence-highlight 1.6s ease-out;
-  box-shadow: 0 0 0 5px rgb(217 154 47 / 12%) !important;
-  scroll-margin: 2rem;
+.evidence-card.source-focus-target,
+.source-card.source-focus-target,
+.timeline-card.source-focus-target {
+  border-color: #d99a2f;
+  background: #fffaf0;
+  box-shadow: 0 0 0 4px rgb(217 154 47 / 14%);
+}
+
+.source-chip.source-focus-trigger {
+  border-color: #d99a2f;
+  background: #fff7e5;
+  color: #8b5914;
+  box-shadow: 0 0 0 3px rgb(217 154 47 / 14%);
+}
+
+.source-focus-pulse {
+  animation: evidence-focus-arrival 1.8s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Review checkpoint */
@@ -2205,13 +2218,22 @@ a {
   }
 }
 
-@keyframes evidence-highlight {
-  0%,
-  100% {
-    background: #fff;
+@keyframes evidence-focus-arrival {
+  0% {
+    border-color: #bd7412;
+    background: #ffedbe;
+    box-shadow: 0 0 0 9px rgb(217 154 47 / 28%);
   }
-  30% {
-    background: #fff9e9;
+  100% {
+    border-color: #d99a2f;
+    background: #fff7e5;
+    box-shadow: 0 0 0 3px rgb(217 154 47 / 14%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .source-focus-pulse {
+    animation: none;
   }
 }
 

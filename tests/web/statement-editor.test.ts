@@ -23,7 +23,7 @@ afterEach(cleanup);
 function Harness({
   onOpenSource,
 }: {
-  readonly onOpenSource: (id: string) => void;
+  readonly onOpenSource: (id: string, trigger: HTMLButtonElement) => void;
 }): ReactNode {
   const [state, setState] = useState<StatementState>({
     decision: 'KEEP',
@@ -63,6 +63,9 @@ describe('StatementEditor', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Source claim-1/u }));
 
-    expect(onOpenSource).toHaveBeenCalledExactlyOnceWith('claim-1');
+    expect(onOpenSource).toHaveBeenCalledExactlyOnceWith(
+      'claim-1',
+      expect.any(HTMLButtonElement),
+    );
   });
 });
