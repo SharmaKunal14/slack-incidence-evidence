@@ -3,6 +3,10 @@ import { hostname } from 'node:os';
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Pool, PoolClient } from 'pg';
+import {
+  readMigrationLedgerSnapshot,
+  summarizeMigrationLedgerSnapshot,
+} from './migration-ledger-diagnostic.js';
 
 const MIGRATION_FILE_PATTERN =
   /^(?<version>[0-9]+)_(?<description>[a-z0-9_]+)\.sql$/;
@@ -304,6 +308,20 @@ export async function runMigrations(
           executionTimeMs,
         },
         'PostgreSQL migration applied',
+      );
+    }
+
+    if (options.logger !== undefined) {
+      const latestMigrationVersion = migrations.at(-1)?.versionText ?? '0';
+      const snapshot = await readMigrationLedgerSnapshot(
+        client,
+        latestMigrationVersion,
+      );
+      options.logger.info(
+        {
+          migrationLedgerDiagnostic: summarizeMigrationLedgerSnapshot(snapshot),
+        },
+        'PostgreSQL post-migration ledger snapshot captured',
       );
     }
 
