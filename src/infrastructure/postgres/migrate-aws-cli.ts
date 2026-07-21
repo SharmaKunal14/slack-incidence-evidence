@@ -5,7 +5,10 @@ import { parseDatabaseConnectionSecret } from '../../config/runtime-secrets.js';
 import { createLogger } from '../../observability/logger.js';
 import { SecretsManagerSecretReader } from '../secrets/secrets-manager-secret-reader.js';
 import { runMigrations } from './migration-runner.js';
-import { assertDatabaseSchemaCompatible } from './schema-compatibility.js';
+import {
+  assertDatabaseSchemaCompatible,
+  DatabaseSchemaCompatibilityError,
+} from './schema-compatibility.js';
 
 const environment = loadDatabaseMigrationEnvironment();
 const logger = createLogger(environment.LOG_LEVEL);
@@ -57,7 +60,16 @@ try {
     'PostgreSQL release migrations and schema verification complete',
   );
 } catch (error) {
-  logger.fatal({ err: error }, 'PostgreSQL release migration failed');
+  logger.fatal(
+    {
+      err: error,
+      ...(error instanceof DatabaseSchemaCompatibilityError &&
+      error.diagnostic !== undefined
+        ? { migrationLedgerDiagnostic: error.diagnostic }
+        : {}),
+    },
+    'PostgreSQL release migration failed',
+  );
   process.exitCode = 1;
 } finally {
   secrets.destroy();

@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { describe, expect, it, vi } from 'vitest';
 import {
   MigrationIntegrityError,
   runMigrations,
 } from '../../../src/infrastructure/postgres/migration-runner.js';
+import { REQUIRED_SCHEMA_MIGRATIONS } from '../../../src/infrastructure/postgres/schema-compatibility.js';
 
 function result<Row extends QueryResultRow>(
   rows: Row[],
@@ -18,12 +20,21 @@ function result<Row extends QueryResultRow>(
   };
 }
 
-function poolWithAppliedRows(appliedRows: readonly QueryResultRow[]): {
+function poolWithAppliedRows(
+  appliedRows: readonly QueryResultRow[],
+  diagnosticRows: readonly QueryResultRow[] = [],
+): {
   readonly pool: Pool;
   readonly query: ReturnType<typeof vi.fn>;
+  readonly queriedSql: readonly string[];
   readonly release: ReturnType<typeof vi.fn>;
 } {
+  const queriedSql: string[] = [];
   const query = vi.fn((sql: string): Promise<QueryResult<QueryResultRow>> => {
+    queriedSql.push(sql);
+    if (sql.includes('WITH connection_metadata AS')) {
+      return Promise.resolve(result([...diagnosticRows]));
+    }
     if (sql.includes('SELECT version::text')) {
       return Promise.resolve(result([...appliedRows]));
     }
@@ -34,7 +45,20 @@ function poolWithAppliedRows(appliedRows: readonly QueryResultRow[]): {
   const pool = {
     connect: vi.fn().mockResolvedValue(client),
   } as unknown as Pool;
-  return { pool, query, release };
+  return { pool, query, queriedSql, release };
+}
+
+function expectedLedgerIdentityHash(
+  migrations: readonly { readonly version: string; readonly name: string }[],
+): string {
+  const hash = createHash('sha256');
+  for (const migration of migrations) {
+    hash.update(migration.version, 'utf8');
+    hash.update('\0');
+    hash.update(migration.name, 'utf8');
+    hash.update('\0');
+  }
+  return hash.digest('hex');
 }
 
 describe('runMigrations', () => {
@@ -141,5 +165,55 @@ describe('runMigrations', () => {
       [expect.any(String)],
     );
     expect(release).toHaveBeenCalledOnce();
+  });
+
+  it('captures a bounded post-migration ledger diagnostic before unlocking', async () => {
+    const diagnosticRows = REQUIRED_SCHEMA_MIGRATIONS.map(
+      ({ version, name }) => ({
+        backend_pid: '4312',
+        database_oid: '5',
+        ledger_table_oid: '19452',
+        is_recovery: false,
+        version,
+        name,
+      }),
+    );
+    const { pool, query, queriedSql } = poolWithAppliedRows([], diagnosticRows);
+    const logger = { info: vi.fn() };
+
+    await runMigrations(pool, {
+      migrationsDirectory: 'db/migrations',
+      appliedBy: 'test-suite',
+      logger,
+    });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        migrationLedgerDiagnostic: {
+          backendPid: '4312',
+          databaseOid: '5',
+          ledgerTableOid: '19452',
+          isRecovery: false,
+          ledgerEntryCount: REQUIRED_SCHEMA_MIGRATIONS.length,
+          ledgerIdentityHash: expectedLedgerIdentityHash(
+            REQUIRED_SCHEMA_MIGRATIONS,
+          ),
+        },
+      },
+      'PostgreSQL post-migration ledger snapshot captured',
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('WITH connection_metadata AS'),
+      [REQUIRED_SCHEMA_MIGRATIONS.at(-1)?.version],
+    );
+
+    const diagnosticCall = queriedSql.findIndex((sql) =>
+      sql.includes('WITH connection_metadata AS'),
+    );
+    const unlockCall = queriedSql.findIndex((sql) =>
+      sql.includes('pg_advisory_unlock'),
+    );
+    expect(diagnosticCall).toBeGreaterThanOrEqual(0);
+    expect(unlockCall).toBeGreaterThan(diagnosticCall);
   });
 });
