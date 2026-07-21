@@ -48,7 +48,7 @@ describe('evidence focus', () => {
     expect(trigger.classList.contains('source-focus-trigger')).toBe(true);
     expect(trigger.classList.contains('source-focus-pulse')).toBe(true);
     expect(containerScroll).toHaveBeenCalledWith({
-      top: 640,
+      top: 684,
       behavior: 'smooth',
     });
     expect(outerScroll).not.toHaveBeenCalled();
