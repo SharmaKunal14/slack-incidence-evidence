@@ -248,7 +248,7 @@ resource "aws_sfn_state_machine" "incident_workflow" {
       CollectIncidentSources = {
         Type           = "Map"
         ItemsPath      = "$.sourceIds"
-        MaxConcurrency = 5
+        MaxConcurrency = min(5, var.evidence_collector_reserved_concurrency)
         ItemSelector = {
           "version.$"    = "$.version"
           "tenantId.$"   = "$.tenantId"
@@ -277,9 +277,12 @@ resource "aws_sfn_state_machine" "incident_workflow" {
               }
               OutputPath = "$.Payload"
               Retry = [{
-                ErrorEquals     = ["States.TaskFailed"]
+                ErrorEquals = [
+                  "Lambda.TooManyRequestsException",
+                  "States.TaskFailed",
+                ]
                 IntervalSeconds = 2
-                MaxAttempts     = 3
+                MaxAttempts     = 6
                 BackoffRate     = 2
               }]
               Next = "SourceCollectionStatus"

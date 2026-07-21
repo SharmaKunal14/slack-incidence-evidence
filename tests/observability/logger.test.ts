@@ -15,4 +15,17 @@ describe('serializeError', () => {
     });
     expect(JSON.stringify(serialized)).not.toContain('customer-secret-123');
   });
+
+  it('retains an allowlisted PostgreSQL constraint identifier for diagnosis', () => {
+    const error = Object.assign(new Error('sensitive database detail'), {
+      code: '23514',
+      constraint: 'source_collection_runs_updated_after_creation',
+    });
+
+    expect(serializeError(error)).toEqual({
+      type: 'Error',
+      code: '23514',
+      constraint: 'source_collection_runs_updated_after_creation',
+    });
+  });
 });

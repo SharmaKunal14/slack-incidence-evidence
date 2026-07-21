@@ -9,7 +9,10 @@ describe('multi-source workflow infrastructure', () => {
       'utf8',
     );
 
-    expect(terraform).toContain('MaxConcurrency = 5');
+    expect(terraform).toContain(
+      'MaxConcurrency = min(5, var.evidence_collector_reserved_concurrency)',
+    );
+    expect(terraform).toContain('"Lambda.TooManyRequestsException"');
     expect(terraform).toContain('Mode = "INLINE"');
     expect(terraform).not.toContain('Mode = "DISTRIBUTED"');
     expect(terraform).not.toContain('ItemReader');
