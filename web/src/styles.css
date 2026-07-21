@@ -923,6 +923,7 @@ a {
 /* Incident workspace */
 .incident-page {
   padding-top: 2rem;
+  --checkpoint-clearance: 12rem;
 }
 
 .breadcrumb {
@@ -1081,6 +1082,7 @@ a {
   gap: 1.2rem;
   align-items: start;
   margin-top: 1.25rem;
+  padding-bottom: var(--checkpoint-clearance);
 }
 
 .report-workspace,
@@ -1457,6 +1459,9 @@ a {
 .evidence-workspace {
   position: sticky;
   top: 1rem;
+  display: flex;
+  max-height: max(24rem, calc(100dvh - var(--checkpoint-clearance) - 2rem));
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -1577,11 +1582,13 @@ a {
 
 .evidence-tab-content {
   display: grid;
-  max-height: 66rem;
+  min-height: 0;
+  flex: 1 1 auto;
   gap: 0.65rem;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0.85rem;
+  scroll-padding-block: 1rem;
   scrollbar-color: #c5d0cb transparent;
   scrollbar-width: thin;
   animation: tab-reveal 220ms ease-out both;
@@ -1589,6 +1596,13 @@ a {
 
 .evidence-tab-content:focus {
   outline: none;
+}
+
+.evidence-tabs {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
 }
 
 .question-card {
@@ -2245,6 +2259,10 @@ a {
 
 /* Responsive behavior */
 @media (max-width: 1120px) {
+  .incident-page {
+    --checkpoint-clearance: 16rem;
+  }
+
   .review-layout {
     grid-template-columns: minmax(0, 1.35fr) minmax(20rem, 0.85fr);
   }
@@ -2296,9 +2314,16 @@ a {
 
   .evidence-workspace {
     position: static;
+    display: block;
+    max-height: none;
+  }
+
+  .evidence-tabs {
+    display: block;
   }
 
   .evidence-tab-content {
+    display: grid;
     max-height: 42rem;
   }
 }
@@ -2395,6 +2420,10 @@ a {
   .review-action-bar {
     position: static;
     grid-template-columns: 1fr;
+  }
+
+  .incident-page {
+    --checkpoint-clearance: 0rem;
   }
 
   .acknowledgement-list,

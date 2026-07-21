@@ -6,6 +6,7 @@ export interface EvidenceFocus {
 const sourceFocusClass = 'source-focus-target';
 const triggerFocusClass = 'source-focus-trigger';
 const arrivalClass = 'source-focus-pulse';
+const sourceInset = 16;
 
 export function clearEvidenceFocus(focus: EvidenceFocus | null): void {
   if (focus === null) return;
@@ -33,10 +34,7 @@ function scrollWithinEvidenceContainer(source: HTMLElement): void {
   const sourceBounds = source.getBoundingClientRect();
   const containerBounds = container.getBoundingClientRect();
   const targetTop =
-    container.scrollTop +
-    sourceBounds.top -
-    containerBounds.top -
-    (container.clientHeight - sourceBounds.height) / 2;
+    container.scrollTop + sourceBounds.top - containerBounds.top - sourceInset;
   const maximumTop = Math.max(
     0,
     container.scrollHeight - container.clientHeight,
