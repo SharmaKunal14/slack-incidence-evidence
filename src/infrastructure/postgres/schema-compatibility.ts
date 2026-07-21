@@ -46,7 +46,7 @@ export async function assertDatabaseSchemaCompatible(
     const result = await database.query<AppliedMigrationRow>(
       `
         SELECT version::text, name
-        FROM schema_migrations
+        FROM public.schema_migrations
         WHERE version <= $1::bigint
         ORDER BY version
       `,

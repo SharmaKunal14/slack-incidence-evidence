@@ -67,6 +67,14 @@ describe('runMigrations', () => {
     ]);
     expect(query).toHaveBeenCalledWith('BEGIN');
     expect(query).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'CREATE TABLE IF NOT EXISTS public.schema_migrations',
+      ),
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('FROM public.schema_migrations'),
+    );
+    expect(query).toHaveBeenCalledWith(
       expect.stringContaining('CREATE TABLE tenants'),
     );
     expect(query).toHaveBeenCalledWith(
@@ -98,7 +106,7 @@ describe('runMigrations', () => {
       );
     }
     expect(query).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO schema_migrations'),
+      expect.stringContaining('INSERT INTO public.schema_migrations'),
       expect.arrayContaining([
         '1',
         '0001_initial.sql',

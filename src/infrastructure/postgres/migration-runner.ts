@@ -13,7 +13,7 @@ const MIGRATION_FILE_PATTERN =
 const DEFAULT_ADVISORY_LOCK_KEY = '6839005176042471';
 
 const CREATE_MIGRATIONS_TABLE_SQL = `
-  CREATE TABLE IF NOT EXISTS schema_migrations (
+  CREATE TABLE IF NOT EXISTS public.schema_migrations (
     version BIGINT PRIMARY KEY,
     name TEXT NOT NULL,
     checksum CHAR(64) NOT NULL CHECK (checksum ~ '^[0-9a-f]{64}$'),
@@ -217,7 +217,7 @@ async function applyMigration(
     );
     await client.query(
       `
-        INSERT INTO schema_migrations (
+        INSERT INTO public.schema_migrations (
           version,
           name,
           checksum,
@@ -277,7 +277,7 @@ export async function runMigrations(
 
     const appliedResult = await client.query<AppliedMigrationRow>(`
       SELECT version::text, name, checksum
-      FROM schema_migrations
+      FROM public.schema_migrations
       ORDER BY version
     `);
     const appliedVersions = verifyAppliedMigrations(

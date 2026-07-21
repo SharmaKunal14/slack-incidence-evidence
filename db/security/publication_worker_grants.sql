@@ -17,7 +17,7 @@
 GRANT USAGE ON SCHEMA public TO :"publication_role";
 
 GRANT SELECT ON TABLE
-  schema_migrations,
+  public.schema_migrations,
   report_publications,
   report_revisions,
   report_revision_statements,
