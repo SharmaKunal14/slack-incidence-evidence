@@ -19,7 +19,12 @@ interface AppliedMigrationRow extends QueryResultRow {
 }
 
 export class DatabaseSchemaCompatibilityError extends Error {
-  public constructor() {
+  public constructor(
+    readonly code:
+      | 'SCHEMA_QUERY_FAILED'
+      | 'SCHEMA_MIGRATION_COUNT_MISMATCH'
+      | 'SCHEMA_MIGRATION_IDENTITY_MISMATCH',
+  ) {
     super('Database schema is incompatible with this application release');
     this.name = 'DatabaseSchemaCompatibilityError';
   }
@@ -35,25 +40,29 @@ export async function assertDatabaseSchemaCompatible(
   database: Pick<Pool, 'query'>,
 ): Promise<void> {
   let rows: readonly AppliedMigrationRow[];
+  const latestRequiredVersion =
+    REQUIRED_SCHEMA_MIGRATIONS.at(-1)?.version ?? '0';
   try {
     const result = await database.query<AppliedMigrationRow>(
       `
         SELECT version::text, name
         FROM schema_migrations
-        WHERE version = ANY($1::bigint[])
+        WHERE version <= $1::bigint
         ORDER BY version
       `,
-      [REQUIRED_SCHEMA_MIGRATIONS.map(({ version }) => version)],
+      [latestRequiredVersion],
     );
     rows = result.rows;
   } catch {
     // Database errors can include SQL or connection details. Composition roots
     // receive one content-safe compatibility error instead.
-    throw new DatabaseSchemaCompatibilityError();
+    throw new DatabaseSchemaCompatibilityError('SCHEMA_QUERY_FAILED');
   }
 
   if (rows.length !== REQUIRED_SCHEMA_MIGRATIONS.length) {
-    throw new DatabaseSchemaCompatibilityError();
+    throw new DatabaseSchemaCompatibilityError(
+      'SCHEMA_MIGRATION_COUNT_MISMATCH',
+    );
   }
 
   for (let index = 0; index < REQUIRED_SCHEMA_MIGRATIONS.length; index += 1) {
@@ -65,7 +74,9 @@ export async function assertDatabaseSchemaCompatible(
       applied.version !== expected.version ||
       applied.name !== expected.name
     ) {
-      throw new DatabaseSchemaCompatibilityError();
+      throw new DatabaseSchemaCompatibilityError(
+        'SCHEMA_MIGRATION_IDENTITY_MISMATCH',
+      );
     }
   }
 }
