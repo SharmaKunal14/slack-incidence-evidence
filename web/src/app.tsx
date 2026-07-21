@@ -1045,9 +1045,6 @@ function EvidenceWorkspace({
   readonly onTabChange: (tab: EvidenceTab) => void;
   readonly questionAnswers: Readonly<Record<string, string>>;
 }): ReactNode {
-  const answeredQuestionCount = Object.values(questionAnswers).filter(
-    (answer) => answer.trim().length > 0,
-  ).length;
   return (
     <aside className="evidence-workspace" aria-labelledby="evidence-title">
       <div className="workspace-heading evidence-heading">
@@ -1129,72 +1126,12 @@ function EvidenceWorkspace({
               copy="The extraction did not leave any unresolved questions."
             />
           ) : (
-            <>
-              <div className="question-progress" aria-live="polite">
-                <span>
-                  <CircleHelp size={15} /> Reviewer context
-                </span>
-                <strong>
-                  {answeredQuestionCount} of {bundle.openQuestions.length}{' '}
-                  answered
-                </strong>
-              </div>
-              {bundle.openQuestions.map((question, index) => {
-                const answer = questionAnswers[question.id];
-                if (answer === undefined) {
-                  throw new Error('Open question has no review state');
-                }
-                const answered = answer.trim().length > 0;
-                return (
-                  <article
-                    className="question-card"
-                    data-answered={answered}
-                    key={question.id}
-                  >
-                    <header className="question-card-heading">
-                      <span>{String(index + 1).padStart(2, '0')}</span>
-                      <span className="question-answer-status">
-                        {answered ? (
-                          <Check size={13} />
-                        ) : (
-                          <PencilLine size={13} />
-                        )}
-                        {answered ? 'Answered' : 'Needs answer'}
-                      </span>
-                    </header>
-                    <p className="question-copy">{question.question}</p>
-                    {editable ? (
-                      <label className="question-answer-field">
-                        <span>Your reviewed answer</span>
-                        <textarea
-                          aria-label={`Answer: ${question.question}`}
-                          maxLength={4_000}
-                          placeholder="Add the confirmed context, decision, or remaining uncertainty…"
-                          rows={4}
-                          value={answer}
-                          onChange={(event) =>
-                            onQuestionAnswerChange(
-                              question.id,
-                              event.target.value,
-                            )
-                          }
-                        />
-                        <small>{answer.length.toLocaleString()} / 4,000</small>
-                      </label>
-                    ) : (
-                      <div className="preserved-question-answer">
-                        <span>Reviewed answer</span>
-                        <p>
-                          {answered
-                            ? answer
-                            : 'No answer was recorded in this revision.'}
-                        </p>
-                      </div>
-                    )}
-                  </article>
-                );
-              })}
-            </>
+            <QuestionReviewPanel
+              editable={editable}
+              onQuestionAnswerChange={onQuestionAnswerChange}
+              questionAnswers={questionAnswers}
+              questions={bundle.openQuestions}
+            />
           )}
         </Tabs.Content>
         <Tabs.Content className="evidence-tab-content" value="claims">
@@ -1299,6 +1236,152 @@ function EvidenceWorkspace({
         </Tabs.Content>
       </Tabs.Root>
     </aside>
+  );
+}
+
+export function QuestionReviewPanel({
+  editable,
+  onQuestionAnswerChange,
+  questionAnswers,
+  questions,
+}: {
+  readonly editable: boolean;
+  readonly onQuestionAnswerChange: (questionId: string, answer: string) => void;
+  readonly questionAnswers: Readonly<Record<string, string>>;
+  readonly questions: Bundle['openQuestions'];
+}): ReactNode {
+  const firstUnansweredQuestion = questions.find(
+    (question) => (questionAnswers[question.id] ?? '').trim().length === 0,
+  );
+  const [activeQuestionId, setActiveQuestionId] = useState(
+    firstUnansweredQuestion?.id ?? questions[0]?.id ?? null,
+  );
+  const activeQuestionIndex = questions.findIndex(
+    (question) => question.id === activeQuestionId,
+  );
+  const answeredQuestionCount = Object.values(questionAnswers).filter(
+    (answer) => answer.trim().length > 0,
+  ).length;
+
+  useEffect(() => {
+    if (questions.some((question) => question.id === activeQuestionId)) {
+      return;
+    }
+    setActiveQuestionId(
+      firstUnansweredQuestion?.id ?? questions[0]?.id ?? null,
+    );
+  }, [activeQuestionId, firstUnansweredQuestion?.id, questions]);
+
+  return (
+    <section className="question-review-panel" aria-label="Reviewer questions">
+      <div className="question-progress" aria-live="polite">
+        <span>
+          <CircleHelp size={15} /> Reviewer context
+        </span>
+        <strong>
+          {answeredQuestionCount} of {questions.length} answered
+        </strong>
+      </div>
+      <div className="question-stepper" aria-label="Open questions">
+        {questions.map((question, index) => {
+          const answered =
+            (questionAnswers[question.id] ?? '').trim().length > 0;
+          const active = question.id === activeQuestionId;
+          return (
+            <button
+              aria-current={active ? 'step' : undefined}
+              aria-label={`Question ${index + 1}: ${answered ? 'answered' : 'needs answer'}`}
+              className="question-step"
+              data-answered={answered}
+              data-active={active}
+              key={question.id}
+              onClick={() => setActiveQuestionId(question.id)}
+              type="button"
+            >
+              {answered ? <Check size={13} /> : index + 1}
+            </button>
+          );
+        })}
+      </div>
+      {questions.map((question, index) => {
+        const answer = questionAnswers[question.id];
+        if (answer === undefined) {
+          throw new Error('Open question has no review state');
+        }
+        const answered = answer.trim().length > 0;
+        const active = question.id === activeQuestionId;
+        return (
+          <article
+            aria-hidden={!active}
+            className="question-card"
+            data-answered={answered}
+            data-active={active}
+            hidden={!active}
+            key={question.id}
+          >
+            <header className="question-card-heading">
+              <span>Question {String(index + 1).padStart(2, '0')}</span>
+              <span className="question-answer-status">
+                {answered ? <Check size={13} /> : <PencilLine size={13} />}
+                {answered ? 'Answered' : 'Needs answer'}
+              </span>
+            </header>
+            <p className="question-copy">{question.question}</p>
+            {editable ? (
+              <label className="question-answer-field">
+                <span>Your reviewed answer</span>
+                <textarea
+                  aria-label={`Answer: ${question.question}`}
+                  maxLength={4_000}
+                  placeholder="Add the confirmed context, decision, or remaining uncertainty…"
+                  rows={4}
+                  value={answer}
+                  onChange={(event) =>
+                    onQuestionAnswerChange(question.id, event.target.value)
+                  }
+                />
+                <small>{answer.length.toLocaleString()} / 4,000</small>
+              </label>
+            ) : (
+              <div className="preserved-question-answer">
+                <span>Reviewed answer</span>
+                <p>
+                  {answered
+                    ? answer
+                    : 'No answer was recorded in this revision.'}
+                </p>
+              </div>
+            )}
+            <div className="question-navigation">
+              <button
+                className="question-navigation-button"
+                disabled={activeQuestionIndex <= 0}
+                onClick={() =>
+                  setActiveQuestionId(
+                    questions[activeQuestionIndex - 1]?.id ?? null,
+                  )
+                }
+                type="button"
+              >
+                <ArrowLeft size={14} /> Previous
+              </button>
+              <button
+                className="question-navigation-button question-navigation-next"
+                disabled={activeQuestionIndex >= questions.length - 1}
+                onClick={() =>
+                  setActiveQuestionId(
+                    questions[activeQuestionIndex + 1]?.id ?? null,
+                  )
+                }
+                type="button"
+              >
+                Next question <ArrowRight size={14} />
+              </button>
+            </div>
+          </article>
+        );
+      })}
+    </section>
   );
 }
 
