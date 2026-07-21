@@ -154,7 +154,7 @@ export function StartupFailure(): ReactNode {
           <AlertCircle size={24} />
         </div>
         <p className="eyebrow">Unable to start</p>
-        <h1>The review console needs a moment.</h1>
+        <h1>OnRecord needs a moment.</h1>
         <p>
           We could not initialize the secure review experience. Refresh the
           page, and contact the incident platform owner if the problem remains.
@@ -182,22 +182,21 @@ function SignIn({
       <section className="auth-story" aria-labelledby="auth-story-title">
         <Brand light />
         <div className="auth-copy">
-          <p className="eyebrow eyebrow-light">Incident Evidence Copilot</p>
-          <h1 id="auth-story-title">Every conclusion, traceable.</h1>
+          <p className="eyebrow eyebrow-light">OnRecord</p>
+          <h1 id="auth-story-title">Put every incident on the record.</h1>
           <p>
-            Turn fragmented incident conversations into a reviewed postmortem
-            without losing the evidence, uncertainty, or human judgment behind
-            it.
+            Turn fragmented incident conversations into an evidence-linked
+            postmortem your team can verify, revise, and approve.
           </p>
           <div className="auth-proof" aria-label="Product safeguards">
             <span>
-              <ShieldCheck size={17} /> Evidence linked
+              <ShieldCheck size={17} /> Source linked
             </span>
             <span>
               <BadgeCheck size={17} /> Human approved
             </span>
             <span>
-              <History size={17} /> Revision preserved
+              <History size={17} /> History preserved
             </span>
           </div>
         </div>
@@ -218,7 +217,7 @@ function SignIn({
             <ShieldCheck />
           </div>
           <p className="eyebrow">Secure workspace</p>
-          <h2 id="sign-in-title">Continue to incident review</h2>
+          <h2 id="sign-in-title">Continue to OnRecord</h2>
           <p className="muted-copy">
             Sign in with your reviewer account. Access is checked against your
             active workspace membership for every incident.
@@ -301,11 +300,11 @@ function InboxPage({
       <main className="page-shell">
         <section className="inbox-hero reveal">
           <div>
-            <p className="eyebrow">Review workspace</p>
-            <h1>Make the incident record trustworthy.</h1>
+            <p className="eyebrow">OnRecord review workspace</p>
+            <h1>Build a record your team can trust.</h1>
             <p className="hero-copy">
-              Inspect evidence, challenge uncertain claims, and preserve every
-              human correction before a report can move forward.
+              Check every claim against its source, resolve what remains
+              uncertain, and preserve every human correction before approval.
             </p>
           </div>
           <div className="inbox-focus">
@@ -352,7 +351,7 @@ function InboxPage({
           <div className="section-heading-row">
             <div>
               <p className="eyebrow">Incident queue</p>
-              <h2>Postmortems</h2>
+              <h2>Incident records</h2>
             </div>
             <label className="search-field">
               <Search size={17} aria-hidden="true" />
@@ -642,7 +641,7 @@ function IncidentWorkspace({
       );
     },
     onSuccess: async () => {
-      setNotice('The reviewed revision is now approved.');
+      setNotice('The reviewed revision is approved and on the record.');
       await queryClient.invalidateQueries({
         queryKey: ['incident-review', bundle.incident.id],
       });
@@ -792,8 +791,8 @@ function IncidentWorkspace({
         <section className="report-workspace" aria-labelledby="report-title">
           <div className="workspace-heading">
             <div>
-              <p className="eyebrow">Reviewed narrative</p>
-              <h2 id="report-title">Postmortem report</h2>
+              <p className="eyebrow">On the record</p>
+              <h2 id="report-title">Incident report</h2>
             </div>
             <label className="version-picker">
               <span>
@@ -912,7 +911,7 @@ function IncidentWorkspace({
           <div>
             <strong>
               {selectedRevision?.status === 'APPROVED'
-                ? 'Approved revision locked'
+                ? 'Approved record locked'
                 : 'Preserved historical version'}
             </strong>
             <p>
@@ -1049,7 +1048,7 @@ function EvidenceWorkspace({
     <aside className="evidence-workspace" aria-labelledby="evidence-title">
       <div className="workspace-heading evidence-heading">
         <div>
-          <p className="eyebrow">Source of truth</p>
+          <p className="eyebrow">Evidence on record</p>
           <h2 id="evidence-title">Evidence explorer</h2>
         </div>
         <span className="evidence-total">{bundle.evidence.length} sources</span>
@@ -1454,7 +1453,7 @@ function ReviewActionBar({
           <FileCheck2 size={21} />
         </span>
         <div>
-          <p className="eyebrow">Human checkpoint</p>
+          <p className="eyebrow">Put it on record</p>
           <h2 id="review-decision-title">Complete this review</h2>
         </div>
       </div>
@@ -1488,7 +1487,7 @@ function ReviewActionBar({
           disabled={busy || approveDisabled}
           onClick={onApprove}
         >
-          <BadgeCheck size={18} /> Approve revision
+          <BadgeCheck size={18} /> Approve record
         </button>
       </div>
       {(notice !== null || error !== null) && (
@@ -1568,7 +1567,7 @@ function AppFrame({
         <span>
           <ShieldCheck size={15} /> Tenant-authorized evidence review
         </span>
-        <span>Incident Evidence Copilot</span>
+        <span>OnRecord</span>
       </footer>
     </div>
   );
@@ -1580,7 +1579,7 @@ function Brand({ light = false }: { readonly light?: boolean }): ReactNode {
       className="brand"
       data-light={light}
       href="#/"
-      aria-label="Incident Evidence Copilot home"
+      aria-label="OnRecord home"
     >
       <span className="brand-mark" aria-hidden="true">
         <span />
@@ -1588,8 +1587,8 @@ function Brand({ light = false }: { readonly light?: boolean }): ReactNode {
         <span />
       </span>
       <span className="brand-copy">
-        <strong>Incident Copilot</strong>
-        <small>Evidence Review</small>
+        <strong>OnRecord</strong>
+        <small>Incident Review</small>
       </span>
     </a>
   );
@@ -1723,7 +1722,7 @@ function EmptyInbox({
       <p>
         {hasIncidents
           ? 'Try another status or search term.'
-          : 'New evidence-backed drafts will appear here when they are ready.'}
+          : 'New incident records will appear here when they are ready for review.'}
       </p>
     </div>
   );
