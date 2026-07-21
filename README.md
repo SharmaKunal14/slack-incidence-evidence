@@ -1,10 +1,13 @@
-# Incident Evidence Copilot
+# OnRecord
 
-Incident Evidence Copilot is an evidence-first foundation for reconstructing
-production incidents from Slack and engineering systems. It is deliberately not
-a one-prompt transcript summarizer: incident facts, hypotheses, timeline events,
-and evidence references are represented as separate domain concepts so later AI
-stages cannot silently turn speculation into fact.
+**Put every incident on the record.**
+
+OnRecord is an evidence-first incident review product that turns selected
+production incident conversations from Slack into a record your team can trust.
+It is deliberately not a one-prompt transcript summarizer:
+incident facts, hypotheses, timeline events, and evidence references are
+represented as separate domain concepts so later AI stages cannot silently turn
+speculation into fact.
 
 The current release establishes secure ingestion, collects an explicitly
 selected set of public Slack channels, extracts an evidence-cited timeline, claims, and open
@@ -23,8 +26,9 @@ GitHub retrieval remains a later increment.
 - `@app generate incident review: <title>` and equivalent RCA/postmortem command
   parsing for public channels.
 - A signed Slack message shortcut and modal for a bounded time window, one
-  primary public channel, up to four additional public channels, anchor threads,
-  a reviewer, and an explicit retention acknowledgement.
+  primary public channel, up to four additional public channels, optional
+  additional thread anchors, a reviewer, and an explicit retention
+  acknowledgement.
 - Immediate Slack acknowledgement followed by durable SQS FIFO handoff.
 - API Gateway HTTP API and Lambda adapters which preserve the same application
   contracts as the local Fastify API and polling worker.
@@ -32,9 +36,10 @@ GitHub retrieval remains a later increment.
   batch failure handling for FIFO ordering.
 - At-least-once worker with database-backed idempotency, optimistic locking, and
   deterministic Step Functions execution identity.
-- Checkpointed Slack channel and anchor-thread collection in bounded 15-message pages, with
-  provider-directed rate-limit waits owned by Step Functions rather than a
-  sleeping Lambda.
+- Checkpointed Slack channel collection that automatically discovers thread
+  roots inside the selected window, merges them with optional anchors, and
+  expands replies in bounded 15-message pages. Provider-directed rate-limit
+  waits are owned by Step Functions rather than a sleeping Lambda.
 - Idempotent Slack evidence upserts with stable source IDs, SHA-256 content
   hashes, source permalinks, selected metadata, and configurable retention
   deadlines.
@@ -180,7 +185,7 @@ Subscribe to `app_mention`, grant the bot `app_mentions:read`, `chat:write`, and
 public development channel, and send:
 
 ```text
-@IncidentCopilot generate incident review: Checkout outage
+@OnRecord generate incident review: Checkout outage
 ```
 
 The production worker creates the incident idempotently, advances it to
@@ -188,6 +193,22 @@ The production worker creates the incident idempotently, advances it to
 reply in the triggering Slack thread. The workflow retrieves that thread,
 filters the product's operational status reply, stores canonical message
 artifacts, and checkpoints progress after every page.
+
+### Seed the synthetic Slack incident
+
+For a repeatable demonstration, the repository includes a dry-run-first seeder
+that creates a fictional two-responder cybersecurity outage across three public
+Slack channels, including five threaded evidence anchors:
+
+```bash
+npm run demo:slack
+npm run demo:slack -- --execute
+```
+
+It requires two distinct Slack user OAuth tokens from the same disposable demo
+workspace. See the [Slack demo seeder guide](docs/slack-demo-seeder.md) for the
+least-privilege app manifest, token setup, safeguards, rerun behavior, and exact
+OnRecord scope.
 
 ## Engineering checks
 

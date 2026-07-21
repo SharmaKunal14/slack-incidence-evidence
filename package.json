@@ -14,6 +14,7 @@
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run build:lambda && npm run build:web && npm run release:manifest && npm run release:verify",
     "db:migrate": "tsx src/infrastructure/postgres/migrate-cli.ts",
     "db:migrate:aws": "tsx src/infrastructure/postgres/migrate-aws-cli.ts",
+    "demo:slack": "tsx src/demo/seed-slack-incident-cli.ts",
     "dev:api": "tsx watch src/api/main.ts",
     "dev:worker": "tsx watch src/worker/main.ts",
     "eval:live": "tsx src/evaluation/run-evaluation.ts live",

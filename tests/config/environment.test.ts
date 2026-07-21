@@ -68,10 +68,12 @@ describe('Lambda environment configuration', () => {
       DATABASE_NAME: 'postgres',
       SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
       EVIDENCE_RETENTION_DAYS: '45',
+      SLACK_AUTO_THREAD_MAX_COUNT: '40',
       SLACK_THREAD_MAX_PAGES: '25',
     });
 
     expect(environment.EVIDENCE_RETENTION_DAYS).toBe(45);
+    expect(environment.SLACK_AUTO_THREAD_MAX_COUNT).toBe(40);
     expect(environment.SLACK_THREAD_MAX_PAGES).toBe(25);
     expect(() =>
       loadSlackEvidenceCollectorLambdaEnvironment({
@@ -80,6 +82,15 @@ describe('Lambda environment configuration', () => {
         DATABASE_NAME: 'postgres',
         SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
         EVIDENCE_RETENTION_DAYS: '366',
+      }),
+    ).toThrow();
+    expect(() =>
+      loadSlackEvidenceCollectorLambdaEnvironment({
+        DATABASE_SECRET_ARN: 'database-secret-arn',
+        DATABASE_HOST: 'pooler.example.test',
+        DATABASE_NAME: 'postgres',
+        SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
+        SLACK_AUTO_THREAD_MAX_COUNT: '501',
       }),
     ).toThrow();
     expect(() =>

@@ -1,11 +1,16 @@
-# Incident Evidence Copilot architecture
+# OnRecord architecture
 
 Status: explicitly scoped multi-channel collection, structured AI extraction, review-ready draft generation, and human revision/approval implemented
 Last updated: 2026-07-20
 
 ## Purpose
 
-Incident Evidence Copilot turns an explicitly triggered Slack incident conversation into a durable, reviewable incident-processing job. The product will eventually combine Slack and operational evidence, extract structured claims, and prepare a source-linked postmortem for human approval.
+OnRecord turns an explicitly triggered Slack incident conversation into a
+durable, reviewable incident-processing job. It extracts structured claims from
+selected Slack evidence and prepares a source-linked incident record for human
+approval. The architecture can later incorporate additional operational
+evidence. Every generative stage is designed to build a record the team can
+trust rather than silently turn speculation into fact.
 
 The implementation deliberately builds each generative step on durable evidence and
 reliability boundaries:
@@ -113,8 +118,8 @@ Explicitly out of scope:
   checkpoints, and explicit Slack rate-limit waits.
 - A signed Slack message shortcut and short-lived-trigger modal with a bounded
   seven-day window, one primary public channel, up to four additional public
-  channels, optional anchor permalinks, reviewer selection, and retention
-  acknowledgement.
+  channels, optional additional thread permalinks, reviewer selection, and
+  retention acknowledgement.
 - Tenant-scoped incident source, collection run, checkpoint, and coverage
   records plus an inline Step Functions Map with maximum concurrency five.
 - Server-side public-channel metadata and bot-membership authorization,
@@ -740,9 +745,13 @@ connection hazard if concurrency is left unbounded. Fargate remains a valid
 measured migration target for sustained workloads or stages that do not fit
 Lambda; it is not needed merely to make the diagram look more conventional.
 
-The current Step Functions machine performs explicitly selected channel and
-anchor-thread collection, structured extraction, report generation, and
-review-ready notification. Its
+The current Step Functions machine performs explicitly selected channel
+collection, automatically discovers bounded thread roots inside each selected
+window, expands those roots together with optional additional anchors, and then
+performs structured extraction, report generation, and review-ready
+notification. Discovered roots are durably checkpointed separately from
+reviewer-supplied anchors, deduplicated, and capped per channel; exceeding the
+cap produces explicit partial coverage rather than silent omission. Its
 task input/output is bounded and source/model content stays in PostgreSQL. Each
 future state must likewise arrive with a bounded
 contract, retry policy, idempotency boundary, and implemented stage rather than

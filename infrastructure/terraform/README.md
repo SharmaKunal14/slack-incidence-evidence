@@ -370,8 +370,8 @@ Prerequisites:
   or a Notion data source shared with the Notion integration.
 - An existing PostgreSQL endpoint. For the current Supabase deployment, use the
   transaction-pooler hostname, port 6543, and empty VPC input lists.
-- Database migrations through `0008_review_question_answers.sql` applied before the
-  updated workflow is deployed or invoked.
+- Database migrations through `0010_auto_discovered_slack_threads.sql` applied
+  before the updated workflow is deployed or invoked.
 
 Create an ignored variable file:
 
@@ -382,7 +382,10 @@ cd ../..
 ```
 
 Replace all example account IDs, ARNs, artifact paths, and hostnames. Never put
-secret values in `terraform.tfvars`.
+secret values in `terraform.tfvars`. `slack_auto_thread_max_count` defaults to
+50 automatically expanded roots per selected channel and is hard-bounded to
+500; lower it if workspace rate limits or incident volume require a smaller
+collection budget.
 
 Build both deployable artifacts, then run:
 

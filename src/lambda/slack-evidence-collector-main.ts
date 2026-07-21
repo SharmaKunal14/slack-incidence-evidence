@@ -114,6 +114,7 @@ async function buildHandler(): Promise<SlackEvidenceCollectorHandler> {
       systemClock,
       uuidGenerator,
       environment.SLACK_THREAD_MAX_PAGES,
+      environment.SLACK_AUTO_THREAD_MAX_COUNT,
     );
     return createSlackEvidenceCollectorHandler({
       collector,

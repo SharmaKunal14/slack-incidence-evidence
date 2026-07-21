@@ -205,7 +205,7 @@ export function buildIncidentScopeView(
       inputBlock(
         'anchor_threads',
         'anchor_threads',
-        'Anchor thread permalinks',
+        'Additional thread permalinks',
         {
           type: 'plain_text_input',
           action_id: 'anchor_threads',
@@ -213,7 +213,7 @@ export function buildIncidentScopeView(
           max_length: 3_000,
           placeholder: {
             type: 'plain_text',
-            text: 'Optional: one Slack message permalink per line (maximum five)',
+            text: 'Optional: roots outside the selected window, one per line (maximum five)',
           },
         },
         true,

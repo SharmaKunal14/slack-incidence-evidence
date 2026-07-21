@@ -222,6 +222,12 @@ const slackEvidenceCollectorLambdaEnvironmentSchema =
       .min(1)
       .max(1_000)
       .default(100),
+    SLACK_AUTO_THREAD_MAX_COUNT: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(500)
+      .default(50),
   });
 
 const incidentAnalysisLambdaEnvironmentSchema =
