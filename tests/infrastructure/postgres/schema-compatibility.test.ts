@@ -35,7 +35,9 @@ describe('database schema compatibility', () => {
     ]);
 
     for (const script of grantScripts) {
-      expect(script).toMatch(/GRANT SELECT ON TABLE\s+schema_migrations,/u);
+      expect(script).toMatch(
+        /GRANT SELECT ON TABLE\s+public\.schema_migrations,/u,
+      );
     }
   });
 
@@ -54,9 +56,10 @@ describe('database schema compatibility', () => {
       undefined,
     );
     expect(query).toHaveBeenCalledWith(
-      expect.stringContaining('version <= $1::bigint'),
+      expect.stringContaining('FROM public.schema_migrations'),
       [REQUIRED_SCHEMA_MIGRATIONS.at(-1)?.version],
     );
+    expect(query.mock.calls[0]?.[0]).toContain('version <= $1::bigint');
   });
 
   it('fails closed when a required migration is missing or renamed', async () => {

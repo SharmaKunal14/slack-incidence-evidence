@@ -221,7 +221,7 @@ still required before enabling unattended staging-to-production promotion.
 
 1. Bootstrap development state, KMS, OIDC role, and GitHub Environment variables.
 2. Reapply the checked-in review and publication database grant scripts so
-   least-privilege roles can read `schema_migrations` during startup.
+   least-privilege roles can read `public.schema_migrations` during startup.
 3. Migrate any existing development Terraform state.
 4. Merge a no-op change and verify the automatic development deployment.
 5. Create isolated staging dependencies and protection rules.
