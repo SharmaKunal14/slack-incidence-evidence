@@ -53,9 +53,10 @@ describe('database schema compatibility', () => {
     await expect(assertDatabaseSchemaCompatible(database)).resolves.toBe(
       undefined,
     );
-    expect(query).toHaveBeenCalledWith(expect.stringContaining('ANY($1'), [
-      REQUIRED_SCHEMA_MIGRATIONS.map(({ version }) => version),
-    ]);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('version <= $1::bigint'),
+      [REQUIRED_SCHEMA_MIGRATIONS.at(-1)?.version],
+    );
   });
 
   it('fails closed when a required migration is missing or renamed', async () => {
@@ -75,12 +76,16 @@ describe('database schema compatibility', () => {
       assertDatabaseSchemaCompatible({
         query: missingQuery,
       } as Pick<Pool, 'query'>),
-    ).rejects.toBeInstanceOf(DatabaseSchemaCompatibilityError);
+    ).rejects.toMatchObject({
+      code: 'SCHEMA_MIGRATION_COUNT_MISMATCH',
+    });
     await expect(
       assertDatabaseSchemaCompatible({
         query: renamedQuery,
       } as Pick<Pool, 'query'>),
-    ).rejects.toBeInstanceOf(DatabaseSchemaCompatibilityError);
+    ).rejects.toMatchObject({
+      code: 'SCHEMA_MIGRATION_IDENTITY_MISMATCH',
+    });
   });
 
   it('does not expose a database error through the compatibility boundary', async () => {
@@ -89,7 +94,7 @@ describe('database schema compatibility', () => {
     } as unknown as Pick<Pool, 'query'>;
 
     await expect(assertDatabaseSchemaCompatible(database)).rejects.toEqual(
-      new DatabaseSchemaCompatibilityError(),
+      new DatabaseSchemaCompatibilityError('SCHEMA_QUERY_FAILED'),
     );
   });
 });

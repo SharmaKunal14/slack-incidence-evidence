@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { serializeError } from '../../src/observability/logger.js';
+import { DatabaseSchemaCompatibilityError } from '../../src/infrastructure/postgres/schema-compatibility.js';
 
 describe('serializeError', () => {
   it('does not copy sensitive error messages or stacks into normal logs', () => {
@@ -26,6 +27,17 @@ describe('serializeError', () => {
       type: 'Error',
       code: '23514',
       constraint: 'source_collection_runs_updated_after_creation',
+    });
+  });
+
+  it('retains a content-safe schema compatibility diagnostic code', () => {
+    expect(
+      serializeError(
+        new DatabaseSchemaCompatibilityError('SCHEMA_MIGRATION_COUNT_MISMATCH'),
+      ),
+    ).toEqual({
+      type: 'DatabaseSchemaCompatibilityError',
+      code: 'SCHEMA_MIGRATION_COUNT_MISMATCH',
     });
   });
 });
