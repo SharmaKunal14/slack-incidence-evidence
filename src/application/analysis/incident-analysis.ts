@@ -45,7 +45,17 @@ const analysisSchema = z
           .strict(),
       )
       .max(100),
-    openQuestions: z.array(z.string().trim().min(1).max(2_000)).max(50),
+    openQuestions: z
+      .array(
+        z
+          .object({
+            key: modelKeySchema,
+            question: z.string().trim().min(1).max(2_000),
+            evidenceIds: z.array(evidenceIdSchema).min(1).max(20),
+          })
+          .strict(),
+      )
+      .max(50),
   })
   .strict()
   .superRefine((analysis, context) => {
@@ -98,9 +108,26 @@ const analysisSchema = z
         });
       }
     }
-    requireUnique(analysis.openQuestions, 'open question', context, [
-      'openQuestions',
-    ]);
+    requireUnique(
+      analysis.openQuestions.map((question) => question.key),
+      'open question key',
+      context,
+      ['openQuestions'],
+    );
+    requireUnique(
+      analysis.openQuestions.map((question) => question.question),
+      'open question',
+      context,
+      ['openQuestions'],
+    );
+    for (const [index, question] of analysis.openQuestions.entries()) {
+      requireUnique(
+        question.evidenceIds,
+        'open question evidence ID',
+        context,
+        ['openQuestions', index, 'evidenceIds'],
+      );
+    }
   });
 
 export type IncidentAnalysis = z.infer<typeof analysisSchema>;
@@ -124,6 +151,7 @@ export function parseIncidentAnalysis(
       ...claim.supportingEvidenceIds,
       ...claim.contradictingEvidenceIds,
     ]),
+    ...analysis.openQuestions.flatMap((question) => question.evidenceIds),
   ];
 
   for (const reference of references) {
@@ -228,7 +256,24 @@ export const INCIDENT_ANALYSIS_JSON_SCHEMA = {
     openQuestions: {
       type: 'array',
       maxItems: 50,
-      items: { type: 'string' },
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['key', 'question', 'evidenceIds'],
+        properties: {
+          key: {
+            type: 'string',
+            pattern: '^[a-z][a-z0-9_]{0,63}$',
+          },
+          question: { type: 'string' },
+          evidenceIds: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 20,
+            items: { type: 'string' },
+          },
+        },
+      },
     },
   },
 } as const;

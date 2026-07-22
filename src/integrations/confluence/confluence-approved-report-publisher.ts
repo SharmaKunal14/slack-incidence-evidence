@@ -23,6 +23,12 @@ const confluencePageSchema = z
     status: z.literal('current'),
     title: z.string().min(1).max(MAX_PAGE_TITLE_CHARACTERS),
     spaceId: confluenceIdSchema,
+    version: z
+      .object({
+        number: z.number().int().positive(),
+        message: z.string().max(255).optional(),
+      })
+      .passthrough(),
     _links: z.object({ webui: z.string().min(1).max(2_000) }).passthrough(),
   })
   .passthrough();
@@ -111,7 +117,7 @@ export class ConfluenceApprovedReportPublisher implements ApprovedReportPublishe
     const title = pageTitle(document);
     const existing = await this.findExistingPage(title);
     if (existing !== null) {
-      return existing;
+      return this.updateExistingPage(existing, document, true);
     }
 
     try {
@@ -140,7 +146,51 @@ export class ConfluenceApprovedReportPublisher implements ApprovedReportPublishe
       ) {
         const racedPage = await this.findExistingPage(title);
         if (racedPage !== null) {
-          return racedPage;
+          return this.updateExistingPage(racedPage, document, true);
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async updateExistingPage(
+    page: z.infer<typeof confluencePageSchema>,
+    document: ApprovedReportDocument,
+    retryOnConflict: boolean,
+  ): Promise<PublishedReportPage> {
+    const revisionMessage = publicationRevisionMessage(document);
+    if (page.version.message === revisionMessage) {
+      return this.toPublishedPage(page);
+    }
+    try {
+      const updated = confluencePageSchema.parse(
+        await this.requestJson(`/wiki/api/v2/pages/${page.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            id: page.id,
+            status: 'current',
+            title: pageTitle(document),
+            body: {
+              representation: 'storage',
+              value: renderStorageBody(document),
+            },
+            version: {
+              number: page.version.number + 1,
+              message: revisionMessage,
+            },
+          }),
+        }),
+      );
+      return this.toPublishedPage(updated);
+    } catch (error) {
+      if (
+        retryOnConflict &&
+        error instanceof ReportPublicationProviderError &&
+        error.code === 'CONFLUENCE_CONFLICT'
+      ) {
+        const refreshed = await this.findExistingPage(pageTitle(document));
+        if (refreshed !== null) {
+          return this.updateExistingPage(refreshed, document, false);
         }
       }
       throw error;
@@ -149,7 +199,7 @@ export class ConfluenceApprovedReportPublisher implements ApprovedReportPublishe
 
   private async findExistingPage(
     title: string,
-  ): Promise<PublishedReportPage | null> {
+  ): Promise<z.infer<typeof confluencePageSchema> | null> {
     const url = this.apiUrl(`/wiki/api/v2/spaces/${this.spaceId}/pages`);
     url.searchParams.set('title', title);
     url.searchParams.set('status', 'current');
@@ -171,12 +221,12 @@ export class ConfluenceApprovedReportPublisher implements ApprovedReportPublishe
         'CONFLUENCE_UNEXPECTED_QUERY_RESULT',
       );
     }
-    return this.toPublishedPage(page);
+    return page;
   }
 
   private async requestJson(
     pathOrUrl: string | URL,
-    init: { readonly method: 'GET' | 'POST'; readonly body?: string },
+    init: { readonly method: 'GET' | 'POST' | 'PUT'; readonly body?: string },
   ): Promise<unknown> {
     const url =
       typeof pathOrUrl === 'string' ? this.apiUrl(pathOrUrl) : pathOrUrl;
@@ -252,6 +302,10 @@ export class ConfluenceApprovedReportPublisher implements ApprovedReportPublishe
     }
     return new URL(`${this.apiPathPrefix}${path}`, this.apiOrigin);
   }
+}
+
+function publicationRevisionMessage(document: ApprovedReportDocument): string {
+  return `OnRecord approved revision ${document.revisionNumber}`;
 }
 
 function parseConfluenceSiteUrl(value: string): URL {

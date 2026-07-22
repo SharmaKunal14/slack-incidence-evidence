@@ -74,12 +74,14 @@ const revisionSummarySchema = z
 
 const revisionStatementSchema = z
   .object({
-    originalStatementId: z.string(),
+    originalStatementId: z.string().nullable(),
     sectionType: z.string(),
     position: z.number().int().nonnegative(),
-    decision: z.enum(['KEEP', 'EDIT', 'EXCLUDE']),
+    decision: z.enum(['KEEP', 'EDIT', 'EXCLUDE', 'ADD']),
     text: z.string().nullable(),
     classification: z.enum(classificationValues).nullable(),
+    claimIds: z.array(z.string()).max(20),
+    timelineEventIds: z.array(z.string()).max(20),
   })
   .strict();
 
@@ -179,7 +181,13 @@ export const bundleSchema = z
       )
       .default([]),
     openQuestions: z.array(
-      z.object({ id: z.string(), question: z.string() }).strict(),
+      z
+        .object({
+          id: z.string(),
+          question: z.string(),
+          evidenceIds: z.array(z.string()).max(20),
+        })
+        .strict(),
     ),
     revisions: z.array(revisionSummarySchema).max(50),
     latestRevision: revisionDetailSchema.nullable(),

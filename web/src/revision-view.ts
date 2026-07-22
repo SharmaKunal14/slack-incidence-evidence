@@ -7,10 +7,10 @@ export interface RevisionSourceStatement {
 }
 
 export interface SavedRevisionStatement {
-  readonly originalStatementId: string;
+  readonly originalStatementId: string | null;
   readonly sectionType: string;
   readonly position: number;
-  readonly decision: 'KEEP' | 'EDIT' | 'EXCLUDE';
+  readonly decision: 'KEEP' | 'EDIT' | 'EXCLUDE' | 'ADD';
   readonly text: string | null;
   readonly classification: string | null;
 }
@@ -67,12 +67,21 @@ export function reconcileRevisionStatements(
       ]),
     );
   }
-  if (revisionStatements.length !== sources.length) {
+  const sourceDecisions = revisionStatements.filter(
+    (statement) => statement.decision !== 'ADD',
+  );
+  if (sourceDecisions.length !== sources.length) {
     throw new Error('Saved revision is incomplete');
   }
 
   const views = new Map<string, RevisionStatementView>();
-  for (const saved of revisionStatements) {
+  for (const saved of sourceDecisions) {
+    if (saved.decision === 'ADD') {
+      throw new Error('Reviewer-added statement entered source reconciliation');
+    }
+    if (saved.originalStatementId === null) {
+      throw new Error('Saved source decision has no original statement');
+    }
     const source = sourceById.get(saved.originalStatementId);
     if (source === undefined) {
       throw new Error('Saved revision references an unknown statement');

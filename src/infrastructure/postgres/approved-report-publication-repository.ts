@@ -4,6 +4,7 @@ import type {
   ApprovedReportPublicationRepository,
   ApprovedReportPublicationStatus,
 } from '../../application/ports/approved-report-publication-repository.js';
+import { splitLegacyQuestionEvidence } from '../../application/review/open-question-evidence.js';
 import type { ApprovedReportPublicationSection } from '../../application/ports/approved-report-publisher.js';
 import type { ReportPublicationProvider } from '../../application/ports/approved-report-publisher.js';
 import {
@@ -361,10 +362,17 @@ async function loadPublication(
   const questionAnswers = questionResult.rows.flatMap((question) =>
     question.answer === null
       ? []
-      : [{ question: question.question, answer: question.answer }],
+      : [
+          {
+            question: splitLegacyQuestionEvidence(question.question).question,
+            answer: question.answer,
+          },
+        ],
   );
   const remainingOpenQuestions = questionResult.rows.flatMap((question) =>
-    question.answer === null ? [question.question] : [],
+    question.answer === null
+      ? [splitLegacyQuestionEvidence(question.question).question]
+      : [],
   );
 
   return {

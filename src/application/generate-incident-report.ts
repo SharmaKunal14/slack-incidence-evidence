@@ -14,10 +14,10 @@ import type { IncidentRepository } from './ports/incident-repository.js';
 import { renderIncidentReportMarkdown } from './report/render-incident-report.js';
 import { IncidentAggregate, type Incident } from '../domain/incident.js';
 
-const DRAFT_VERSION = 1;
+const DRAFT_VERSION = 2;
 const PROVIDER = 'openai';
-const PROMPT_VERSION = 'incident-report-v1';
-const SCHEMA_VERSION = 'incident-report-v1';
+const PROMPT_VERSION = 'incident-report-v2';
+const SCHEMA_VERSION = 'incident-report-v2';
 const MAX_WORKFLOW_WAIT_SECONDS = 900;
 
 export interface GenerateIncidentReportCommand {

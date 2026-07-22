@@ -104,17 +104,6 @@ const reportSchema = z
     }
     for (const [sectionIndex, section] of report.sections.entries()) {
       for (const [statementIndex, statement] of section.statements.entries()) {
-        if (
-          statement.statementType === 'timeline' &&
-          section.sectionType !== 'timeline'
-        ) {
-          context.addIssue({
-            code: 'custom',
-            message:
-              'Timeline statements are restricted to the timeline section',
-            path: ['sections', sectionIndex, 'statements', statementIndex],
-          });
-        }
         if (containsUnsafeReportText(statement.text)) {
           context.addIssue({
             code: 'custom',
@@ -153,6 +142,7 @@ export interface ReportTimelineSource {
 export interface ReportOpenQuestionSource {
   readonly id: string;
   readonly question: string;
+  readonly evidenceIds: readonly string[];
 }
 
 export interface IncidentReportManifest {
@@ -196,6 +186,7 @@ export function parseIncidentReport(
   const claims = new Map(manifest.claims.map((claim) => [claim.id, claim]));
   const timeline = new Map(manifest.timeline.map((event) => [event.id, event]));
   const usedClaims = new Set<string>();
+  const usedTimelineEvents = new Set<string>();
 
   for (const section of report.sections) {
     for (const statement of section.statements) {
@@ -217,6 +208,7 @@ export function parseIncidentReport(
           );
         }
         sourceClassifications.push(event.classification);
+        usedTimelineEvents.add(eventId);
       }
       const requiredCaution = Math.max(
         ...sourceClassifications.map(classificationCaution),
@@ -236,7 +228,33 @@ export function parseIncidentReport(
       throw new Error('Report omits a claim with material contradiction');
     }
   }
+  for (const claim of manifest.claims) {
+    if (
+      requiresReportCoverage(claim.classification) &&
+      !usedClaims.has(claim.id)
+    ) {
+      throw new Error('Report omits a sufficiently supported claim');
+    }
+  }
+  for (const event of manifest.timeline) {
+    if (
+      requiresReportCoverage(event.classification) &&
+      !usedTimelineEvents.has(event.id)
+    ) {
+      throw new Error('Report omits a sufficiently supported timeline event');
+    }
+  }
   return report;
+}
+
+function requiresReportCoverage(
+  classification: ModelEvidenceClassification,
+): boolean {
+  return (
+    classification === 'directly_observed' ||
+    classification === 'corroborated' ||
+    classification === 'participant_assertion'
+  );
 }
 
 /** Strict Structured Outputs schema; application validation remains authoritative. */

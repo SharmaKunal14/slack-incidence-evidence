@@ -120,6 +120,11 @@ export class CreateReportRevision {
     const sourceStatements = bundle.sections.flatMap(
       (section) => section.statements,
     );
+    if (sourceStatements.length + command.additionalStatements.length > 300) {
+      throw new ReviewValidationError(
+        'A report revision cannot contain more than 300 statements',
+      );
+    }
     if (sourceStatements.length !== command.decisions.length) {
       throw new ReviewValidationError(
         'Every report statement requires exactly one review decision',
@@ -128,7 +133,7 @@ export class CreateReportRevision {
     const sources = new Map(
       sourceStatements.map((statement) => [statement.id, statement]),
     );
-    const statements = command.decisions.map((decision) => {
+    const reviewedStatements = command.decisions.map((decision) => {
       const source = sources.get(decision.statementId);
       if (source === undefined) {
         throw new ReviewValidationError(
@@ -137,6 +142,68 @@ export class CreateReportRevision {
       }
       return resolveStatement(this.idGenerator.generate(), source, decision);
     });
+    const claims = new Map(bundle.claims.map((claim) => [claim.id, claim]));
+    const timeline = new Map(bundle.timeline.map((event) => [event.id, event]));
+    const nextPosition = new Map(
+      bundle.sections.map((section) => [
+        section.sectionType,
+        Math.max(
+          -1,
+          ...section.statements.map((statement) => statement.position),
+        ) + 1,
+      ]),
+    );
+    const additionalStatements = command.additionalStatements.map(
+      (statement): ResolvedReviewStatement => {
+        const sourceClassifications = [
+          ...statement.claimIds.map((claimId) => {
+            const claim = claims.get(claimId);
+            if (claim === undefined) {
+              throw new ReviewValidationError(
+                'Reviewer statement references an unknown claim',
+              );
+            }
+            return claim.classification;
+          }),
+          ...statement.timelineEventIds.map((eventId) => {
+            const event = timeline.get(eventId);
+            if (event === undefined) {
+              throw new ReviewValidationError(
+                'Reviewer statement references an unknown timeline event',
+              );
+            }
+            return event.classification;
+          }),
+        ];
+        const requiredCaution = Math.max(
+          ...sourceClassifications.map(classificationCaution),
+        );
+        if (classificationCaution(statement.classification) < requiredCaution) {
+          throw new ReviewValidationError(
+            'Reviewer statement is more certain than its linked evidence',
+          );
+        }
+        const position = nextPosition.get(statement.sectionType) ?? 0;
+        if (position >= 100) {
+          throw new ReviewValidationError(
+            'A report section cannot contain more than 100 statements',
+          );
+        }
+        nextPosition.set(statement.sectionType, position + 1);
+        return {
+          id: this.idGenerator.generate(),
+          originalStatementId: null,
+          sectionType: statement.sectionType,
+          position,
+          decision: 'ADD',
+          text: statement.text,
+          classification: statement.classification,
+          claimIds: statement.claimIds,
+          timelineEventIds: statement.timelineEventIds,
+        };
+      },
+    );
+    const statements = [...reviewedStatements, ...additionalStatements];
     if (statements.every((statement) => statement.decision === 'EXCLUDE')) {
       throw new ReviewValidationError(
         'A report revision must include at least one statement',
@@ -192,6 +259,10 @@ export class CreateReportRevision {
       acknowledgedOpenQuestions: command.acknowledgedOpenQuestions,
       questionAnswers: [...command.questionAnswers].sort((left, right) =>
         left.questionId.localeCompare(right.questionId),
+      ),
+      additionalStatements: [...command.additionalStatements].sort(
+        (left, right) =>
+          left.clientStatementId.localeCompare(right.clientStatementId),
       ),
       decisions: [...command.decisions].sort((left, right) =>
         left.statementId.localeCompare(right.statementId),

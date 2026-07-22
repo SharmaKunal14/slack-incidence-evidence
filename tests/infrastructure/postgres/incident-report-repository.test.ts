@@ -124,7 +124,13 @@ describe('PostgresIncidentReportRepository', () => {
         ]),
       )
       .mockResolvedValueOnce(
-        result([{ id: 'question-1', question: 'What changed?' }]),
+        result([
+          {
+            id: 'question-1',
+            question: 'What changed?',
+            evidence_ids: ['evidence-1'],
+          },
+        ]),
       )
       .mockResolvedValueOnce(
         result([
@@ -168,7 +174,13 @@ describe('PostgresIncidentReportRepository', () => {
           evidenceCount: 1,
         },
       ],
-      openQuestions: [{ id: 'question-1', question: 'What changed?' }],
+      openQuestions: [
+        {
+          id: 'question-1',
+          question: 'What changed?',
+          evidenceIds: ['evidence-1'],
+        },
+      ],
       coverage: [
         {
           sourceId: 'source-1',

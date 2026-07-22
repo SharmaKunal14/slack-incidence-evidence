@@ -162,6 +162,7 @@ describe('PostgresIncidentAnalysisRepository', () => {
       result([]),
       result([]),
       result([]),
+      result([]),
       result([completedRow]),
       result([]),
     ]);
@@ -211,7 +212,13 @@ describe('PostgresIncidentAnalysisRepository', () => {
               contradictingEvidenceIds: [],
             },
           ],
-          openQuestions: ['Did the rollback fully restore service?'],
+          openQuestions: [
+            {
+              key: 'rollback_recovery_unknown',
+              question: 'Did the rollback fully restore service?',
+              evidenceIds: ['artifact-1'],
+            },
+          ],
         },
         providerResponseId: 'resp-1',
         providerModel: 'approved-model-2026-07-01',
@@ -240,6 +247,6 @@ describe('PostgresIncidentAnalysisRepository', () => {
       expect.stringContaining('INSERT INTO claim_evidence_links'),
       expect.arrayContaining(['artifact-1', 'SUPPORTS']),
     );
-    expect(query).toHaveBeenNthCalledWith(8, 'COMMIT');
+    expect(query).toHaveBeenNthCalledWith(9, 'COMMIT');
   });
 });

@@ -165,7 +165,8 @@ function reportManifest(
     })),
     openQuestions: analysis.openQuestions.map((question, index) => ({
       id: `question_${index + 1}`,
-      question,
+      question: question.question,
+      evidenceIds: question.evidenceIds,
     })),
   };
 }

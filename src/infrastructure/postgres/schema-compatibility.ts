@@ -17,6 +17,7 @@ export const REQUIRED_SCHEMA_MIGRATIONS = [
   { version: '8', name: '0008_review_question_answers.sql' },
   { version: '9', name: '0009_multi_channel_incident_sources.sql' },
   { version: '10', name: '0010_auto_discovered_slack_threads.sql' },
+  { version: '11', name: '0011_evidence_linked_review_content.sql' },
 ] as const;
 
 interface AppliedMigrationRow extends QueryResultRow {

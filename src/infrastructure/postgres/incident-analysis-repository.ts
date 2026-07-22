@@ -470,7 +470,8 @@ export class PostgresIncidentAnalysisRepository implements IncidentAnalysisRepos
         );
       }
 
-      for (const [index, question] of input.analysis.openQuestions.entries()) {
+      for (const question of input.analysis.openQuestions) {
+        const questionId = generatedId('question', input.run.id, question.key);
         await client.query(
           `
             INSERT INTO analysis_open_questions (
@@ -484,14 +485,35 @@ export class PostgresIncidentAnalysisRepository implements IncidentAnalysisRepos
             VALUES ($1, $2, $3, $4, $5, $6)
           `,
           [
-            generatedId('question', input.run.id, `${index}:${question}`),
+            questionId,
             input.run.tenantId,
             input.run.incidentId,
             input.run.id,
-            question,
+            question.question,
             input.completedAt,
           ],
         );
+        for (const evidenceId of question.evidenceIds) {
+          await client.query(
+            `
+              INSERT INTO analysis_open_question_evidence_links (
+                tenant_id,
+                incident_id,
+                open_question_id,
+                source_artifact_id,
+                created_at
+              )
+              VALUES ($1, $2, $3, $4, $5)
+            `,
+            [
+              input.run.tenantId,
+              input.run.incidentId,
+              questionId,
+              evidenceId,
+              input.completedAt,
+            ],
+          );
+        }
       }
 
       const updated = await client.query<AnalysisRunRow>(
