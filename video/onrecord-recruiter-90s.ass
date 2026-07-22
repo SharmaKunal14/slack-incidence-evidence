@@ -1,0 +1,32 @@
+[Script Info]
+Title: OnRecord recruiter walkthrough
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+ScaledBorderAndShadow: yes
+WrapStyle: 2
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Title,SF Pro Display,72,&H00FFFFFF,&H00FFFFFF,&H00081612,&H00081612,-1,0,0,0,100,100,-2,0,1,0,0,4,220,160,0,1
+Style: Tag,SF Pro Display,26,&H00C8D8A8,&H00C8D8A8,&H00081612,&H00081612,-1,0,0,0,100,100,2,0,1,0,0,7,220,120,235,1
+Style: Caption,SF Pro Display,42,&H00FFFFFF,&H00FFFFFF,&H00081612,&HA0081612,-1,0,0,0,100,100,-0.5,0,3,18,0,2,150,150,72,1
+Style: Disclosure,SF Pro Display,24,&H00FFFFFF,&H00FFFFFF,&H00081612,&HB0081612,0,0,0,0,100,100,0,0,3,12,0,9,80,64,52,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.35,0:00:03.70,Tag,,0,0,0,,ONRECORD · EVIDENCE-FIRST INCIDENT REVIEW
+Dialogue: 0,0:00:00.45,0:00:03.70,Title,,0,0,0,,FROM SLACK SIGNAL TO\NAPPROVED INCIDENT RECORD
+Dialogue: 0,0:00:04.25,0:00:15.75,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}01 · SCOPE THE INCIDENT IN SLACK{\r}\NBound the channels, time window and reviewer before collection starts.
+Dialogue: 0,0:00:16.25,0:00:27.85,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}02 · ORCHESTRATE A DURABLE PIPELINE{\r}\NAWS coordinates collection, analysis, drafting and notification.
+Dialogue: 0,0:00:16.10,0:00:28.05,Disclosure,,0,0,0,,PROCESSING SHORTENED · 4.8×
+Dialogue: 0,0:00:28.35,0:00:37.85,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}03 · OPEN A SOURCE-LINKED REVIEW{\r}\NClaims, timeline events, contradictions and coverage stay inspectable.
+Dialogue: 0,0:00:38.35,0:00:47.85,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}04 · INSPECT THE EVIDENCE{\r}\NEvery conclusion remains connected to the conversation that supports it.
+Dialogue: 0,0:00:38.10,0:01:08.05,Disclosure,,0,0,0,,REVIEW WALKTHROUGH ACCELERATED
+Dialogue: 0,0:00:48.35,0:00:57.85,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}05 · REVIEW EACH STATEMENT{\r}\NKeep, edit or exclude the draft while preserving its sources.
+Dialogue: 0,0:00:58.35,0:01:07.85,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}06 · APPROVE ONE REVISION{\r}\NA human answers gaps and acknowledges contradictions before publication.
+Dialogue: 0,0:01:08.35,0:01:16.05,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}07 · NOTIFY THE TEAM IN SLACK{\r}\NThe approved revision—not a fresh model output—moves forward.
+Dialogue: 0,0:01:08.15,0:01:25.15,Disclosure,,0,0,0,,WALKTHROUGH ACCELERATED
+Dialogue: 0,0:01:16.55,0:01:25.05,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}08 · PUBLISH TO CONFLUENCE{\r}\NThe final page matches the exact record the reviewer approved.
+Dialogue: 0,0:01:25.65,0:01:29.70,Tag,,0,0,0,,ONRECORD
+Dialogue: 0,0:01:25.70,0:01:29.70,Title,,0,0,0,,EVIDENCE BEFORE PROSE.\NHUMAN APPROVAL BEFORE PUBLICATION.
