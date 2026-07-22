@@ -213,6 +213,17 @@ describe('PostgresIncidentReviewRepository revision persistence', () => {
           claimIds: [],
           timelineEventIds: [],
         },
+        {
+          id: 'revision-statement-2',
+          originalStatementId: null,
+          sectionType: 'detection',
+          position: 0,
+          decision: 'ADD',
+          text: 'Monitoring raised the first incident alert.',
+          classification: 'corroborated',
+          claimIds: ['claim-1'],
+          timelineEventIds: [],
+        },
       ],
       renderedMarkdown: '# Reviewed',
       contentSha256: 'b'.repeat(64),
@@ -247,7 +258,7 @@ describe('PostgresIncidentReviewRepository revision persistence', () => {
       if (sql.includes('INSERT INTO report_revisions')) {
         return Promise.resolve(
           result([
-            { ...revisionRow(), revision_number: 1, statement_count: 1 },
+            { ...revisionRow(), revision_number: 1, statement_count: 2 },
           ]),
         );
       }
@@ -263,6 +274,26 @@ describe('PostgresIncidentReviewRepository revision persistence', () => {
       new PostgresIncidentReviewRepository(pool).createRevision(input),
     ).resolves.toMatchObject({ id: revisionId, revisionNumber: 1 });
 
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO report_revision_statements'),
+      [
+        'tenant-1',
+        incidentId,
+        reportDraftId,
+        revisionId,
+        ['revision-statement-1', 'revision-statement-2'],
+        ['statement-1', null],
+        ['ROOT_CAUSE', 'DETECTION'],
+        [0, 0],
+        ['KEEP', 'ADD'],
+        [
+          'A pool limit caused request queuing.',
+          'Monitoring raised the first incident alert.',
+        ],
+        ['HUMAN_CONFIRMED', 'CORROBORATED'],
+        now,
+      ],
+    );
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO report_revision_question_answers'),
       [

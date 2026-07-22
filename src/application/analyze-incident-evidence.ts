@@ -16,8 +16,8 @@ import { IncidentAggregate, type Incident } from '../domain/incident.js';
 
 const ANALYSIS_VERSION = 1;
 const PROVIDER = 'openai';
-const PROMPT_VERSION = 'incident-extraction-v1';
-const SCHEMA_VERSION = 'incident-analysis-v1';
+const PROMPT_VERSION = 'incident-extraction-v2';
+const SCHEMA_VERSION = 'incident-analysis-v2';
 const MAX_WORKFLOW_WAIT_SECONDS = 900;
 
 export interface AnalyzeIncidentEvidenceCommand {

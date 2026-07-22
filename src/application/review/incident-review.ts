@@ -16,7 +16,7 @@ export const REVIEW_CLASSIFICATIONS = [
 ] as const;
 
 export type ReviewClassification = (typeof REVIEW_CLASSIFICATIONS)[number];
-export type ReviewDecision = 'KEEP' | 'EDIT' | 'EXCLUDE';
+export type ReviewDecision = 'KEEP' | 'EDIT' | 'EXCLUDE' | 'ADD';
 
 export interface ReviewerIdentity {
   readonly subject: string;
@@ -115,12 +115,14 @@ export interface ReportRevisionSummary {
 }
 
 export interface ReviewRevisionStatement {
-  readonly originalStatementId: string;
+  readonly originalStatementId: string | null;
   readonly sectionType: IncidentReportSectionType;
   readonly position: number;
   readonly decision: ReviewDecision;
   readonly text: string | null;
   readonly classification: ReviewClassification | null;
+  readonly claimIds: readonly string[];
+  readonly timelineEventIds: readonly string[];
 }
 
 export interface ReviewQuestionAnswer {
@@ -157,6 +159,7 @@ export interface IncidentReviewBundle {
   readonly openQuestions: readonly {
     readonly id: string;
     readonly question: string;
+    readonly evidenceIds: readonly string[];
   }[];
   readonly revisions: readonly ReportRevisionSummary[];
   readonly latestRevision: ReportRevisionDetail | null;
@@ -169,9 +172,18 @@ export interface ReviewStatementDecisionInput {
   readonly classification?: ReviewClassification;
 }
 
+export interface ReviewAdditionalStatementInput {
+  readonly clientStatementId: string;
+  readonly sectionType: IncidentReportSectionType;
+  readonly text: string;
+  readonly classification: ReviewClassification;
+  readonly claimIds: readonly string[];
+  readonly timelineEventIds: readonly string[];
+}
+
 export interface ResolvedReviewStatement {
   readonly id: string;
-  readonly originalStatementId: string;
+  readonly originalStatementId: string | null;
   readonly sectionType: IncidentReportSectionType;
   readonly position: number;
   readonly decision: ReviewDecision;
@@ -280,6 +292,49 @@ export const createReportRevisionCommandSchema = z
       )
       .min(1)
       .max(300),
+    additionalStatements: z
+      .array(
+        z
+          .object({
+            clientStatementId: z.uuid(),
+            sectionType: z.enum(INCIDENT_REPORT_SECTION_TYPES),
+            text: reviewTextSchema,
+            classification: z.enum(REVIEW_CLASSIFICATIONS),
+            claimIds: z.array(safeIdSchema).max(20),
+            timelineEventIds: z.array(safeIdSchema).max(20),
+          })
+          .strict()
+          .superRefine((statement, context) => {
+            if (
+              statement.claimIds.length === 0 &&
+              statement.timelineEventIds.length === 0
+            ) {
+              context.addIssue({
+                code: 'custom',
+                message: 'Reviewer statements require at least one source',
+              });
+            }
+            if (
+              new Set(statement.claimIds).size !== statement.claimIds.length
+            ) {
+              context.addIssue({
+                code: 'custom',
+                message: 'Duplicate claim link',
+              });
+            }
+            if (
+              new Set(statement.timelineEventIds).size !==
+              statement.timelineEventIds.length
+            ) {
+              context.addIssue({
+                code: 'custom',
+                message: 'Duplicate timeline event link',
+              });
+            }
+          }),
+      )
+      .max(100)
+      .default([]),
   })
   .strict()
   .superRefine((command, context) => {
@@ -299,6 +354,15 @@ export const createReportRevisionCommandSchema = z
       context.addIssue({
         code: 'custom',
         message: 'Duplicate open-question answer',
+      });
+    }
+    const clientStatementIds = command.additionalStatements.map(
+      (statement) => statement.clientStatementId,
+    );
+    if (new Set(clientStatementIds).size !== clientStatementIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Duplicate reviewer statement identifier',
       });
     }
   });

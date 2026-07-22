@@ -8,6 +8,7 @@ import {
   BookOpenText,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   CircleHelp,
   Clock3,
@@ -21,9 +22,11 @@ import {
   LogOut,
   MessageSquareText,
   PencilLine,
+  Plus,
   Search,
   ShieldCheck,
   Sparkles,
+  Trash2,
   TriangleAlert,
   X,
 } from 'lucide-react';
@@ -75,6 +78,15 @@ export interface StatementState {
   readonly decision: ReviewDecision;
   readonly text: string;
   readonly classification: Classification;
+}
+
+interface AdditionalStatementState {
+  readonly clientStatementId: string;
+  readonly sectionType: string;
+  readonly text: string;
+  readonly classification: Classification;
+  readonly claimIds: readonly string[];
+  readonly timelineEventIds: readonly string[];
 }
 
 interface ErrorBoundaryProps {
@@ -498,6 +510,9 @@ function IncidentWorkspace({
   const [statementStates, setStatementStates] = useState(() =>
     createStatementStates(bundle),
   );
+  const [additionalStatements, setAdditionalStatements] = useState<
+    readonly AdditionalStatementState[]
+  >(() => createAdditionalStatementStates(bundle.latestRevision));
   const [questionAnswers, setQuestionAnswers] = useState(() =>
     createQuestionAnswerStates(bundle),
   );
@@ -557,6 +572,7 @@ function IncidentWorkspace({
         selectedRevision?.questionAnswers ?? null,
       ),
     );
+    setAdditionalStatements(createAdditionalStatementStates(selectedRevision));
     setAcknowledgedContradictions(
       selectedRevision?.acknowledgedContradictions ?? false,
     );
@@ -599,6 +615,7 @@ function IncidentWorkspace({
               acknowledgedContradictions,
               acknowledgedOpenQuestions: acknowledgedQuestions,
               questionAnswers: answeredQuestions,
+              additionalStatements,
               decisions,
             }),
           },
@@ -658,6 +675,11 @@ function IncidentWorkspace({
   ).length;
   const busy = saveRevision.isPending || approveRevision.isPending;
   const operationError = saveRevision.error ?? approveRevision.error;
+  const additionalStatementsValid = additionalStatements.every(
+    (statement) =>
+      statement.text.trim().length > 0 &&
+      (statement.claimIds.length > 0 || statement.timelineEventIds.length > 0),
+  );
 
   useEffect(() => {
     if (pendingEvidenceFocus === null) return;
@@ -836,13 +858,37 @@ function IncidentWorkspace({
                     <span>{String(sectionIndex + 1).padStart(2, '0')}</span>
                     <h3>{humanize(section.sectionType)}</h3>
                     <small>
-                      {section.statements.length}{' '}
-                      {section.statements.length === 1
+                      {section.statements.length +
+                        additionalStatements.filter(
+                          (statement) =>
+                            statement.sectionType === section.sectionType,
+                        ).length}{' '}
+                      {section.statements.length +
+                        additionalStatements.filter(
+                          (statement) =>
+                            statement.sectionType === section.sectionType,
+                        ).length ===
+                      1
                         ? 'statement'
                         : 'statements'}
                     </small>
                   </header>
                   <div className="statement-list">
+                    {section.statements.length === 0 &&
+                      additionalStatements.every(
+                        (statement) =>
+                          statement.sectionType !== section.sectionType,
+                      ) && (
+                        <div className="empty-section-warning">
+                          <TriangleAlert size={16} />
+                          <span>
+                            <strong>No statement was generated here.</strong>
+                            Review the available evidence and add a
+                            source-linked statement when this incident contains
+                            relevant facts.
+                          </span>
+                        </div>
+                      )}
                     {section.statements.map((statement) => {
                       const state = statementStates[statement.id];
                       if (state === undefined) {
@@ -864,6 +910,60 @@ function IncidentWorkspace({
                         />
                       );
                     })}
+                    {additionalStatements
+                      .filter(
+                        (statement) =>
+                          statement.sectionType === section.sectionType,
+                      )
+                      .map((statement) => (
+                        <AdditionalStatementEditor
+                          bundle={bundle}
+                          editable={editable}
+                          key={statement.clientStatementId}
+                          onChange={(next) =>
+                            setAdditionalStatements((current) =>
+                              current.map((candidate) =>
+                                candidate.clientStatementId ===
+                                next.clientStatementId
+                                  ? next
+                                  : candidate,
+                              ),
+                            )
+                          }
+                          onOpenSource={openSource}
+                          onRemove={() =>
+                            setAdditionalStatements((current) =>
+                              current.filter(
+                                (candidate) =>
+                                  candidate.clientStatementId !==
+                                  statement.clientStatementId,
+                              ),
+                            )
+                          }
+                          statement={statement}
+                        />
+                      ))}
+                    {editable && (
+                      <button
+                        className="add-statement-button"
+                        onClick={() =>
+                          setAdditionalStatements((current) => [
+                            ...current,
+                            {
+                              clientStatementId: crypto.randomUUID(),
+                              sectionType: section.sectionType,
+                              text: '',
+                              classification: 'participant_assertion',
+                              claimIds: [],
+                              timelineEventIds: [],
+                            },
+                          ])
+                        }
+                        type="button"
+                      >
+                        <Plus size={16} /> Add evidence-backed statement
+                      </button>
+                    )}
                   </div>
                 </section>
               ))}
@@ -898,7 +998,15 @@ function IncidentWorkspace({
           onAcknowledgedContradictions={setAcknowledgedContradictions}
           onAcknowledgedQuestions={setAcknowledgedQuestions}
           onApprove={() => approveRevision.mutate()}
-          onSave={() => saveRevision.mutate()}
+          onSave={() => {
+            if (!additionalStatementsValid) {
+              setNotice(
+                'Complete every added statement and link at least one source before saving.',
+              );
+              return;
+            }
+            saveRevision.mutate();
+          }}
         />
       ) : (
         <section
@@ -1027,6 +1135,162 @@ export function StatementEditor({
   );
 }
 
+function AdditionalStatementEditor({
+  bundle,
+  editable,
+  onChange,
+  onOpenSource,
+  onRemove,
+  statement,
+}: {
+  readonly bundle: Bundle;
+  readonly editable: boolean;
+  readonly onChange: (statement: AdditionalStatementState) => void;
+  readonly onOpenSource: (id: string, trigger: HTMLButtonElement) => void;
+  readonly onRemove: () => void;
+  readonly statement: AdditionalStatementState;
+}): ReactNode {
+  const sources = [
+    ...bundle.claims.map((source) => ({ kind: 'claim' as const, source })),
+    ...bundle.timeline.map((source) => ({ kind: 'timeline' as const, source })),
+  ];
+  const selectedIds = [...statement.claimIds, ...statement.timelineEventIds];
+  const toggleSource = (
+    kind: (typeof sources)[number]['kind'],
+    sourceId: string,
+  ): void => {
+    const currentIds =
+      kind === 'claim' ? statement.claimIds : statement.timelineEventIds;
+    const nextIds = currentIds.includes(sourceId)
+      ? currentIds.filter((id) => id !== sourceId)
+      : [...currentIds, sourceId];
+    const nextClaimIds = kind === 'claim' ? nextIds : statement.claimIds;
+    const nextTimelineIds =
+      kind === 'timeline' ? nextIds : statement.timelineEventIds;
+    const selectedClassifications = sources
+      .filter(({ kind: sourceKind, source }) =>
+        sourceKind === 'claim'
+          ? nextClaimIds.includes(source.id)
+          : nextTimelineIds.includes(source.id),
+      )
+      .map(({ source }) => source.classification);
+    const minimumClassification = mostCautiousClassification(
+      selectedClassifications,
+    );
+    onChange({
+      ...statement,
+      classification:
+        minimumClassification === null ||
+        classificationCaution(statement.classification) >=
+          classificationCaution(minimumClassification)
+          ? statement.classification
+          : minimumClassification,
+      claimIds: nextClaimIds,
+      timelineEventIds: nextTimelineIds,
+    });
+  };
+
+  return (
+    <article className="statement-card added-statement-card">
+      <div className="statement-topline">
+        <span className="reviewer-added-badge">
+          <Plus size={13} /> Reviewer added
+        </span>
+        {editable && (
+          <button
+            aria-label="Remove added statement"
+            className="remove-statement-button"
+            onClick={onRemove}
+            type="button"
+          >
+            <Trash2 size={15} /> Remove
+          </button>
+        )}
+      </div>
+      <div className="statement-editor-fields">
+        <label>
+          <span>Reviewed statement</span>
+          <textarea
+            disabled={!editable}
+            maxLength={4_000}
+            placeholder="Write the report statement supported by the selected evidence…"
+            value={statement.text}
+            onChange={(event) =>
+              onChange({ ...statement, text: event.target.value })
+            }
+          />
+        </label>
+        <label className="classification-field">
+          <span>Evidence classification</span>
+          <select
+            disabled={!editable}
+            value={statement.classification}
+            onChange={(event) =>
+              onChange({
+                ...statement,
+                classification: parseClassification(event.target.value),
+              })
+            }
+          >
+            {classificationValues.map((classification) => (
+              <option key={classification} value={classification}>
+                {humanize(classification)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {editable && (
+        <details className="statement-source-picker">
+          <summary>
+            <Link2 size={15} /> Link existing evidence
+            <ChevronDown size={15} />
+          </summary>
+          <div className="statement-source-options">
+            {sources.map(({ kind, source }) => (
+              <div className="statement-source-option" key={source.id}>
+                <input
+                  aria-label={`Link source: ${sourceSummary(source)}`}
+                  checked={selectedIds.includes(source.id)}
+                  onChange={() => toggleSource(kind, source.id)}
+                  type="checkbox"
+                />
+                <button
+                  onClick={(event) =>
+                    onOpenSource(source.id, event.currentTarget)
+                  }
+                  type="button"
+                >
+                  <span>{sourceSummary(source)}</span>
+                  <small>{kind === 'claim' ? 'Claim' : 'Timeline event'}</small>
+                  <ClassificationBadge classification={source.classification} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+      <div className="source-chip-row">
+        {selectedIds.map((sourceId) => (
+          <button
+            className="source-chip"
+            key={sourceId}
+            onClick={(event) => onOpenSource(sourceId, event.currentTarget)}
+            type="button"
+          >
+            <Link2 size={13} /> Source {shortId(sourceId)}
+          </button>
+        ))}
+        {selectedIds.length === 0 && (
+          <span className="source-required-note">
+            <TriangleAlert size={14} /> Link at least one source
+          </span>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function EvidenceWorkspace({
   activeTab,
   bundle,
@@ -1127,6 +1391,7 @@ function EvidenceWorkspace({
           ) : (
             <QuestionReviewPanel
               editable={editable}
+              evidence={bundle.evidence}
               onQuestionAnswerChange={onQuestionAnswerChange}
               questionAnswers={questionAnswers}
               questions={bundle.openQuestions}
@@ -1240,11 +1505,13 @@ function EvidenceWorkspace({
 
 export function QuestionReviewPanel({
   editable,
+  evidence = [],
   onQuestionAnswerChange,
   questionAnswers,
   questions,
 }: {
   readonly editable: boolean;
+  readonly evidence?: Bundle['evidence'];
   readonly onQuestionAnswerChange: (questionId: string, answer: string) => void;
   readonly questionAnswers: Readonly<Record<string, string>>;
   readonly questions: Bundle['openQuestions'];
@@ -1261,6 +1528,9 @@ export function QuestionReviewPanel({
   const answeredQuestionCount = Object.values(questionAnswers).filter(
     (answer) => answer.trim().length > 0,
   ).length;
+  const [expandedEvidenceQuestionId, setExpandedEvidenceQuestionId] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     if (questions.some((question) => question.id === activeQuestionId)) {
@@ -1349,6 +1619,69 @@ export function QuestionReviewPanel({
                     ? answer
                     : 'No answer was recorded in this revision.'}
                 </p>
+              </div>
+            )}
+            {question.evidenceIds.length > 0 && (
+              <div className="question-evidence-disclosure">
+                <button
+                  aria-expanded={expandedEvidenceQuestionId === question.id}
+                  className="question-evidence-button"
+                  onClick={() =>
+                    setExpandedEvidenceQuestionId((current) =>
+                      current === question.id ? null : question.id,
+                    )
+                  }
+                  type="button"
+                >
+                  <Link2 size={15} /> Evidence used for this question
+                  <span>{question.evidenceIds.length}</span>
+                  <ChevronDown size={15} />
+                </button>
+                {expandedEvidenceQuestionId === question.id && (
+                  <section
+                    aria-label={`Evidence for: ${question.question}`}
+                    className="question-evidence-panel"
+                  >
+                    {question.evidenceIds.map((evidenceId) => {
+                      const source = evidence.find(
+                        (candidate) => candidate.id === evidenceId,
+                      );
+                      if (source === undefined) {
+                        return (
+                          <p
+                            className="question-evidence-unavailable"
+                            key={evidenceId}
+                          >
+                            This evidence is no longer available to the
+                            reviewer.
+                          </p>
+                        );
+                      }
+                      const sourceUrl = safeSourceUrl(source.sourceUri);
+                      return (
+                        <article
+                          className="question-evidence-card"
+                          key={source.id}
+                        >
+                          <div>
+                            <span>{humanize(source.sourceType)}</span>
+                            <time>{formatDateTime(source.occurredAt)}</time>
+                          </div>
+                          <p>{source.content}</p>
+                          {sourceUrl !== null && (
+                            <a
+                              href={sourceUrl}
+                              rel="noopener noreferrer"
+                              target="_blank"
+                            >
+                              Open original <ExternalLink size={13} />
+                            </a>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </section>
+                )}
               </div>
             )}
             <div className="question-navigation">
@@ -1812,6 +2145,67 @@ function createQuestionAnswerStates(
 ): Readonly<Record<string, string>> {
   return Object.fromEntries(
     reconcileRevisionQuestionAnswers(bundle.openQuestions, revisionAnswers),
+  );
+}
+
+function createAdditionalStatementStates(
+  revision: RevisionDetail | null,
+): readonly AdditionalStatementState[] {
+  if (revision === null) return [];
+  return revision.statements.flatMap((statement) =>
+    statement.decision !== 'ADD' ||
+    statement.text === null ||
+    statement.classification === null
+      ? []
+      : [
+          {
+            clientStatementId: crypto.randomUUID(),
+            sectionType: statement.sectionType,
+            text: statement.text,
+            classification: parseClassification(statement.classification),
+            claimIds: statement.claimIds,
+            timelineEventIds: statement.timelineEventIds,
+          },
+        ],
+  );
+}
+
+function sourceSummary(
+  source: Bundle['claims'][number] | Bundle['timeline'][number],
+): string {
+  return 'statement' in source ? source.statement : source.summary;
+}
+
+function classificationCaution(classification: Classification): number {
+  switch (classification) {
+    case 'human_confirmed':
+    case 'directly_observed':
+    case 'corroborated':
+      return 0;
+    case 'participant_assertion':
+      return 1;
+    case 'correlated_inference':
+      return 2;
+    case 'hypothesis':
+      return 3;
+    case 'disputed':
+      return 4;
+    case 'unknown':
+      return 5;
+  }
+}
+
+function mostCautiousClassification(
+  classifications: readonly Classification[],
+): Classification | null {
+  return classifications.reduce<Classification | null>(
+    (mostCautious, classification) =>
+      mostCautious === null ||
+      classificationCaution(classification) >
+        classificationCaution(mostCautious)
+        ? classification
+        : mostCautious,
+    null,
   );
 }
 

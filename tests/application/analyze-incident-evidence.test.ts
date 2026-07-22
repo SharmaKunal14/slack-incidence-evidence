@@ -56,7 +56,13 @@ const analysis = {
       contradictingEvidenceIds: [],
     },
   ],
-  openQuestions: ['Did the rollback fully restore service?'],
+  openQuestions: [
+    {
+      key: 'rollback_recovery_unknown',
+      question: 'Did the rollback fully restore service?',
+      evidenceIds: ['artifact-1'],
+    },
+  ],
 };
 
 class InMemoryIncidentRepository implements IncidentRepository {

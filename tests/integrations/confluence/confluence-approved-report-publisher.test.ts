@@ -23,12 +23,16 @@ function response(
   });
 }
 
-function page(title = pageTitle): Record<string, unknown> {
+function page(
+  title = pageTitle,
+  version = { number: 4, message: 'OnRecord approved revision 2' },
+): Record<string, unknown> {
   return {
     id: pageId,
     status: 'current',
     title,
     spaceId,
+    version,
     _links: {
       webui: `/spaces/IR/pages/${pageId}/Incident+report`,
     },
@@ -185,6 +189,52 @@ describe('ConfluenceApprovedReportPublisher', () => {
       pageUrl: `${baseUrl}/wiki/spaces/IR/pages/${pageId}/Incident+report`,
     });
     expect(request).toHaveBeenCalledOnce();
+  });
+
+  it('updates an existing page when the approved revision is newer', async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        response({
+          results: [
+            page(pageTitle, {
+              number: 4,
+              message: 'OnRecord approved revision 1',
+            }),
+          ],
+          _links: {},
+        }),
+      )
+      .mockResolvedValueOnce(
+        response(
+          page(pageTitle, {
+            number: 5,
+            message: 'OnRecord approved revision 2',
+          }),
+        ),
+      );
+
+    await expect(publisher(request).publish(document())).resolves.toEqual({
+      pageId,
+      pageUrl: `${baseUrl}/wiki/spaces/IR/pages/${pageId}/Incident+report`,
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+    const updateUrl = request.mock.calls[1]?.[0];
+    expect(updateUrl).toBeInstanceOf(URL);
+    expect((updateUrl as URL).pathname).toContain(
+      `/wiki/api/v2/pages/${pageId}`,
+    );
+    const serializedUpdateBody = request.mock.calls[1]?.[1]?.body;
+    if (typeof serializedUpdateBody !== 'string') {
+      throw new Error('Expected serialized Confluence update body');
+    }
+    const updateBody = JSON.parse(serializedUpdateBody) as {
+      readonly version: { readonly number: number; readonly message: string };
+    };
+    expect(updateBody.version).toEqual({
+      number: 5,
+      message: 'OnRecord approved revision 2',
+    });
   });
 
   it('retains the site-specific API endpoint when no Cloud ID is configured', async () => {

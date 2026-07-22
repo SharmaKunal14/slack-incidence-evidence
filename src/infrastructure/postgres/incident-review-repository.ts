@@ -23,6 +23,8 @@ import type {
   CreateReportRevisionInput,
   IncidentReviewRepository,
 } from '../../application/ports/incident-review-repository.js';
+import { INCIDENT_REPORT_SECTION_TYPES } from '../../application/report/incident-report.js';
+import { splitLegacyQuestionEvidence } from '../../application/review/open-question-evidence.js';
 
 const MAX_REPORT_STATEMENTS = 300;
 const MAX_CLAIMS = 200;
@@ -116,6 +118,7 @@ interface CoverageRow {
 interface QuestionRow {
   readonly id: string;
   readonly question: string;
+  readonly evidence_ids: string[] | null;
 }
 
 interface RevisionRow {
@@ -138,12 +141,14 @@ interface RevisionRow {
 }
 
 interface RevisionStatementRow {
-  readonly original_report_statement_id: string;
+  readonly original_report_statement_id: string | null;
   readonly section_type: string;
   readonly position: number;
   readonly decision: string;
   readonly statement: string | null;
   readonly classification: string | null;
+  readonly claim_ids: string[];
+  readonly timeline_event_ids: string[];
 }
 
 interface RevisionQuestionAnswerRow {
@@ -418,7 +423,7 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
         permissionOutcome: row.permission_outcome,
         reason: row.completion_or_failure_reason,
       })),
-      openQuestions: questionResult.rows,
+      openQuestions: questionResult.rows.map(toOpenQuestion),
       revisions: revisionResult.rows.map(toRevisionSummary),
       latestRevision,
     };
@@ -949,6 +954,16 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
           WHERE event.tenant_id = $1
             AND event.incident_id = $2
             AND event.analysis_run_id = $3
+          UNION
+          SELECT link.source_artifact_id
+          FROM analysis_open_question_evidence_links link
+          JOIN analysis_open_questions question
+            ON question.tenant_id = link.tenant_id
+           AND question.incident_id = link.incident_id
+           AND question.id = link.open_question_id
+          WHERE question.tenant_id = $1
+            AND question.incident_id = $2
+            AND question.analysis_run_id = $3
         )
         SELECT
           artifact.id,
@@ -982,12 +997,21 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
   ): Promise<QueryResult<QuestionRow>> {
     return this.pool.query<QuestionRow>(
       `
-        SELECT id, question
-        FROM analysis_open_questions
-        WHERE tenant_id = $1
-          AND incident_id = $2
-          AND analysis_run_id = $3
-        ORDER BY created_at, id
+        SELECT
+          question.id,
+          question.question,
+          ARRAY_AGG(link.source_artifact_id ORDER BY link.source_artifact_id)
+            FILTER (WHERE link.source_artifact_id IS NOT NULL) AS evidence_ids
+        FROM analysis_open_questions question
+        LEFT JOIN analysis_open_question_evidence_links link
+          ON link.tenant_id = question.tenant_id
+         AND link.incident_id = question.incident_id
+         AND link.open_question_id = question.id
+        WHERE question.tenant_id = $1
+          AND question.incident_id = $2
+          AND question.analysis_run_id = $3
+        GROUP BY question.id
+        ORDER BY question.created_at, question.id
         LIMIT $4
       `,
       [
@@ -1058,12 +1082,28 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
           position,
           decision,
           statement,
-          classification
-        FROM report_revision_statements
-        WHERE tenant_id = $1
-          AND incident_id = $2
-          AND report_draft_id = $3
-          AND report_revision_id = $4
+          classification,
+          ARRAY(
+            SELECT link.claim_id
+            FROM report_revision_claim_links link
+            WHERE link.tenant_id = revision_statement.tenant_id
+              AND link.incident_id = revision_statement.incident_id
+              AND link.report_revision_statement_id = revision_statement.id
+            ORDER BY link.claim_id
+          ) AS claim_ids,
+          ARRAY(
+            SELECT link.timeline_event_id
+            FROM report_revision_timeline_event_links link
+            WHERE link.tenant_id = revision_statement.tenant_id
+              AND link.incident_id = revision_statement.incident_id
+              AND link.report_revision_statement_id = revision_statement.id
+            ORDER BY link.timeline_event_id
+          ) AS timeline_event_ids
+        FROM report_revision_statements revision_statement
+        WHERE revision_statement.tenant_id = $1
+          AND revision_statement.incident_id = $2
+          AND revision_statement.report_draft_id = $3
+          AND revision_statement.report_revision_id = $4
         ORDER BY section_type, position, id
         LIMIT $5
       `,
@@ -1110,7 +1150,9 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       'latest revision question answers',
     );
     if (
-      statementResult.rows.length !== sourceStatementCount ||
+      statementResult.rows.filter(
+        (statement) => statement.original_report_statement_id !== null,
+      ).length !== sourceStatementCount ||
       statementResult.rows.filter(
         (statement) => statement.decision !== 'EXCLUDE',
       ).length !== revision.statement_count
@@ -1474,7 +1516,12 @@ function toInboxItem(row: InboxRow): ReviewInboxItem {
 function toSections(
   rows: readonly StatementRow[],
 ): readonly ReviewReportSection[] {
-  const sections = new Map<string, ReviewReportSection>();
+  const sections = new Map<string, ReviewReportSection>(
+    INCIDENT_REPORT_SECTION_TYPES.map((sectionType, position) => [
+      sectionType,
+      { sectionType, position, statements: [] },
+    ]),
+  );
   for (const row of rows) {
     const sectionType = parseSectionType(row.section_type);
     const statement: ReviewReportStatement = {
@@ -1504,6 +1551,19 @@ function toSections(
   return [...sections.values()].sort(
     (left, right) => left.position - right.position,
   );
+}
+
+function toOpenQuestion(
+  row: QuestionRow,
+): IncidentReviewBundle['openQuestions'][number] {
+  const legacy = splitLegacyQuestionEvidence(row.question);
+  return {
+    id: row.id,
+    question: legacy.question,
+    evidenceIds: [
+      ...new Set([...(row.evidence_ids ?? []), ...legacy.evidenceIds]),
+    ],
+  };
 }
 
 function toClaim(row: ClaimRow): ReviewClaim {
@@ -1555,6 +1615,14 @@ function toRevisionStatement(
   row: RevisionStatementRow,
 ): ReportRevisionDetail['statements'][number] {
   const decision = parseReviewDecision(row.decision);
+  if (
+    (decision === 'ADD' && row.original_report_statement_id !== null) ||
+    (decision !== 'ADD' && row.original_report_statement_id === null)
+  ) {
+    throw new ReviewConfigurationError(
+      'Revision statement origin is inconsistent with its decision',
+    );
+  }
   if (decision === 'EXCLUDE') {
     if (row.statement !== null || row.classification !== null) {
       throw new ReviewConfigurationError(
@@ -1568,6 +1636,8 @@ function toRevisionStatement(
       decision,
       text: null,
       classification: null,
+      claimIds: row.claim_ids ?? [],
+      timelineEventIds: row.timeline_event_ids ?? [],
     };
   }
   if (row.statement === null || row.classification === null) {
@@ -1582,11 +1652,20 @@ function toRevisionStatement(
     decision,
     text: row.statement,
     classification: parseReviewClassification(row.classification),
+    claimIds: row.claim_ids ?? [],
+    timelineEventIds: row.timeline_event_ids ?? [],
   };
 }
 
-function parseReviewDecision(value: string): 'KEEP' | 'EDIT' | 'EXCLUDE' {
-  if (value === 'KEEP' || value === 'EDIT' || value === 'EXCLUDE') {
+function parseReviewDecision(
+  value: string,
+): 'KEEP' | 'EDIT' | 'EXCLUDE' | 'ADD' {
+  if (
+    value === 'KEEP' ||
+    value === 'EDIT' ||
+    value === 'EXCLUDE' ||
+    value === 'ADD'
+  ) {
     return value;
   }
   throw new ReviewConfigurationError('Unsupported review decision');

@@ -20,6 +20,7 @@ import {
   type IncidentReportManifest,
   type ModelEvidenceClassification,
 } from '../../application/report/incident-report.js';
+import { splitLegacyQuestionEvidence } from '../../application/review/open-question-evidence.js';
 
 interface ReportConfigurationRow {
   readonly title: string;
@@ -45,6 +46,7 @@ interface ReportTimelineRow {
 interface OpenQuestionRow {
   readonly id: string;
   readonly question: string;
+  readonly evidence_ids: string[] | null;
 }
 
 interface CoverageRow {
@@ -205,12 +207,21 @@ export class PostgresIncidentReportRepository
       ),
       this.pool.query<OpenQuestionRow>(
         `
-          SELECT id, question
-          FROM analysis_open_questions
-          WHERE tenant_id = $1
-            AND incident_id = $2
-            AND analysis_run_id = $3
-          ORDER BY created_at, id
+          SELECT
+            question.id,
+            question.question,
+            ARRAY_AGG(link.source_artifact_id ORDER BY link.source_artifact_id)
+              FILTER (WHERE link.source_artifact_id IS NOT NULL) AS evidence_ids
+          FROM analysis_open_questions question
+          LEFT JOIN analysis_open_question_evidence_links link
+            ON link.tenant_id = question.tenant_id
+           AND link.incident_id = question.incident_id
+           AND link.open_question_id = question.id
+          WHERE question.tenant_id = $1
+            AND question.incident_id = $2
+            AND question.analysis_run_id = $3
+          GROUP BY question.id
+          ORDER BY question.created_at, question.id
           LIMIT $4
         `,
         [tenantId, incidentId, analysisRunId, sourceLimit],
@@ -259,7 +270,13 @@ export class PostgresIncidentReportRepository
       })),
       openQuestions: openQuestions.rows.map((row) => ({
         id: row.id,
-        question: row.question,
+        question: splitLegacyQuestionEvidence(row.question).question,
+        evidenceIds: [
+          ...new Set([
+            ...(row.evidence_ids ?? []),
+            ...splitLegacyQuestionEvidence(row.question).evidenceIds,
+          ]),
+        ],
       })),
       coverage: coverage.rows.map((row) => ({
         sourceId: row.source_id,

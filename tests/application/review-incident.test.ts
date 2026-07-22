@@ -66,7 +66,13 @@ function bundle(): IncidentReviewBundle {
     ],
     timeline: [],
     evidence: [],
-    openQuestions: [{ id: 'question-1', question: 'Which query regressed?' }],
+    openQuestions: [
+      {
+        id: 'question-1',
+        question: 'Which query regressed?',
+        evidenceIds: ['evidence-1'],
+      },
+    ],
     revisions: [],
     latestRevision: null,
   };
@@ -170,6 +176,8 @@ describe('human incident review', () => {
           decision: 'KEEP',
           text: 'A deploy probably increased database latency.',
           classification: 'hypothesis',
+          claimIds: ['claim-1'],
+          timelineEventIds: [],
         },
       ],
     });
@@ -346,6 +354,95 @@ describe('human incident review', () => {
       '## Reviewed questions and answers',
     );
     expect(persisted?.renderedMarkdown).toContain('Which query regressed?');
+  });
+
+  it('adds a reviewer-authored statement linked to incident evidence', async () => {
+    const reviews = repository();
+    const generatedIds = [
+      '0ee5016d-5a63-4738-b781-a28522622473',
+      'ed7cb4ec-97f8-48b6-8a9f-889a15c6921c',
+      revisionId,
+      'bf6b4219-e1ad-475d-a302-731522e605d4',
+    ];
+    const useCase = new CreateReportRevision(
+      reviews,
+      { now: () => now },
+      { generate: () => generatedIds.shift() ?? revisionId },
+    );
+
+    await useCase.execute({
+      reviewer,
+      command: {
+        ...createCommand(),
+        additionalStatements: [
+          {
+            clientStatementId: 'ce80900c-d527-4461-a50f-c9afd17be884',
+            sectionType: 'detection',
+            text: 'The first alert was raised by checkout monitoring.',
+            classification: 'disputed',
+            claimIds: ['claim-1'],
+            timelineEventIds: [],
+          },
+        ],
+      },
+    });
+
+    const persisted = reviews.createRevision.mock.calls[0]?.[0];
+    expect(persisted?.statements).toContainEqual(
+      expect.objectContaining({
+        originalStatementId: null,
+        sectionType: 'detection',
+        decision: 'ADD',
+        text: 'The first alert was raised by checkout monitoring.',
+        claimIds: ['claim-1'],
+      }),
+    );
+    expect(persisted?.renderedMarkdown).toContain(
+      'The first alert was raised by checkout monitoring.',
+    );
+  });
+
+  it('rejects reviewer statements with foreign or overstated evidence', async () => {
+    const reviews = repository();
+    const useCase = new CreateReportRevision(
+      reviews,
+      { now: () => now },
+      { generate: () => revisionId },
+    );
+    const addedStatement = {
+      clientStatementId: 'ce80900c-d527-4461-a50f-c9afd17be884',
+      sectionType: 'detection' as const,
+      text: 'Monitoring conclusively detected the database regression.',
+      classification: 'directly_observed' as const,
+      claimIds: ['claim-1'],
+      timelineEventIds: [],
+    };
+
+    await expect(
+      useCase.execute({
+        reviewer,
+        command: {
+          ...createCommand(),
+          additionalStatements: [addedStatement],
+        },
+      }),
+    ).rejects.toThrow('more certain than its linked evidence');
+    await expect(
+      useCase.execute({
+        reviewer,
+        command: {
+          ...createCommand(),
+          additionalStatements: [
+            {
+              ...addedStatement,
+              classification: 'unknown',
+              claimIds: ['claim-from-another-incident'],
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow('unknown claim');
+    expect(reviews.createRevision).not.toHaveBeenCalled();
   });
 
   it('rejects an answer that points outside the incident questions', async () => {

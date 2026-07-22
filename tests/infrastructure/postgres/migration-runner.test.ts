@@ -82,6 +82,7 @@ describe('runMigrations', () => {
         '0008_review_question_answers.sql',
         '0009_multi_channel_incident_sources.sql',
         '0010_auto_discovered_slack_threads.sql',
+        '0011_evidence_linked_review_content.sql',
       ],
       alreadyApplied: 0,
     });

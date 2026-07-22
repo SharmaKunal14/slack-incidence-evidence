@@ -37,7 +37,13 @@ const manifest: IncidentReportManifest = {
       evidenceCount: 1,
     },
   ],
-  openQuestions: [{ id: 'question-1', question: 'What changed?' }],
+  openQuestions: [
+    {
+      id: 'question-1',
+      question: 'What changed?',
+      evidenceIds: ['evidence-1'],
+    },
+  ],
 };
 
 function validReport(): IncidentReport {
@@ -143,6 +149,41 @@ describe('incident report validation and rendering', () => {
 
     expect(() => parseIncidentReport(report, manifest)).toThrow(
       'Report omits a claim with material contradiction',
+    );
+  });
+
+  it('rejects omission of sufficiently supported evidence', () => {
+    const supportedManifest: IncidentReportManifest = {
+      ...manifest,
+      claims: [
+        ...manifest.claims,
+        {
+          id: 'claim-3',
+          statement: 'Monitoring detected the first failure.',
+          classification: 'corroborated',
+          supportingEvidenceCount: 2,
+          contradictingEvidenceCount: 0,
+        },
+      ],
+    };
+
+    expect(() => parseIncidentReport(validReport(), supportedManifest)).toThrow(
+      'Report omits a sufficiently supported claim',
+    );
+  });
+
+  it('rejects omission of a sufficiently supported timeline event', () => {
+    const report = validReport();
+    const timelineSection = report.sections.find(
+      (section) => section.sectionType === 'timeline',
+    );
+    if (timelineSection === undefined) {
+      throw new Error('Expected timeline section');
+    }
+    timelineSection.statements = [];
+
+    expect(() => parseIncidentReport(report, manifest)).toThrow(
+      'Report omits a sufficiently supported timeline event',
     );
   });
 

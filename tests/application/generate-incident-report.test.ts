@@ -42,7 +42,13 @@ const manifest: IncidentReportManifest = {
     },
   ],
   timeline: [],
-  openQuestions: [{ id: 'question-1', question: 'What changed?' }],
+  openQuestions: [
+    {
+      id: 'question-1',
+      question: 'What changed?',
+      evidenceIds: ['evidence-1'],
+    },
+  ],
 };
 
 const report: IncidentReport = {

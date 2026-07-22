@@ -24,7 +24,13 @@ const analysis = {
       contradictingEvidenceIds: [],
     },
   ],
-  openQuestions: ['Did the rollback restore service?'],
+  openQuestions: [
+    {
+      key: 'rollback_recovery_unknown',
+      question: 'Did the rollback restore service?',
+      evidenceIds: ['github-deployment-1'],
+    },
+  ],
 };
 
 describe('parseIncidentAnalysis', () => {
