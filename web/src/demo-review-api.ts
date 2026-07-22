@@ -88,6 +88,10 @@ const approveRevisionSchema = z
 
 export function createDemoReviewApi(): ReviewApiClient {
   let bundle = initialBundle();
+  const completedRequests = new Map<
+    string,
+    { readonly body: string; readonly response: unknown }
+  >();
 
   return async (_configuration, token, path, init = {}) => {
     await Promise.resolve();
@@ -117,7 +121,14 @@ export function createDemoReviewApi(): ReviewApiClient {
       method === 'POST' &&
       url.pathname === `/review/incidents/${demoIncidentId}/revisions`
     ) {
-      const request = createRevisionSchema.parse(parseBody(init.body));
+      const body = serializedBody(init.body);
+      const request = createRevisionSchema.parse(parseBody(body));
+      const replay = replayResponse(
+        completedRequests,
+        request.clientRequestId,
+        body,
+      );
+      if (replay.found) return replay.response;
       if (request.expectedIncidentVersion !== bundle.incident.version) {
         throw new ApiError(409);
       }
@@ -195,7 +206,9 @@ export function createDemoReviewApi(): ReviewApiClient {
         revisions: [revisionSummary(latestRevision)],
         latestRevision,
       });
-      return { revision: revisionSummary(latestRevision) };
+      const response = { revision: revisionSummary(latestRevision) };
+      completedRequests.set(request.clientRequestId, { body, response });
+      return clone(response);
     }
 
     if (
@@ -203,7 +216,14 @@ export function createDemoReviewApi(): ReviewApiClient {
       url.pathname ===
         `/review/incidents/${demoIncidentId}/revisions/${revisionId}/approve`
     ) {
-      const request = approveRevisionSchema.parse(parseBody(init.body));
+      const body = serializedBody(init.body);
+      const request = approveRevisionSchema.parse(parseBody(body));
+      const replay = replayResponse(
+        completedRequests,
+        request.clientRequestId,
+        body,
+      );
+      if (replay.found) return replay.response;
       if (
         request.expectedIncidentVersion !== bundle.incident.version ||
         bundle.latestRevision?.status !== 'DRAFT'
@@ -226,7 +246,9 @@ export function createDemoReviewApi(): ReviewApiClient {
         revisions: [revisionSummary(latestRevision)],
         latestRevision,
       });
-      return { revision: revisionSummary(latestRevision) };
+      const response = { revision: revisionSummary(latestRevision) };
+      completedRequests.set(request.clientRequestId, { body, response });
+      return clone(response);
     }
 
     throw new ApiError(404);
@@ -505,15 +527,35 @@ function revisionSummary(
   };
 }
 
-function parseBody(body: BodyInit | null | undefined): unknown {
+function serializedBody(body: BodyInit | null | undefined): string {
   if (typeof body !== 'string' || body.length > 512_000) {
     throw new ApiError(400);
   }
+  return body;
+}
+
+function parseBody(body: string): unknown {
   try {
     return JSON.parse(body) as unknown;
   } catch {
     throw new ApiError(400);
   }
+}
+
+function replayResponse(
+  completedRequests: ReadonlyMap<
+    string,
+    { readonly body: string; readonly response: unknown }
+  >,
+  clientRequestId: string,
+  body: string,
+):
+  | { readonly found: false }
+  | { readonly found: true; readonly response: unknown } {
+  const completed = completedRequests.get(clientRequestId);
+  if (completed === undefined) return { found: false };
+  if (completed.body !== body) throw new ApiError(409);
+  return { found: true, response: clone(completed.response) };
 }
 
 function assertCompleteDecisions(

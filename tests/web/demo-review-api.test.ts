@@ -78,15 +78,23 @@ describe('synthetic review API', () => {
       'statement-recovery',
     ].map((statementId) => ({ statementId, decision: 'KEEP' as const }));
 
-    await api(
+    const createBody = JSON.stringify(revisionRequest(decisions));
+    const created = await api(
       demoConfiguration,
       token,
       `/review/incidents/${demoIncidentId}/revisions`,
       {
         method: 'POST',
-        body: JSON.stringify(revisionRequest(decisions)),
+        body: createBody,
       },
     );
+    const replayedCreate = await api(
+      demoConfiguration,
+      token,
+      `/review/incidents/${demoIncidentId}/revisions`,
+      { method: 'POST', body: createBody },
+    );
+    expect(replayedCreate).toEqual(created);
     const saved = bundleSchema.parse(
       await api(
         demoConfiguration,
@@ -97,20 +105,28 @@ describe('synthetic review API', () => {
     expect(saved.latestRevision).toMatchObject({ status: 'DRAFT' });
     expect(saved.incident.version).toBe(8);
 
-    await api(
+    const approveBody = JSON.stringify({
+      incidentId: demoIncidentId,
+      revisionId: '10420000-0000-4000-8000-000000000003',
+      expectedIncidentVersion: 8,
+      clientRequestId: '10420000-0000-4000-8000-000000000099',
+    });
+    const approval = await api(
       demoConfiguration,
       token,
       `/review/incidents/${demoIncidentId}/revisions/10420000-0000-4000-8000-000000000003/approve`,
       {
         method: 'POST',
-        body: JSON.stringify({
-          incidentId: demoIncidentId,
-          revisionId: '10420000-0000-4000-8000-000000000003',
-          expectedIncidentVersion: 8,
-          clientRequestId: '10420000-0000-4000-8000-000000000099',
-        }),
+        body: approveBody,
       },
     );
+    const replayedApproval = await api(
+      demoConfiguration,
+      token,
+      `/review/incidents/${demoIncidentId}/revisions/10420000-0000-4000-8000-000000000003/approve`,
+      { method: 'POST', body: approveBody },
+    );
+    expect(replayedApproval).toEqual(approval);
     const approved = bundleSchema.parse(
       await api(
         demoConfiguration,
