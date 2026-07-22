@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.build.json",
     "build:lambda": "node scripts/build-lambda.mjs",
     "build:web": "node scripts/build-review-web.mjs",
+    "build:web:demo": "node scripts/build-review-demo.mjs",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run build:lambda && npm run build:web && npm run release:manifest && npm run release:verify",
     "db:migrate": "tsx src/infrastructure/postgres/migrate-cli.ts",
     "db:migrate:aws": "tsx src/infrastructure/postgres/migrate-aws-cli.ts",

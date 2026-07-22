@@ -28,6 +28,7 @@ import {
   Sparkles,
   Trash2,
   TriangleAlert,
+  RotateCcw,
   X,
 } from 'lucide-react';
 import {
@@ -73,6 +74,14 @@ import {
 type InboxFilter = 'ALL' | 'NEEDS_REVIEW' | 'APPROVED';
 type EvidenceTab = 'questions' | 'claims' | 'timeline' | 'evidence';
 type ReviewDecision = 'KEEP' | 'EDIT' | 'EXCLUDE';
+type Experience = 'production' | 'demo';
+
+export type ReviewApiClient = (
+  configuration: Configuration,
+  token: string,
+  path: string,
+  init?: RequestInit,
+) => Promise<unknown>;
 
 export interface StatementState {
   readonly decision: ReviewDecision;
@@ -114,8 +123,10 @@ class ApplicationErrorBoundary extends Component<
 
 export function IncidentReviewApplication({
   configuration,
+  apiClient = apiRequest,
 }: {
   readonly configuration: Configuration;
+  readonly apiClient?: ReviewApiClient;
 }): ReactNode {
   const [token, setToken] = useState<string | null>(() =>
     sessionStorage.getItem('review_access_token'),
@@ -146,12 +157,61 @@ export function IncidentReviewApplication({
   return (
     <ApplicationErrorBoundary>
       {incidentMatch?.[1] === undefined ? (
-        <InboxPage configuration={configuration} token={token} />
+        <InboxPage
+          apiClient={apiClient}
+          configuration={configuration}
+          token={token}
+        />
       ) : (
         <IncidentPage
+          apiClient={apiClient}
           configuration={configuration}
           incidentId={incidentMatch[1]}
           token={token}
+        />
+      )}
+    </ApplicationErrorBoundary>
+  );
+}
+
+export function DemoReviewApplication({
+  apiClient,
+  configuration,
+  incidentId,
+}: {
+  readonly apiClient: ReviewApiClient;
+  readonly configuration: Configuration;
+  readonly incidentId: string;
+}): ReactNode {
+  const defaultRoute = `#/incidents/${incidentId}`;
+  const [hash, setHash] = useState(location.hash || defaultRoute);
+
+  useEffect(() => {
+    if (location.hash === '') {
+      history.replaceState({}, '', `${location.pathname}${defaultRoute}`);
+    }
+    const routeChanged = (): void => setHash(location.hash || defaultRoute);
+    window.addEventListener('hashchange', routeChanged);
+    return () => window.removeEventListener('hashchange', routeChanged);
+  }, [defaultRoute]);
+
+  const incidentMatch = /^#\/incidents\/([0-9a-f-]{36})$/iu.exec(hash);
+  return (
+    <ApplicationErrorBoundary>
+      {incidentMatch?.[1] === undefined ? (
+        <InboxPage
+          apiClient={apiClient}
+          configuration={configuration}
+          experience="demo"
+          token="synthetic-demo"
+        />
+      ) : (
+        <IncidentPage
+          apiClient={apiClient}
+          configuration={configuration}
+          experience="demo"
+          incidentId={incidentMatch[1]}
+          token="synthetic-demo"
         />
       )}
     </ApplicationErrorBoundary>
@@ -262,10 +322,14 @@ function SignIn({
 }
 
 function InboxPage({
+  apiClient,
   configuration,
+  experience = 'production',
   token,
 }: {
+  readonly apiClient: ReviewApiClient;
   readonly configuration: Configuration;
+  readonly experience?: Experience;
   readonly token: string;
 }): ReactNode {
   const [filter, setFilter] = useState<InboxFilter>('ALL');
@@ -274,7 +338,7 @@ function InboxPage({
     queryKey: ['review-inbox'],
     queryFn: async () =>
       inboxSchema.parse(
-        await apiRequest(configuration, token, '/review/incidents?limit=50'),
+        await apiClient(configuration, token, '/review/incidents?limit=50'),
       ),
   });
 
@@ -308,7 +372,7 @@ function InboxPage({
   );
 
   return (
-    <AppFrame configuration={configuration}>
+    <AppFrame configuration={configuration} experience={experience}>
       <main className="page-shell">
         <section className="inbox-hero reveal">
           <div>
@@ -449,11 +513,15 @@ function IncidentCard({
 }
 
 function IncidentPage({
+  apiClient,
   configuration,
+  experience = 'production',
   incidentId,
   token,
 }: {
+  readonly apiClient: ReviewApiClient;
   readonly configuration: Configuration;
+  readonly experience?: Experience;
   readonly incidentId: string;
   readonly token: string;
 }): ReactNode {
@@ -461,7 +529,7 @@ function IncidentPage({
     queryKey: ['incident-review', incidentId],
     queryFn: async () =>
       bundleSchema.parse(
-        await apiRequest(
+        await apiClient(
           configuration,
           token,
           `/review/incidents/${encodeURIComponent(incidentId)}`,
@@ -481,8 +549,9 @@ function IncidentPage({
     );
   }
   return (
-    <AppFrame configuration={configuration} compact>
+    <AppFrame configuration={configuration} compact experience={experience}>
       <IncidentWorkspace
+        apiClient={apiClient}
         bundle={query.data}
         configuration={configuration}
         token={token}
@@ -492,10 +561,12 @@ function IncidentPage({
 }
 
 function IncidentWorkspace({
+  apiClient,
   bundle,
   configuration,
   token,
 }: {
+  readonly apiClient: ReviewApiClient;
   readonly bundle: Bundle;
   readonly configuration: Configuration;
   readonly token: string;
@@ -540,7 +611,7 @@ function IncidentWorkspace({
     ],
     queryFn: async () =>
       revisionDetailResponseSchema.parse(
-        await apiRequest(
+        await apiClient(
           configuration,
           token,
           `/review/incidents/${encodeURIComponent(bundle.incident.id)}/revisions/${encodeURIComponent(selectedVersionId)}`,
@@ -601,7 +672,7 @@ function IncidentWorkspace({
         }))
         .filter((answer) => answer.answer.length > 0);
       return revisionResponseSchema.parse(
-        await apiRequest(
+        await apiClient(
           configuration,
           token,
           `/review/incidents/${encodeURIComponent(bundle.incident.id)}/revisions`,
@@ -642,7 +713,7 @@ function IncidentWorkspace({
       if (displayedDraft === null) {
         throw new Error('No displayed draft is available for approval');
       }
-      await apiRequest(
+      await apiClient(
         configuration,
         token,
         `/review/incidents/${encodeURIComponent(bundle.incident.id)}/revisions/${encodeURIComponent(displayedDraft.id)}/approve`,
@@ -1872,10 +1943,12 @@ function AppFrame({
   children,
   compact = false,
   configuration,
+  experience = 'production',
 }: {
   readonly children: ReactNode;
   readonly compact?: boolean;
   readonly configuration: Configuration;
+  readonly experience?: Experience;
 }): ReactNode {
   return (
     <div className="app-surface" data-compact={compact}>
@@ -1883,22 +1956,36 @@ function AppFrame({
         <Brand />
         <div className="header-context">
           <span className="environment-indicator">
-            <span /> Protected workspace
+            <span />{' '}
+            {experience === 'demo'
+              ? 'Synthetic demo · no external effects'
+              : 'Protected workspace'}
           </span>
           <button
             className="icon-button"
-            onClick={() => signOut(configuration)}
-            title="Sign out"
+            onClick={() =>
+              experience === 'demo' ? location.reload() : signOut(configuration)
+            }
+            title={experience === 'demo' ? 'Reset demo' : 'Sign out'}
           >
-            <LogOut size={18} aria-hidden="true" />
-            <span className="sr-only">Sign out</span>
+            {experience === 'demo' ? (
+              <RotateCcw size={18} aria-hidden="true" />
+            ) : (
+              <LogOut size={18} aria-hidden="true" />
+            )}
+            <span className="sr-only">
+              {experience === 'demo' ? 'Reset demo' : 'Sign out'}
+            </span>
           </button>
         </div>
       </header>
       {children}
       <footer className="app-footer">
         <span>
-          <ShieldCheck size={15} /> Tenant-authorized evidence review
+          <ShieldCheck size={15} />{' '}
+          {experience === 'demo'
+            ? 'Synthetic data · browser-memory state'
+            : 'Tenant-authorized evidence review'}
         </span>
         <span>OnRecord</span>
       </footer>
