@@ -1,0 +1,32 @@
+[Script Info]
+Title: OnRecord recruiter walkthrough — 60 seconds
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+ScaledBorderAndShadow: yes
+WrapStyle: 2
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Title,SF Pro Display,72,&H00FFFFFF,&H00FFFFFF,&H00081612,&H00081612,-1,0,0,0,100,100,-2,0,1,0,0,4,220,160,0,1
+Style: Tag,SF Pro Display,26,&H00C8D8A8,&H00C8D8A8,&H00081612,&H00081612,-1,0,0,0,100,100,2,0,1,0,0,7,220,120,235,1
+Style: Caption,SF Pro Display,39,&H00FFFFFF,&H00FFFFFF,&H00081612,&HA0081612,-1,0,0,0,100,100,-0.5,0,3,17,0,2,150,150,72,1
+Style: Disclosure,SF Pro Display,23,&H00FFFFFF,&H00FFFFFF,&H00081612,&HB0081612,0,0,0,0,100,100,0,0,3,11,0,9,80,64,52,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.20,0:00:02.30,Tag,,0,0,0,,ONRECORD · EVIDENCE-FIRST INCIDENT REVIEW
+Dialogue: 0,0:00:00.25,0:00:02.30,Title,,0,0,0,,FROM SLACK SIGNAL TO\NAPPROVED INCIDENT RECORD
+Dialogue: 0,0:00:02.70,0:00:08.30,Caption,,0,0,0,,{\fs24\b1\c&H005C97ED&}01 · SCOPE IN SLACK{\r}\NChoose the channels, time window and reviewer before collection.
+Dialogue: 0,0:00:08.70,0:00:15.30,Caption,,0,0,0,,{\fs24\b1\c&H005C97ED&}02 · RUN THE EVIDENCE PIPELINE{\r}\NAWS coordinates collection, analysis, drafting and notification.
+Dialogue: 0,0:00:08.55,0:00:15.45,Disclosure,,0,0,0,,PROCESSING SHORTENED · 8.3×
+Dialogue: 0,0:00:15.70,0:00:20.30,Caption,,0,0,0,,{\fs24\b1\c&H005C97ED&}03 · OPEN THE REVIEW{\r}\NClaims, contradictions and source coverage remain inspectable.
+Dialogue: 0,0:00:15.55,0:00:36.45,Disclosure,,0,0,0,,REVIEW WALKTHROUGH ACCELERATED
+Dialogue: 0,0:00:20.70,0:00:30.30,Caption,,0,0,0,,{\fs24\b1\c&H005C97ED&}04 · VERIFY THE EVIDENCE{\r}\NKeep, edit or exclude statements without losing their sources.
+Dialogue: 0,0:00:30.70,0:00:36.30,Caption,,0,0,0,,{\fs24\b1\c&H005C97ED&}05 · APPROVE ONE REVISION{\r}\NA human resolves gaps before anything can be published.
+Dialogue: 0,0:00:36.70,0:00:42.30,Caption,,0,0,0,,{\fs24\b1\c&H005C97ED&}06 · NOTIFY THE TEAM{\r}\NSlack receives a link to the exact approved record.
+Dialogue: 0,0:00:36.55,0:00:56.30,Disclosure,,0,0,0,,WALKTHROUGH ACCELERATED
+Dialogue: 0,0:00:42.70,0:00:50.30,Caption,,0,0,0,,{\fs24\b1\c&H005C97ED&}07 · FOLLOW THE SLACK LINK{\r}\NThe reviewer opens the published destination directly from the thread.
+Dialogue: 0,0:00:50.70,0:00:56.30,Caption,,0,0,0,,{\fs24\b1\c&H005C97ED&}08 · VERIFY CONFLUENCE{\r}\NThe final page matches the revision that received human approval.
+Dialogue: 0,0:00:56.75,0:00:59.70,Tag,,0,0,0,,ONRECORD
+Dialogue: 0,0:00:56.80,0:00:59.70,Title,,0,0,0,,EVIDENCE BEFORE PROSE.\NHUMAN APPROVAL BEFORE PUBLICATION.

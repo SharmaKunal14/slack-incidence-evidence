@@ -1,0 +1,33 @@
+[Script Info]
+Title: OnRecord recruiter walkthrough — fixed-frame 90 seconds
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+ScaledBorderAndShadow: yes
+WrapStyle: 2
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Title,SF Pro Display,72,&H00FFFFFF,&H00FFFFFF,&H00081612,&H00081612,-1,0,0,0,100,100,-2,0,1,0,0,4,220,160,0,1
+Style: Tag,SF Pro Display,26,&H00C8D8A8,&H00C8D8A8,&H00081612,&H00081612,-1,0,0,0,100,100,2,0,1,0,0,7,220,120,235,1
+Style: Caption,SF Pro Display,40,&H00FFFFFF,&H00FFFFFF,&H00081612,&HA0081612,-1,0,0,0,100,100,-0.5,0,3,17,0,2,150,150,72,1
+Style: Disclosure,SF Pro Display,23,&H00FFFFFF,&H00FFFFFF,&H00081612,&HB0081612,0,0,0,0,100,100,0,0,3,11,0,9,80,64,52,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.35,0:00:03.70,Tag,,0,0,0,,ONRECORD · EVIDENCE-FIRST INCIDENT REVIEW
+Dialogue: 0,0:00:00.45,0:00:03.70,Title,,0,0,0,,FROM SLACK SIGNAL TO\NAPPROVED INCIDENT RECORD
+Dialogue: 0,0:00:04.25,0:00:13.75,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}01 · SCOPE THE INCIDENT IN SLACK{\r}\NChoose the channels, time window and reviewer before collection starts.
+Dialogue: 0,0:00:14.25,0:00:23.75,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}02 · ORCHESTRATE A DURABLE PIPELINE{\r}\NAWS coordinates collection, analysis, drafting and notification.
+Dialogue: 0,0:00:14.10,0:00:23.90,Disclosure,,0,0,0,,PROCESSING SHORTENED · 5.8×
+Dialogue: 0,0:00:24.25,0:00:31.75,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}03 · OPEN A SOURCE-LINKED REVIEW{\r}\NClaims, timeline events, contradictions and coverage stay inspectable.
+Dialogue: 0,0:00:24.10,0:01:00.90,Disclosure,,0,0,0,,REVIEW WALKTHROUGH ACCELERATED
+Dialogue: 0,0:00:32.25,0:00:41.75,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}04 · INSPECT THE EVIDENCE{\r}\NEvery conclusion remains connected to the conversation that supports it.
+Dialogue: 0,0:00:42.25,0:00:51.75,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}05 · REVIEW EACH STATEMENT{\r}\NKeep, edit or exclude the draft while preserving its sources.
+Dialogue: 0,0:00:52.25,0:01:00.75,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}06 · APPROVE ONE REVISION{\r}\NA human resolves gaps before anything can be published.
+Dialogue: 0,0:01:01.25,0:01:07.75,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}07 · NOTIFY THE TEAM IN SLACK{\r}\NSlack receives a link to the exact approved record.
+Dialogue: 0,0:01:01.10,0:01:23.90,Disclosure,,0,0,0,,WALKTHROUGH ACCELERATED
+Dialogue: 0,0:01:08.25,0:01:15.75,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}08 · FOLLOW THE CONFLUENCE LINK{\r}\NThe reviewer opens the published destination directly from the Slack thread.
+Dialogue: 0,0:01:16.25,0:01:23.75,Caption,,0,0,0,,{\fs25\b1\c&H005C97ED&}09 · VERIFY THE PUBLISHED RECORD{\r}\NThe final Confluence page matches the revision that received human approval.
+Dialogue: 0,0:01:24.55,0:01:29.70,Tag,,0,0,0,,ONRECORD
+Dialogue: 0,0:01:24.60,0:01:29.70,Title,,0,0,0,,EVIDENCE BEFORE PROSE.\NHUMAN APPROVAL BEFORE PUBLICATION.
