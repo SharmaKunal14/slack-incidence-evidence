@@ -371,7 +371,7 @@ function WorkflowWalkthrough() {
       <div className="shell">
         <div className="walkthrough-heading" data-reveal>
           <div>
-            <p className="kicker">90-second product walkthrough</p>
+            <p className="kicker">2-minute product walkthrough</p>
             <h2>Watch one incident travel from Slack to an approved Confluence record.</h2>
           </div>
           <p>
@@ -506,7 +506,14 @@ export function OnRecordSite() {
               <a className="button button-signal" href={demoHref}>
                 Explore the incident <span aria-hidden="true">→</span>
               </a>
-              <a className="text-link" href="#method">See how it works <span aria-hidden="true">↓</span></a>
+              <div className="hero-action-links">
+                <a className="text-link" href="#walkthrough">
+                  See how it works <span aria-hidden="true">↓</span>
+                </a>
+                <a className="text-link" href="#architecture">
+                  Explore the detailed system flow <span aria-hidden="true">↘</span>
+                </a>
+              </div>
             </div>
             <div className="hero-proof" aria-label="Product safeguards">
               <span>Source linked</span><span>Human approved</span><span>History preserved</span>
