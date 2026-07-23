@@ -135,4 +135,4 @@ jobs:
             "$SITE_URL/review-demo/demo.html" >/dev/null
           curl --fail --silent --show-error \
             --header 'Range: bytes=0-1023' \
-            "$SITE_URL/video/onrecord-workflow-90s.mp4" >/dev/null
+            "$SITE_URL/video/onrecord-workflow-120s.mp4" >/dev/null
