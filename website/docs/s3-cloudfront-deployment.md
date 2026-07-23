@@ -201,7 +201,7 @@ After DNS resolves, verify:
 curl -I https://onrecord.example.com/
 curl -I https://onrecord.example.com/demo
 curl -I https://onrecord.example.com/review-demo/demo.html
-curl -I https://onrecord.example.com/video/onrecord-workflow-90s.mp4
+curl -I https://onrecord.example.com/video/onrecord-workflow-120s.mp4
 ```
 
 Expected results:

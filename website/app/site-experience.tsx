@@ -383,7 +383,7 @@ function WorkflowWalkthrough() {
         <figure className="walkthrough-frame" data-reveal>
           <div className="walkthrough-topline">
             <span><i /> Connected test environment</span>
-            <span>01:30 · Slack to Confluence</span>
+            <span>02:00 · Slack to Confluence</span>
           </div>
           <div className="walkthrough-video">
             <video
@@ -393,10 +393,10 @@ function WorkflowWalkthrough() {
               poster="/video/onrecord-workflow-poster.jpg"
               aria-label="OnRecord workflow from Slack incident scoping through human approval and Confluence publication"
             >
-              <source src="/video/onrecord-workflow-90s.mp4" type="video/mp4" />
+              <source src="/video/onrecord-workflow-120s.mp4" type="video/mp4" />
               <track
                 kind="captions"
-                src="/video/onrecord-workflow-90s.vtt"
+                src="/video/onrecord-workflow-120s.vtt"
                 srcLang="en"
                 label="English workflow captions"
               />

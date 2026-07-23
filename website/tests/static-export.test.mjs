@@ -19,7 +19,7 @@ test('exports a static demo redirect and all public demo assets', async () => {
     new URL('demo/index.html', output),
     'utf8',
   );
-  const film = await stat(new URL('video/onrecord-workflow-90s.mp4', output));
+  const film = await stat(new URL('video/onrecord-workflow-120s.mp4', output));
 
   assert.match(
     redirectPage,
@@ -30,7 +30,7 @@ test('exports a static demo redirect and all public demo assets', async () => {
     access(new URL('review-demo/demo.html', output)),
     access(new URL('review-demo/app.js', output)),
     access(new URL('review-demo/styles.css', output)),
-    access(new URL('video/onrecord-workflow-90s.vtt', output)),
+    access(new URL('video/onrecord-workflow-120s.vtt', output)),
     access(new URL('og.png', output)),
   ]);
 });

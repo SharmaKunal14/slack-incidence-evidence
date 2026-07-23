@@ -62,9 +62,9 @@ test('server-renders the OnRecord landing page', async () => {
     );
   }
   assert.match(html, /href="\/review-demo\/demo\.html"/);
-  assert.match(html, /\/video\/onrecord-workflow-90s\.mp4/);
+  assert.match(html, /\/video\/onrecord-workflow-120s\.mp4/);
   assert.match(html, /\/video\/onrecord-workflow-poster\.jpg/);
-  assert.match(html, /\/video\/onrecord-workflow-90s\.vtt/);
+  assert.match(html, /\/video\/onrecord-workflow-120s\.vtt/);
   assert.doesNotMatch(
     html,
     /codex-preview|Your site is taking shape|react-loading-skeleton/i,
@@ -167,17 +167,17 @@ test('renders the OpenAI mark as a cropped, high-contrast icon', async () => {
 
 test('ships the web-optimized workflow film and its accessible supporting assets', async () => {
   const [film, poster, captions] = await Promise.all([
-    stat(new URL('../public/video/onrecord-workflow-90s.mp4', import.meta.url)),
+    stat(new URL('../public/video/onrecord-workflow-120s.mp4', import.meta.url)),
     stat(
       new URL('../public/video/onrecord-workflow-poster.jpg', import.meta.url),
     ),
     readFile(
-      new URL('../public/video/onrecord-workflow-90s.vtt', import.meta.url),
+      new URL('../public/video/onrecord-workflow-120s.vtt', import.meta.url),
       'utf8',
     ),
   ]);
   assert.ok(film.size > 5_000_000);
-  assert.ok(film.size < 15_000_000);
+  assert.ok(film.size < 25_000_000);
   assert.ok(poster.size > 100_000);
   assert.match(captions, /^WEBVTT/);
   assert.match(captions, /Follow the Confluence link/);

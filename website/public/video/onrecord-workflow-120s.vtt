@@ -1,0 +1,34 @@
+WEBVTT
+
+00:00.000 --> 00:05.250
+From Slack signal to approved incident record
+
+00:05.250 --> 00:19.000
+Scope the incident in Slack: choose the channels, time window and reviewer.
+
+00:19.000 --> 00:32.250
+Orchestrate a durable pipeline across collection, analysis, drafting and notification.
+
+00:32.250 --> 00:42.750
+Open a source-linked review with inspectable claims, contradictions and coverage.
+
+00:42.750 --> 00:55.750
+Inspect the evidence behind every conclusion.
+
+00:55.750 --> 00:68.750
+Keep, edit or exclude statements while preserving their sources.
+
+00:68.750 --> 00:80.500
+Resolve gaps and approve one immutable revision.
+
+00:80.500 --> 00:90.250
+Notify the team in Slack with a link to the approved record.
+
+00:90.250 --> 00:100.750
+Follow the Confluence link directly from the Slack thread.
+
+00:100.750 --> 00:111.000
+Verify that the published page matches the human-approved revision.
+
+00:111.000 --> 00:120.000
+Evidence before prose. Human approval before publication.
