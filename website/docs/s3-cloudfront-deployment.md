@@ -219,8 +219,15 @@ review workflow, and social-card rendering on the final hostname.
 
 ## 9. Routine releases and rollback
 
-For each release, run the same three exported variables and `npm run deploy:s3`.
-The command creates a fresh static export and requests an invalidation.
+After the CI/CD configuration below is complete, merge website changes into
+`main`. Pull requests run linting and the static-export tests. A push to `main`
+uploads that same verified artifact, waits for CloudFront invalidation, and
+smoke-tests the public domain. Manual production runs are restricted to
+`main` as well.
+
+For an exceptional local release, run the same three exported variables and
+`npm run deploy:s3`. The command creates a fresh static export, uploads it, and
+waits for invalidation.
 
 For rollback, retrieve the previous objects from S3 version history, then
 invalidate `/*`. A stronger long-term setup is a versioned release prefix plus
@@ -235,6 +242,113 @@ that this single-site deployment does not currently need.
   AWS services; do not expose them by placing credentials in this frontend.
 - The current deployment script deliberately does not delete stale S3 keys.
 - CloudFront changes and first-time DNS/TLS validation are not instantaneous.
+
+## One-time GitHub Actions configuration
+
+The workflow is `.github/workflows/deploy-website.yml`. It uses GitHub OIDC and
+short-lived AWS credentials; it does not accept stored AWS access keys.
+
+### 1. Resolve the real distribution ID
+
+CloudFront invalidations use a distribution ID, not the CloudFront hostname.
+Resolve it from the real distribution hostname:
+
+```bash
+aws cloudfront list-distributions \
+  --query "DistributionList.Items[?DomainName=='dum73za17r19q.cloudfront.net'].Id | [0]" \
+  --output text
+```
+
+If this prints `None`, the hostname is not present in the authenticated AWS
+account. The supplied `d123example.cloudfront.net` value was illustrative and
+does not exist in the authenticated account. The verified production values
+are distribution `E3EMVCLM5MIYJP` at `dum73za17r19q.cloudfront.net`.
+
+### 2. Obtain the immutable GitHub OIDC identifiers
+
+Push the workflow branch and open a pull request before creating the AWS role.
+The **Report immutable GitHub OIDC identifiers** step in the **Verify static
+website** job prints:
+
+```text
+repository_id=...
+repository_owner_id=...
+```
+
+These numeric identifiers are not credentials. GitHub includes them in default
+OIDC subjects for repositories created after July 15, 2026. Using them prevents
+a renamed, transferred, or later name-reused repository from assuming the
+deployment role.
+
+### 3. Create the least-privilege OIDC deployment role
+
+The account must already have GitHub's OIDC provider for
+`token.actions.githubusercontent.com`. Deploy
+`infrastructure/website-deployment-role.yml` with:
+
+- `GitHubOidcProviderArn`: the existing GitHub OIDC provider ARN;
+- `GitHubOwnerId`: the printed `repository_owner_id`;
+- `GitHubRepositoryId`: the printed `repository_id`;
+- `BucketName`: `onrecord-public-site-prod`; and
+- `CloudFrontDistributionId`: the ID resolved above.
+
+The resulting role can only list and upload to this bucket and create/read
+invalidations for that one distribution. It cannot delete S3 objects or modify
+CloudFront configuration.
+
+For the verified AWS account and repository, run from `website/`:
+
+```bash
+aws cloudformation deploy \
+  --region ap-southeast-2 \
+  --stack-name onrecord-website-github-deployment \
+  --template-file infrastructure/website-deployment-role.yml \
+  --capabilities CAPABILITY_IAM \
+  --parameter-overrides \
+    GitHubOidcProviderArn=arn:aws:iam::393209814365:oidc-provider/token.actions.githubusercontent.com \
+    GitHubOwnerId=REPLACE_WITH_REPOSITORY_OWNER_ID \
+    GitHubRepositoryId=REPLACE_WITH_REPOSITORY_ID
+```
+
+Read the role ARN after the stack succeeds:
+
+```bash
+aws cloudformation describe-stacks \
+  --region ap-southeast-2 \
+  --stack-name onrecord-website-github-deployment \
+  --query "Stacks[0].Outputs[?OutputKey=='WebsiteDeploymentRoleArn'].OutputValue | [0]" \
+  --output text
+```
+
+### 4. Create the protected GitHub Environment
+
+In **GitHub repository -> Settings -> Environments**, create
+`production-website`. Add deployment reviewers if you want a manual approval
+before every production release. Restrict deployment branches to `main`.
+
+Add these environment variables:
+
+| Variable | Value |
+| --- | --- |
+| `AWS_ACCOUNT_ID` | `393209814365` |
+| `AWS_WEBSITE_DEPLOY_ROLE_ARN` | The role ARN output by the CloudFormation stack |
+
+These values are identifiers, not credentials. Do not add AWS access-key
+secrets; the workflow exchanges its GitHub identity for short-lived AWS
+credentials.
+
+### 5. Protect `main`
+
+Require the **Verify static website** check before merging. Once merged, the
+production job deploys to:
+
+- bucket: `onrecord-public-site-prod`;
+- site URL: `https://onrecord.kunal-sharma.in`; and
+- CloudFront distribution: `E3EMVCLM5MIYJP`
+  (`dum73za17r19q.cloudfront.net`).
+
+The workflow intentionally triggers only when `website/**` or its workflow
+changes. Backend-only commits do not rebuild or redeploy an unchanged website.
 
 ## AWS references
 
