@@ -1,154 +1,143 @@
+<div align="center">
+
 # OnRecord
 
-**Put every incident on the record.**
+**Evidence-first incident review from Slack to an approved record.**
 
-OnRecord is an evidence-first incident review product that turns selected
-production incident conversations from Slack into a record your team can trust.
-It is deliberately not a one-prompt transcript summarizer:
-incident facts, hypotheses, timeline events, and evidence references are
-represented as separate domain concepts so later AI stages cannot silently turn
-speculation into fact.
+[Website](https://onrecord.kunal-sharma.in) ·
+[Interactive demo](https://onrecord.kunal-sharma.in/review-demo/demo.html) ·
+[2-minute walkthrough](https://onrecord.kunal-sharma.in/#walkthrough) ·
+[System flow](https://onrecord.kunal-sharma.in/#architecture)
 
-The current release establishes secure ingestion, collects an explicitly
-selected set of public Slack channels, extracts an evidence-cited timeline, claims, and open
-questions, and produces a versioned source-linked postmortem draft. An
-authenticated, tenant-authorized console lets a human inspect evidence, create
-immutable corrected revisions, browse every preserved version, acknowledge
-contradictions and unknowns, and approve exactly one revision. Approval queues
-durable publication to a configured Confluence space or private Notion data
-source and a final Slack link.
-GitHub retrieval remains a later increment.
+</div>
 
-## Implemented
+---
 
-- Authenticated Slack Events API endpoint with HMAC verification, constant-time
-  comparison, and five-minute replay protection.
-- `@app generate incident review: <title>` and equivalent RCA/postmortem command
-  parsing for public channels.
-- A signed Slack message shortcut and modal for a bounded time window, one
-  primary public channel, up to four additional public channels, optional
-  additional thread anchors, a reviewer, and an explicit retention
-  acknowledgement.
-- Immediate Slack acknowledgement followed by durable SQS FIFO handoff.
-- API Gateway HTTP API and Lambda adapters which preserve the same application
-  contracts as the local Fastify API and polling worker.
-- Versioned queue contract with rapid-retry deduplication and Lambda partial
-  batch failure handling for FIFO ordering.
-- At-least-once worker with database-backed idempotency, optimistic locking, and
-  deterministic Step Functions execution identity.
-- Checkpointed Slack channel collection that automatically discovers thread
-  roots inside the selected window, merges them with optional anchors, and
-  expands replies in bounded 15-message pages. Provider-directed rate-limit
-  waits are owned by Step Functions rather than a sleeping Lambda.
-- Idempotent Slack evidence upserts with stable source IDs, SHA-256 content
-  hashes, source permalinks, selected metadata, and configurable retention
-  deadlines.
-- A provider-neutral analysis use case and OpenAI Responses adapter using strict
-  structured output, `store: false`, an explicit model, request/output budgets,
-  timeouts, and no model tools.
-- Durable analysis versions and database leases which suppress concurrent model
-  calls, bound explicit retries, and make completed workflow invocations a
-  no-op.
-- Transactional persistence of model-generated timeline events, unreviewed
-  claims, supporting/contradicting citations, open questions, model metadata,
-  and token usage.
-- Application validation which rejects fabricated evidence references,
-  duplicate model keys, unsupported factual claims, and model attempts to mark
-  content as human-confirmed.
-- Evidence-constrained report generation from structured claims and timeline
-  events rather than raw Slack text, with uncertainty preservation, URL/HTML
-  rejection, contradiction coverage, and deterministic Markdown rendering.
-- Versioned report drafts with expiring leases, bounded retries, transactional
-  statement/source links, idempotent completion, and an explicit
-  `NEEDS_REVIEW` terminal product state.
-- A ten-incident synthetic evaluation corpus with deterministic offline safety
-  metrics and an explicitly cost-gated live OpenAI evaluation mode.
-- A separate least-privilege Slack notifier which posts only bounded counters
-  and an authenticated deep link after the persisted draft is ready for review.
-- Cognito authorization-code + PKCE authentication and PostgreSQL-backed active
-  reviewer memberships; incident UUIDs are never treated as authorization.
-- A bounded review API Lambda with strict request validation, tenant-scoped
-  evidence reads, optimistic concurrency, idempotency keys, and safe errors.
-- A private S3/CloudFront evidence-review console for inspecting source-linked
-  claims, timeline events, and evidence and choosing keep, edit, or exclude for
-  every generated statement.
-- Immutable review revisions, deterministic reviewed Markdown, preserved
-  provenance links, explicit contradiction/open-question acknowledgement, and
-  atomic approval/audit/incident-state transitions.
-- Tenant-authorized revision history which loads one bounded immutable version
-  at a time and keeps historical content read-only.
-- A transactional approval-to-publication outbox with PostgreSQL leases,
-  bounded retries, provider-neutral page checkpoints, configurable Confluence
-  or Notion publication, exact incident identity lookup, and an idempotent final
-  Slack thread notification.
-- Secrets Manager runtime loading with narrow, validated JSON secret contracts.
-- Terraform for API Gateway, eight independently scaled Lambdas, encrypted SQS
-  FIFO/DLQ, a checkpointed Standard workflow, least-privilege IAM, bounded
-  logs, concurrency controls, Cognito, private S3/CloudFront hosting, and
-  queue/workflow/review alarms.
-- Incident aggregate with explicit, validated lifecycle transitions.
-- PostgreSQL schema for tenants, installations, incidents, source artifacts,
-  timeline events, claims, evidence links, workflow jobs, and audit events.
-- Transactional, checksummed SQL migrations protected by an advisory lock.
-- A shared required-migration startup gate for every database-backed Lambda.
-- A build-once GitHub Actions release path with OIDC-only AWS authentication,
-  serialized remote-state plans, migration-before-apply ordering, destructive
-  change blocking, deterministic smoke checks, and opt-in staging/production
-  promotion. AWS roles, state, and GitHub Environments must still be bootstrapped.
-- Structured AI analysis contract that rejects references to unknown evidence.
-- Redacted structured logging, health endpoints, graceful shutdown, CI, Docker,
-  and reproducible local PostgreSQL/SQS services.
+## Overview
+
+OnRecord turns selected Slack incident conversations into a source-linked
+postmortem that a human can verify, revise, approve, and publish.
+
+It does not ask a model to summarize an entire transcript in one pass. Facts,
+hypotheses, timeline events, contradictions, questions, and evidence references
+remain separate domain concepts throughout the workflow.
+
+### Why it exists
+
+- Incident evidence is fragmented across channels and threads.
+- Observations, guesses, and contradictions often look equally authoritative.
+- Conventional summaries can turn correlation into confident causation.
+- Reviewers need provenance and uncertainty, not only polished prose.
+
+## Product flow
+
+1. **Scope** — Select a time window, reviewer, primary channel, and up to four
+   additional public Slack channels.
+2. **Collect** — Discover thread roots, expand replies in bounded pages, and
+   persist canonical evidence with coverage outcomes.
+3. **Analyze** — Extract source-linked claims, timeline events,
+   contradictions, classifications, and open questions.
+4. **Draft** — Generate a report from validated structured evidence rather than
+   raw Slack messages.
+5. **Review** — Keep, edit, exclude, or add evidence-linked statements in an
+   authenticated console.
+6. **Approve** — Preserve an immutable revision and record the human decision.
+7. **Publish** — Deliver the approved record to Confluence or Notion and post
+   the final link to Slack.
+
+## Implemented capabilities
+
+| Area                | What is implemented                                                                                                                     |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Slack intake        | Signed Events API, message shortcut, incident-scoping modal, bounded channel selection, immediate acknowledgement                       |
+| Durable processing  | SQS FIFO/DLQ, at-least-once worker, database idempotency, optimistic locking, Step Functions checkpoints                                |
+| Evidence collection | Automatic thread discovery, bounded pagination, stable source IDs, SHA-256 hashes, permalinks, coverage and retention metadata          |
+| AI analysis         | OpenAI Responses API, strict structured output, explicit model configuration, token/time budgets, `store: false`, no model tools        |
+| Report generation   | Evidence-constrained claims and timeline input, source validation, uncertainty preservation, deterministic Markdown rendering           |
+| Human review        | Cognito PKCE authentication, tenant authorization, evidence inspection, immutable revisions, contradiction and question acknowledgement |
+| Publication         | Transactional outbox, leased retries, Confluence/Notion adapters, idempotent Slack completion notification                              |
+| Operations          | Terraform, least-privilege IAM, Secrets Manager, CloudWatch logs and alarms, checked SQL migrations, GitHub Actions CI/CD               |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Slack["Slack Events API"] --> Gateway["API Gateway HTTP API"]
-    Gateway --> API["Ingress Lambda"]
-    API --> Verify["Signature + replay verification"]
-    Verify --> SQS["SQS FIFO"]
-    SQS --> Worker["Worker Lambda"]
-    Worker --> Domain["Incident aggregate"]
-    Domain --> Postgres["PostgreSQL"]
-    Worker --> SFN["Step Functions Standard"]
-    SFN --> Collector["Slack evidence collector"]
+    Slack["Slack Events API"] --> Gateway["API Gateway"]
+    Gateway --> Ingress["Ingress Lambda"]
+    Ingress --> Verify["HMAC + replay verification"]
+    Verify --> Queue["SQS FIFO"]
+    Queue --> Worker["Worker Lambda"]
+    Worker --> DB["PostgreSQL"]
+    Worker --> Flow["Step Functions"]
+    Flow --> Collector["Evidence collector"]
     Collector --> SlackAPI["Slack Web API"]
-    Collector --> Postgres
-    SFN --> Analyzer["AI extraction Lambda"]
+    Collector --> DB
+    Flow --> Analyzer["Analysis Lambda"]
     Analyzer --> OpenAI["OpenAI Responses API"]
-    Analyzer --> Postgres
-    SFN --> Reporter["Report generation Lambda"]
+    Analyzer --> DB
+    Flow --> Reporter["Report Lambda"]
     Reporter --> OpenAI
-    Reporter --> Postgres
-    SFN --> Notifier["Review-ready notifier"]
-    Notifier --> SlackAPI
-    Notifier --> Review["Cognito + review console"]
-    Review --> ReviewAPI["JWT-authorized review API"]
-    ReviewAPI --> Postgres
-    Postgres --> Publisher["Scheduled publication Lambda"]
-    Publisher --> Destination["Confluence space or Notion data source"]
+    Reporter --> DB
+    Flow --> Notify["Review notifier"]
+    Notify --> Console["Cognito + review console"]
+    Console --> ReviewAPI["JWT-authorized review API"]
+    ReviewAPI --> DB
+    DB --> Publisher["Publication Lambda"]
+    Publisher --> Destination["Confluence / Notion"]
     Publisher --> SlackAPI
 ```
 
-Production uses serverless protocol adapters; local development retains the
-Fastify API and polling worker. Both paths compose the same application services
-and domain rules from one modular codebase. This isolates Slack's short response
-deadline from durable processing without duplicating business logic. See
-[architecture](docs/architecture.md), [serverless deployment](infrastructure/terraform/README.md),
-[deployment pipeline](docs/deployment-pipeline.md),
-[deployment-role bootstrap](infrastructure/bootstrap/README.md),
-[threat model](docs/threat-model.md), and [roadmap](docs/roadmap.md).
+The synchronous Slack path ends after authentication and durable queue
+acceptance. Collection, AI processing, review, and publication run
+asynchronously with explicit retry and idempotency boundaries.
 
-## Requirements
+[Read the detailed architecture](docs/architecture.md)
+
+## Technology
+
+| Layer             | Technologies                                                                                                |
+| ----------------- | ----------------------------------------------------------------------------------------------------------- |
+| Application       | TypeScript, Node.js 22, Fastify, Zod, Pino                                                                  |
+| AI                | OpenAI Responses API, strict JSON Schema outputs                                                            |
+| Frontend          | React 19, TanStack Query, Radix UI, Tailwind CSS, Vite                                                      |
+| Data              | PostgreSQL, transactional SQL migrations                                                                    |
+| AWS               | API Gateway, Lambda, Step Functions, SQS, EventBridge, Cognito, Secrets Manager, CloudWatch, S3, CloudFront |
+| Infrastructure    | Terraform, IAM, GitHub Actions OIDC                                                                         |
+| Public website    | Next.js, React, S3, CloudFront                                                                              |
+| Testing           | Vitest, React Testing Library, jsdom, Node.js test runner                                                   |
+| Local development | Docker Compose, PostgreSQL, LocalStack                                                                      |
+
+## Repository structure
+
+```text
+src/
+  application/       Use cases, ports, review and report rules
+  domain/            Incident lifecycle and invariants
+  integrations/      Slack, OpenAI, Confluence and Notion adapters
+  infrastructure/    PostgreSQL, queues, workflows and secrets
+  lambda/            AWS Lambda composition roots
+  web/               Authenticated review console
+db/
+  migrations/        Checksummed forward SQL migrations
+  security/          Restricted database grants
+infrastructure/
+  terraform/         AWS infrastructure and deployment configuration
+evals/
+  fixtures/          Versioned synthetic evaluation cases
+website/             Public product website and safe interactive demo
+```
+
+## Local development
+
+### Requirements
 
 - Node.js 22+
-- A `zip` command-line utility for Lambda packaging
+- npm
 - Docker with Compose
-- A development Slack app for live Slack events
+- `zip`
+- A disposable Slack development workspace for live Slack testing
 
-## Local setup
-
-Install dependencies and start PostgreSQL plus LocalStack SQS:
+### Start the application
 
 ```bash
 npm install
@@ -156,147 +145,150 @@ docker compose up -d
 cp .env.example .env
 ```
 
-Load the environment, apply migrations, then start the API and worker in
-separate terminals:
+Load the environment and apply migrations:
 
 ```bash
 set -a
 source .env
 set +a
 npm run db:migrate
+```
+
+Run the API and worker in separate terminals:
+
+```bash
 npm run dev:api
 ```
 
 ```bash
-set -a
-source .env
-set +a
 npm run dev:worker
 ```
 
-Configure the Slack app's Events API request URL as:
+### Connect Slack
 
-```text
-https://<public-development-url>/integrations/slack/events
-```
+- Set the Events API URL to
+  `https://<development-host>/integrations/slack/events`.
+- Subscribe to `app_mention`.
+- Grant `app_mentions:read`, `chat:write`, and `channels:history`.
+- Reinstall the app after changing scopes.
+- Invite the bot to a public test channel.
 
-Subscribe to `app_mention`, grant the bot `app_mentions:read`, `chat:write`, and
-`channels:history`, reinstall the app after changing scopes, invite it to a
-public development channel, and send:
+Trigger a review:
 
 ```text
 @OnRecord generate incident review: Checkout outage
 ```
 
-The production worker creates the incident idempotently, advances it to
-`COLLECTING`, starts the durable workflow, and posts an idempotent acceptance
-reply in the triggering Slack thread. The workflow retrieves that thread,
-filters the product's operational status reply, stores canonical message
-artifacts, and checkpoints progress after every page.
+### Seed the synthetic incident
 
-### Seed the synthetic Slack incident
-
-For a repeatable demonstration, the repository includes a dry-run-first seeder
-that creates a fictional two-responder cybersecurity outage across three public
-Slack channels, including five threaded evidence anchors:
+Preview the safe, fictional multi-channel Slack scenario:
 
 ```bash
 npm run demo:slack
+```
+
+Create it in a disposable test workspace:
+
+```bash
 npm run demo:slack -- --execute
 ```
 
-It requires two distinct Slack user OAuth tokens from the same disposable demo
-workspace. See the [Slack demo seeder guide](docs/slack-demo-seeder.md) for the
-least-privilege app manifest, token setup, safeguards, rerun behavior, and exact
-OnRecord scope.
+See the [Slack demo seeder guide](docs/slack-demo-seeder.md) for required
+tokens, scopes, safeguards, and rerun behavior.
 
-## Engineering checks
+## Quality checks
 
 ```bash
 npm run check
-npm run eval:offline
 ```
 
-The command runs formatting verification, ESLint with type-aware rules, strict
-TypeScript checking, the test suite, the Node.js build, and a reproducible Lambda
-ZIP build.
+This runs:
 
-Live evaluation is deliberately billable and retrieves the OpenAI key directly
-from AWS Secrets Manager through the active AWS identity. The secret must use
-the existing strict JSON contract `{ "apiKey": "..." }`; do not export the key
-itself:
+- Prettier verification
+- Type-aware ESLint
+- Strict TypeScript checks
+- Unit and integration tests
+- Application and review-console builds
+- Lambda packaging
+- Release-manifest generation and verification
 
-```bash
-export AWS_REGION=ap-southeast-2
-export OPENAI_API_SECRET_ARN='arn:aws:secretsmanager:REGION:ACCOUNT:secret:NAME'
-export OPENAI_MODEL='<approved model>'
-EVAL_ALLOW_LIVE_PROVIDER=true npm run eval:live
-```
+The repository also contains offline and live-provider evaluation runners. The
+versioned offline fixtures currently require migration to the latest
+open-question schema before their scores can be treated as valid.
 
-The caller needs `secretsmanager:GetSecretValue` on that exact ARN and, for a
-customer-managed secret key, scoped `kms:Decrypt`. Offline evaluation never
-constructs an AWS client or reads a secret.
+## Deployment
 
-## AWS deployment foundation
-
-Build the shared Lambda artifact:
+### AWS application
 
 ```bash
 npm run build:lambda
+npm run build:web
 ```
 
-This produces the ignored artifact
-`artifacts/incident-copilot-lambda.zip`, containing eight composition roots:
-`slack-ingress-main.handler`, `incident-worker-main.handler`, and
-`slack-evidence-collector-main.handler`, and
-`incident-analysis-main.handler`, `incident-report-main.handler`, and
-`incident-review-notification-main.handler`, plus
-`incident-review-api-main.handler`, plus
-`approved-report-publication-main.handler`. Build the static console separately
-with `npm run build:web`. Terraform instructions, required
-secret shapes, networking assumptions, cost controls, and deployment gates are in
-[infrastructure/terraform/README.md](infrastructure/terraform/README.md).
+Terraform deploys the API, eight Lambda entrypoints, workflow, queues,
+authentication, review console, alarms, and IAM boundaries.
 
-The Terraform is not proof that this repository is already deployed. It also
-does not provision PostgreSQL, the Slack app, or remote Terraform state. The
-current hosted path uses an existing Supabase transaction pooler with its CA
-certificate verified by each database-using Lambda. Those inputs and an OpenAI
-API secret must exist before the AWS path can process a real incident. The
-current Step Functions definition uses a bounded inline Map to collect up to
-five explicitly selected Slack channels, generates an internal draft, and notifies Slack that human review
-is required. Human statement revision, reviewed answers to open questions,
-immutable history, approval, configurable Confluence/Notion publication, and
-final Slack notification are implemented. Automatic source discovery is intentionally not implemented.
+The deployment expects externally provisioned PostgreSQL, Slack configuration,
+remote Terraform state, and validated Secrets Manager entries.
 
-## Security posture
+- [AWS deployment](infrastructure/terraform/README.md)
+- [Deployment pipeline](docs/deployment-pipeline.md)
+- [Deployment-role bootstrap](infrastructure/bootstrap/README.md)
 
-- Request bodies are authenticated before JSON parsing.
-- Slack event payloads and source message text are never written to normal logs.
-- Private channels and direct messages are rejected in the initial release.
-- Queue delivery is assumed to be at-least-once; database uniqueness is the
-  durable idempotency boundary.
-- Tenant IDs are present in every persistent relationship and repository query.
-- Model output can suggest claims but cannot grant access, approve content, or
-  enqueue publication. Only an authenticated human approval can do so.
+### Public website
 
-This is a foundation, not a completed security certification. The OAuth
-installation flow, bot-token encryption, source ACL lookup, and destination ACL
-checks must be completed before onboarding external workspaces.
+The product website is statically built and deployed to S3 through GitHub
+Actions. CloudFront serves the custom domain and is invalidated after each
+successful production deployment.
 
-## Project status
+- [Website deployment](website/docs/s3-cloudfront-deployment.md)
+- [Live website](https://onrecord.kunal-sharma.in)
 
-The next product increments are:
+## Security and reliability
 
-1. Add an incident-scoping flow for time windows and explicitly selected public
-   channels, plus a source-coverage manifest.
-2. Enforce retention expiry with a deletion processor and handle Slack
-   revocation/uninstall events.
-3. Integrate a GitHub App for deployments, commits, pull requests, and workflows.
-4. Expand the labelled evaluation corpus and calibrate semantic quality with
-   human review rather than treating structural coverage as accuracy.
-5. Validate the authenticated review and configured publication experience with
-   real reviewers and measure review time, edit distance, and delivery failures.
+- Authenticate Slack requests before parsing JSON.
+- Verify HMAC signatures with constant-time comparison and replay protection.
+- Reject private channels and direct messages in the current release.
+- Treat queue delivery as at-least-once; PostgreSQL is the durable idempotency
+  boundary.
+- Scope persistent relationships and reviewer access by tenant.
+- Load narrow secret contracts from Secrets Manager.
+- Keep Slack evidence and secrets out of normal logs.
+- Reject unknown evidence references and unsupported factual claims.
+- Prevent models from approving, publishing, or marking content as
+  human-confirmed.
+- Require authenticated human approval before external publication.
+- Preserve immutable revisions and source provenance.
 
-The project intentionally excludes Kubernetes, Kafka, a vector database, a graph
-database, autonomous root-cause claims, private-channel ingestion, and automated
-remediation until measured requirements justify them.
+This is not a security certification. External workspace onboarding still
+requires Slack OAuth lifecycle management, destination ACL validation, and
+enforced retention deletion.
+
+[Read the threat model](docs/threat-model.md)
+
+## Current limitations
+
+- Slack OAuth installation and token lifecycle management are not implemented.
+- GitHub evidence collection is roadmap work.
+- Retention deadlines are stored, but an enforced deletion processor is not yet
+  implemented.
+- The evaluation corpus is synthetic and its recorded fixtures require a schema
+  migration before scoring.
+- No human-labelled semantic-quality baseline exists.
+- Customer infrastructure and access policies still require explicit
+  provisioning.
+
+The project intentionally excludes Kubernetes, Kafka, vector and graph
+databases, autonomous root-cause decisions, private-channel ingestion, and
+automated remediation until measured requirements justify them.
+
+## Documentation
+
+| Document                                                   | Purpose                                                 |
+| ---------------------------------------------------------- | ------------------------------------------------------- |
+| [Architecture](docs/architecture.md)                       | Components, boundaries, data model and failure handling |
+| [Threat model](docs/threat-model.md)                       | Security assumptions, controls and residual risks       |
+| [Roadmap](docs/roadmap.md)                                 | Planned product and platform increments                 |
+| [Slack demo seeder](docs/slack-demo-seeder.md)             | Safe synthetic workspace setup                          |
+| [Terraform deployment](infrastructure/terraform/README.md) | AWS resources, inputs and operational constraints       |
+| [CI/CD pipeline](docs/deployment-pipeline.md)              | Build-once deployment and promotion model               |
