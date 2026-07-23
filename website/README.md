@@ -37,8 +37,13 @@ npm run lint
 npm test
 npm run test:s3
 bash -n scripts/deploy-s3-cloudfront.sh
+bash -n scripts/upload-s3-cloudfront.sh
 ```
 
 ## AWS deployment
 
 Follow [S3 and CloudFront deployment](docs/s3-cloudfront-deployment.md).
+
+After the one-time AWS and GitHub Environment configuration, pull requests
+verify the website and pushes to `main` deploy the exact verified artifact
+automatically through `.github/workflows/deploy-website.yml`.

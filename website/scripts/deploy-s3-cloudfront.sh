@@ -41,22 +41,6 @@ export NEXT_PUBLIC_SITE_URL="${SITE_URL%/}"
 
 aws sts get-caller-identity >/dev/null
 npm run build:s3
+bash scripts/upload-s3-cloudfront.sh
 
-aws s3 sync out "s3://${S3_BUCKET}" \
-  --exclude "_next/static/*" \
-  --exclude "*.html" \
-  --cache-control "public,max-age=3600"
-
-aws s3 sync out/_next/static "s3://${S3_BUCKET}/_next/static" \
-  --cache-control "public,max-age=31536000,immutable"
-
-aws s3 sync out "s3://${S3_BUCKET}" \
-  --exclude "*" \
-  --include "*.html" \
-  --cache-control "no-cache,no-store,must-revalidate"
-
-aws cloudfront create-invalidation \
-  --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
-  --paths "/*" >/dev/null
-
-echo "Deployment uploaded and CloudFront invalidation requested for ${NEXT_PUBLIC_SITE_URL}."
+echo "Deployment completed for ${NEXT_PUBLIC_SITE_URL}."

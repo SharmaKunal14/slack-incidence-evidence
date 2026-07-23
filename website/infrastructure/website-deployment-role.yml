@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Least-privilege GitHub OIDC role for the OnRecord production website.
+
+Parameters:
+  GitHubOidcProviderArn:
+    Type: String
+    AllowedPattern: '^arn:[^:]+:iam::[0-9]{12}:oidc-provider/token\.actions\.githubusercontent\.com$'
+  GitHubOwnerName:
+    Type: String
+    Default: SharmaKunal14
+    AllowedPattern: '^[A-Za-z0-9_.-]+$'
+  GitHubOwnerId:
+    Type: String
+    Description: Immutable GitHub repository-owner account ID reported by the verification workflow.
+    AllowedPattern: '^[0-9]+$'
+  GitHubRepositoryName:
+    Type: String
+    Default: slack-incidence-evidence
+    AllowedPattern: '^[A-Za-z0-9_.-]+$'
+  GitHubRepositoryId:
+    Type: String
+    Description: Immutable GitHub repository ID reported by the verification workflow.
+    AllowedPattern: '^[0-9]+$'
+  BucketName:
+    Type: String
+    Default: onrecord-public-site-prod
+    AllowedPattern: '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
+  CloudFrontDistributionId:
+    Type: String
+    Default: E3EMVCLM5MIYJP
+    AllowedPattern: '^[A-Z0-9]+$'
+
+Resources:
+  WebsiteDeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Deploys the verified OnRecord website artifact to S3 and invalidates CloudFront.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOwnerName}@${GitHubOwnerId}/${GitHubRepositoryName}@${GitHubRepositoryId}:environment:production-website
+      Policies:
+        - PolicyName: DeployOnRecordWebsite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ListWebsiteBucket
+                Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource: !Sub arn:${AWS::Partition}:s3:::${BucketName}
+              - Sid: UploadWebsiteObjects
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${BucketName}/*
+              - Sid: InvalidateWebsiteDistribution
+                Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                  - cloudfront:GetInvalidation
+                Resource: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistributionId}
+
+Outputs:
+  WebsiteDeploymentRoleArn:
+    Description: Set this as the AWS_WEBSITE_DEPLOY_ROLE_ARN GitHub Environment variable.
+    Value: !GetAtt WebsiteDeploymentRole.Arn

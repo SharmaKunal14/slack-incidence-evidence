@@ -12,13 +12,13 @@
     "deploy:s3": "bash scripts/deploy-s3-cloudfront.sh",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
-    "test:s3": "npm run build:s3 && node --test tests/static-export.test.mjs",
+    "test:s3": "npm run build:s3 && node --test tests/static-export.test.mjs tests/deployment-scripts.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
-    "next": "16.2.6",
+    "next": "16.2.11",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
@@ -39,6 +39,12 @@
     "vinext": "0.0.50",
     "vite": "8.0.13",
     "wrangler": "4.92.0"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.22",
+      "sharp": "0.35.3"
+    }
   },
   "type": "module"
 }
