@@ -271,7 +271,7 @@ sequenceDiagram
         SFN->>Notify: tenant + incident + draft ID/counts
         Notify->>DB: Authorize workspace incident and ready state
         Notify->>Slack: Content-free review-ready thread reply
-        Notify-->>SFN: notification outcome; no report content
+        Notify-->>SFN: notification outcome, no report content
         Worker-->>FIFO: Report success
     else duplicate or terminal job
         Worker->>DB: Read existing outcome
