@@ -39,6 +39,7 @@ test('server-renders the OnRecord landing page', async () => {
   assert.match(html, /Future work/);
   assert.match(html, /The implementation stack/);
   assert.match(html, /OpenAI Responses API/);
+  assert.match(html, /2-minute product walkthrough/);
   assert.match(html, /Watch one event become an approved record/);
   assert.match(html, /incident.review.requested/);
   assert.match(html, /Publisher Lambda/);
@@ -65,6 +66,16 @@ test('server-renders the OnRecord landing page', async () => {
   assert.match(html, /\/video\/onrecord-workflow-120s\.mp4/);
   assert.match(html, /\/video\/onrecord-workflow-poster\.jpg/);
   assert.match(html, /\/video\/onrecord-workflow-120s\.vtt/);
+  assert.match(
+    html,
+    /href="#walkthrough">See how it works/,
+  );
+  assert.match(
+    html,
+    /href="#architecture">Explore the detailed system flow/,
+  );
+  assert.match(html, /id="walkthrough"/);
+  assert.match(html, /id="architecture"/);
   assert.doesNotMatch(
     html,
     /codex-preview|Your site is taking shape|react-loading-skeleton/i,

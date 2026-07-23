@@ -341,6 +341,11 @@ a {
   margin-top: 38px;
 }
 
+.hero-action-links {
+  display: grid;
+  gap: 11px;
+}
+
 .text-link {
   display: inline-flex;
   align-items: center;
@@ -2529,6 +2534,7 @@ a {
   .hero-copy h1 { font-size: clamp(3.6rem, 17vw, 5.1rem); }
   .hero-intro { margin-top: 26px; }
   .hero-actions { align-items: flex-start; flex-direction: column; gap: 20px; }
+  .hero-action-links { gap: 14px; }
   .hero-proof { gap: 10px 16px; margin-top: 34px; }
   .record-composition { min-height: 490px; margin-top: 20px; }
   .record-card { top: 60px; width: 88%; min-height: 410px; padding: 20px; transform: rotateY(-4deg); }
