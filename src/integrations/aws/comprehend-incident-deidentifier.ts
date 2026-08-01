@@ -10,6 +10,10 @@ import {
 const MAX_COMPREHEND_TEXT_BYTES = 90_000;
 const DEFAULT_CONCURRENCY = 4;
 const MAX_REDACTION_PASSES = 3;
+// Incident timestamps are required evidence and are already supplied to the
+// model as structured occurredAt fields. Free-form input dates are still
+// redacted; only generated output may retain DATE_TIME findings.
+const ALLOWED_OUTPUT_ENTITY_TYPES = new Set(['DATE_TIME']);
 
 interface ComprehendClientLike {
   send(
@@ -181,13 +185,17 @@ export class ComprehendIncidentDeidentifier implements IncidentDeidentifier {
       this.concurrency,
       (text) => this.detect(text),
     );
-    const flattened = findings.flat();
-    if (flattened.length > 0) {
+    const blockingFindings = findings
+      .flat()
+      .filter((finding) => !ALLOWED_OUTPUT_ENTITY_TYPES.has(finding.type));
+    if (blockingFindings.length > 0) {
       this.reportScan({
         operation: 'SAFETY_CHECK',
         pass: 1,
-        findingCount: flattened.length,
-        findingTypes: uniqueSorted(flattened.map((finding) => finding.type)),
+        findingCount: blockingFindings.length,
+        findingTypes: uniqueSorted(
+          blockingFindings.map((finding) => finding.type),
+        ),
         status: 'BLOCKED',
       });
       throw new IncidentDeidentificationError('PII_REMAINS', false);

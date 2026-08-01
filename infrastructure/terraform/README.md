@@ -173,9 +173,13 @@ Input de-identification runs up to three bounded detect-and-redact passes plus a
 final confirmation scan, so entities exposed by an earlier replacement can be
 removed without unbounded calls. Generated output remains a strict scan-only
 gate because rewriting structured output could invalidate evidence citations.
-Detector failure or a remaining finding prevents the model call or report
-persistence. Logs contain only the scan operation, pass, finding count, and
-normalized entity types; detected values and offsets are never logged.
+`DATE_TIME` output findings are allowed because incident timestamps are required
+evidence and are already included in the structured model input; free-form input
+dates remain subject to redaction. Every other managed PII category remains
+blocking. Detector failure or a remaining blocking finding prevents the model
+call or report persistence. Logs contain only the scan operation, pass, finding
+count, and normalized entity types; detected values and offsets are never
+logged.
 
 When analysis or report generation fails terminally, the workflow posts a
 content-free Slack reply before entering its failed state. The reply contains

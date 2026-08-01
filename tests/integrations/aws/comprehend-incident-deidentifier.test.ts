@@ -100,6 +100,30 @@ describe('ComprehendIncidentDeidentifier', () => {
     ).rejects.toMatchObject({ code: 'PII_REMAINS', retryable: false });
   });
 
+  it('allows incident timestamps in generated output while keeping other entities blocked', async () => {
+    const send = vi.fn((command: DetectPiiEntitiesCommand) => {
+      const text = command.input.Text ?? '';
+      const value = 'August 1, 2026 at 10:51 UTC';
+      const entityOffsets = offsets(text, value);
+      return Promise.resolve({
+        Entities: [
+          {
+            Type: 'DATE_TIME',
+            Score: 0.99,
+            BeginOffset: entityOffsets.begin,
+            EndOffset: entityOffsets.end,
+          },
+        ],
+      });
+    });
+
+    await expect(
+      deidentifier(send).assertSafe({
+        texts: ['The incident began at August 1, 2026 at 10:51 UTC.'],
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   it('redacts entities discovered after an earlier replacement', async () => {
     const scans: IncidentPrivacyScanEvent[] = [];
     const send = vi.fn((command: DetectPiiEntitiesCommand) => {
