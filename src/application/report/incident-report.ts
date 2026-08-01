@@ -174,6 +174,13 @@ export class ReportClassificationOverstatementError extends Error {
   }
 }
 
+export class ReportCoverageError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'ReportCoverageError';
+  }
+}
+
 /**
  * Validates provider structure, tenant-scoped source references, and that the
  * writer cannot upgrade uncertain extraction into a stronger factual claim.
@@ -225,7 +232,9 @@ export function parseIncidentReport(
         claim.contradictingEvidenceCount > 0) &&
       !usedClaims.has(claim.id)
     ) {
-      throw new Error('Report omits a claim with material contradiction');
+      throw new ReportCoverageError(
+        'Report omits a claim with material contradiction',
+      );
     }
   }
   for (const claim of manifest.claims) {
@@ -233,7 +242,9 @@ export function parseIncidentReport(
       requiresReportCoverage(claim.classification) &&
       !usedClaims.has(claim.id)
     ) {
-      throw new Error('Report omits a sufficiently supported claim');
+      throw new ReportCoverageError(
+        'Report omits a sufficiently supported claim',
+      );
     }
   }
   for (const event of manifest.timeline) {
@@ -241,7 +252,9 @@ export function parseIncidentReport(
       requiresReportCoverage(event.classification) &&
       !usedTimelineEvents.has(event.id)
     ) {
-      throw new Error('Report omits a sufficiently supported timeline event');
+      throw new ReportCoverageError(
+        'Report omits a sufficiently supported timeline event',
+      );
     }
   }
   return report;
@@ -261,6 +274,10 @@ function requiresReportCoverage(
 export const INCIDENT_REPORT_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
+  $defs: {
+    claimId: { type: 'string' },
+    timelineEventId: { type: 'string' },
+  },
   required: ['sections'],
   properties: {
     sections: {
@@ -304,12 +321,12 @@ export const INCIDENT_REPORT_JSON_SCHEMA = {
                 claimIds: {
                   type: 'array',
                   maxItems: 20,
-                  items: { type: 'string' },
+                  items: { $ref: '#/$defs/claimId' },
                 },
                 timelineEventIds: {
                   type: 'array',
                   maxItems: 20,
-                  items: { type: 'string' },
+                  items: { $ref: '#/$defs/timelineEventId' },
                 },
               },
             },
@@ -319,6 +336,88 @@ export const INCIDENT_REPORT_JSON_SCHEMA = {
     },
   },
 } as const;
+
+/** Builds a strict provider schema whose references are limited to this manifest. */
+export function buildIncidentReportJsonSchema(
+  manifest: IncidentReportManifest,
+): Readonly<Record<string, unknown>> {
+  const claimIds = sortedSourceIds(manifest.claims.map((claim) => claim.id));
+  const timelineEventIds = sortedSourceIds(
+    manifest.timeline.map((event) => event.id),
+  );
+  validateProviderEnumBudget([...claimIds, ...timelineEventIds]);
+
+  const sections = INCIDENT_REPORT_JSON_SCHEMA.properties.sections;
+  const sectionItem = sections.items;
+  const statements = sectionItem.properties.statements;
+  const statementItem = statements.items;
+  return {
+    ...INCIDENT_REPORT_JSON_SCHEMA,
+    $defs: {
+      claimId: {
+        type: 'string',
+        ...(claimIds.length === 0 ? {} : { enum: claimIds }),
+      },
+      timelineEventId: {
+        type: 'string',
+        ...(timelineEventIds.length === 0 ? {} : { enum: timelineEventIds }),
+      },
+    },
+    properties: {
+      sections: {
+        ...sections,
+        items: {
+          ...sectionItem,
+          properties: {
+            ...sectionItem.properties,
+            statements: {
+              ...statements,
+              items: {
+                ...statementItem,
+                properties: {
+                  ...statementItem.properties,
+                  claimIds: {
+                    ...statementItem.properties.claimIds,
+                    maxItems: claimIds.length === 0 ? 0 : 20,
+                  },
+                  timelineEventIds: {
+                    ...statementItem.properties.timelineEventIds,
+                    maxItems: timelineEventIds.length === 0 ? 0 : 20,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+function sortedSourceIds(values: readonly string[]): string[] {
+  const unique = [...new Set(values)].sort();
+  if (
+    unique.length !== values.length ||
+    unique.some((id) => !sourceIdSchema.safeParse(id).success)
+  ) {
+    throw new Error('Report source IDs cannot form a provider schema');
+  }
+  return unique;
+}
+
+function validateProviderEnumBudget(values: readonly string[]): void {
+  const totalCharacters = values.reduce(
+    (total, value) => total + value.length,
+    0,
+  );
+  if (
+    values.length === 0 ||
+    values.length > 1_000 ||
+    (values.length > 250 && totalCharacters > 15_000)
+  ) {
+    throw new Error('Report source IDs exceed provider schema limits');
+  }
+}
 
 function classificationCaution(
   classification: ModelEvidenceClassification,

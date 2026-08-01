@@ -98,6 +98,27 @@ describe('ResponsesIncidentReportGenerator', () => {
           type: 'json_schema',
           name: 'incident_report',
           strict: true,
+          schema: {
+            $defs: {
+              claimId: { type: 'string', enum: ['claim-1'] },
+              timelineEventId: { type: 'string' },
+            },
+            properties: {
+              sections: {
+                items: {
+                  properties: {
+                    statements: {
+                      items: {
+                        properties: {
+                          timelineEventIds: { maxItems: 0 },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     });
@@ -111,9 +132,84 @@ describe('ResponsesIncidentReportGenerator', () => {
     await expect(
       generator(request).generate({ manifest, clientRequestId: 'request-1' }),
     ).rejects.toMatchObject({
-      code: 'OPENAI_REPORT_INVALID_DRAFT',
+      code: 'OPENAI_REPORT_UNKNOWN_SOURCE_REFERENCE',
       retryable: true,
     });
+  });
+
+  it('reports classification overstatement without exposing draft text', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      response({
+        sections: INCIDENT_REPORT_SECTION_TYPES.map((sectionType) => ({
+          sectionType,
+          statements:
+            sectionType === 'executive_summary'
+              ? [
+                  {
+                    key: 'overstated_recovery',
+                    statementType: 'claim',
+                    text: 'Recovery followed rollback.',
+                    classification: 'directly_observed',
+                    claimIds: ['claim-1'],
+                    timelineEventIds: [],
+                  },
+                ]
+              : [],
+        })),
+      }),
+    );
+
+    await expect(
+      generator(request).generate({ manifest, clientRequestId: 'request-1' }),
+    ).rejects.toMatchObject({
+      code: 'OPENAI_REPORT_CLASSIFICATION_OVERSTATEMENT',
+      retryable: true,
+    });
+  });
+
+  it('reports missing required source coverage separately', async () => {
+    const directlyObservedManifest: IncidentReportManifest = {
+      ...manifest,
+      claims: [
+        {
+          ...manifest.claims[0]!,
+          classification: 'directly_observed',
+        },
+      ],
+    };
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      response({
+        sections: INCIDENT_REPORT_SECTION_TYPES.map((sectionType) => ({
+          sectionType,
+          statements: [],
+        })),
+      }),
+    );
+
+    await expect(
+      generator(request).generate({
+        manifest: directlyObservedManifest,
+        clientRequestId: 'request-1',
+      }),
+    ).rejects.toMatchObject({
+      code: 'OPENAI_REPORT_INCOMPLETE_COVERAGE',
+      retryable: true,
+    });
+  });
+
+  it('rejects an invalid internal source schema before calling OpenAI', async () => {
+    const request = vi.fn<typeof fetch>();
+
+    await expect(
+      generator(request).generate({
+        manifest: { ...manifest, claims: [], timeline: [] },
+        clientRequestId: 'request-1',
+      }),
+    ).rejects.toMatchObject({
+      code: 'OPENAI_REPORT_INVALID_SOURCE_SCHEMA',
+      retryable: false,
+    });
+    expect(request).not.toHaveBeenCalled();
   });
 
   it('does not automatically retry an ambiguous network outcome', async () => {
