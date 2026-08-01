@@ -12,6 +12,7 @@ import {
   ChevronRight,
   CircleHelp,
   Clock3,
+  Compass,
   ExternalLink,
   FileCheck2,
   FileText,
@@ -70,6 +71,7 @@ import {
   focusEvidenceSource,
   type EvidenceFocus,
 } from './evidence-focus.js';
+import { GuidedTour, hasCompletedDemoTour } from './guided-tour.js';
 
 type InboxFilter = 'ALL' | 'NEEDS_REVIEW' | 'APPROVED';
 type EvidenceTab = 'questions' | 'claims' | 'timeline' | 'evidence';
@@ -554,6 +556,7 @@ function IncidentPage({
         apiClient={apiClient}
         bundle={query.data}
         configuration={configuration}
+        experience={experience}
         token={token}
       />
     </AppFrame>
@@ -564,11 +567,13 @@ function IncidentWorkspace({
   apiClient,
   bundle,
   configuration,
+  experience,
   token,
 }: {
   readonly apiClient: ReviewApiClient;
   readonly bundle: Bundle;
   readonly configuration: Configuration;
+  readonly experience: Experience;
   readonly token: string;
 }): ReactNode {
   const queryClient = useQueryClient();
@@ -594,6 +599,9 @@ function IncidentWorkspace({
     bundle.latestRevision?.acknowledgedOpenQuestions ?? false,
   );
   const [notice, setNotice] = useState<string | null>(null);
+  const [tourOpen, setTourOpen] = useState(
+    () => experience === 'demo' && !hasCompletedDemoTour(),
+  );
   const revisionIdentity = bundle.latestRevision?.id ?? bundle.reportDraft.id;
   const [selectedVersionId, setSelectedVersionId] = useState(revisionIdentity);
   const selectedIsOriginal = selectedVersionId === bundle.reportDraft.id;
@@ -794,9 +802,21 @@ function IncidentWorkspace({
         </button>
         <ChevronRight size={14} aria-hidden="true" />
         <span aria-current="page">Incident review</span>
+        {experience === 'demo' && (
+          <button
+            className="tour-replay-button"
+            onClick={() => setTourOpen(true)}
+            type="button"
+          >
+            <Compass size={15} /> <span>Guided tour</span>
+          </button>
+        )}
       </nav>
 
-      <section className="incident-hero reveal reveal-delay-one">
+      <section
+        className="incident-hero reveal reveal-delay-one"
+        data-tour-target="incident-summary"
+      >
         <div className="incident-hero-main">
           <div className="incident-status-row">
             <StatusPill status={bundle.incident.status} />
@@ -881,7 +901,11 @@ function IncidentWorkspace({
       </section>
 
       <div className="review-layout reveal reveal-delay-three">
-        <section className="report-workspace" aria-labelledby="report-title">
+        <section
+          className="report-workspace"
+          data-tour-target="report"
+          aria-labelledby="report-title"
+        >
           <div className="workspace-heading">
             <div>
               <p className="eyebrow">On the record</p>
@@ -1099,6 +1123,9 @@ function IncidentWorkspace({
             </p>
           </div>
         </section>
+      )}
+      {experience === 'demo' && (
+        <GuidedTour open={tourOpen} onClose={() => setTourOpen(false)} />
       )}
     </main>
   );
@@ -1380,7 +1407,11 @@ function EvidenceWorkspace({
   readonly questionAnswers: Readonly<Record<string, string>>;
 }): ReactNode {
   return (
-    <aside className="evidence-workspace" aria-labelledby="evidence-title">
+    <aside
+      className="evidence-workspace"
+      data-tour-target="evidence"
+      aria-labelledby="evidence-title"
+    >
       <div className="workspace-heading evidence-heading">
         <div>
           <p className="eyebrow">Evidence on record</p>
@@ -1850,6 +1881,7 @@ function ReviewActionBar({
   return (
     <section
       className="review-action-bar"
+      data-tour-target="approval"
       aria-labelledby="review-decision-title"
     >
       <div className="review-action-heading">
