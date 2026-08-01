@@ -1,4 +1,5 @@
 import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { ComprehendClient } from '@aws-sdk/client-comprehend';
 import type { Context } from 'aws-lambda';
 import { Pool } from 'pg';
 import { GenerateIncidentReport } from '../application/generate-incident-report.js';
@@ -14,6 +15,7 @@ import { PostgresIncidentRepository } from '../infrastructure/postgres/incident-
 import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { ResponsesIncidentReportGenerator } from '../integrations/openai/responses-incident-report-generator.js';
+import { ComprehendIncidentDeidentifier } from '../integrations/aws/comprehend-incident-deidentifier.js';
 import { createLogger } from '../observability/logger.js';
 import {
   createIncidentReportHandler,
@@ -64,6 +66,7 @@ async function buildHandler(): Promise<IncidentReportHandler> {
       : { endpoint: environment.AWS_ENDPOINT_URL }),
   };
   const secrets = new SecretsManagerClient(clientConfiguration);
+  const comprehend = new ComprehendClient(clientConfiguration);
   let database: Pool | undefined;
   try {
     const secretReader = new SecretsManagerSecretReader(secrets);
@@ -102,6 +105,12 @@ async function buildHandler(): Promise<IncidentReportHandler> {
         model: environment.OPENAI_MODEL,
         timeoutMilliseconds: environment.OPENAI_REPORT_TIMEOUT_MS,
         maxOutputTokens: environment.OPENAI_REPORT_MAX_OUTPUT_TOKENS,
+      }),
+      new ComprehendIncidentDeidentifier(comprehend, {
+        languageCode: environment.PII_LANGUAGE_CODE,
+        minimumConfidence: environment.PII_MIN_CONFIDENCE,
+        concurrency: environment.PII_DETECTION_CONCURRENCY,
+        timeoutMilliseconds: environment.PII_DETECTION_TIMEOUT_MS,
       }),
       systemClock,
       uuidGenerator,

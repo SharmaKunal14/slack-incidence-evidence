@@ -234,6 +234,7 @@ const incidentAnalysisLambdaEnvironmentSchema =
   lambdaPostgresBaseEnvironmentSchema
     .extend({
       OPENAI_API_SECRET_ARN: z.string().trim().min(1),
+      SLACK_BOT_TOKEN_SECRET_ARN: z.string().trim().min(1),
       OPENAI_MODEL: z
         .string()
         .trim()
@@ -269,6 +270,20 @@ const incidentAnalysisLambdaEnvironmentSchema =
         .min(256)
         .max(32_768)
         .default(6_000),
+      PII_LANGUAGE_CODE: z.enum(['en', 'es']).default('en'),
+      PII_MIN_CONFIDENCE: z.coerce.number().min(0.5).max(1).default(0.9),
+      PII_DETECTION_CONCURRENCY: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(10)
+        .default(4),
+      PII_DETECTION_TIMEOUT_MS: z.coerce
+        .number()
+        .int()
+        .min(1_000)
+        .max(30_000)
+        .default(10_000),
     })
     .refine(
       (value) => value.ANALYSIS_LEASE_SECONDS * 1_000 > value.OPENAI_TIMEOUT_MS,
@@ -312,6 +327,20 @@ const incidentReportLambdaEnvironmentSchema =
         .min(256)
         .max(32_768)
         .default(8_000),
+      PII_LANGUAGE_CODE: z.enum(['en', 'es']).default('en'),
+      PII_MIN_CONFIDENCE: z.coerce.number().min(0.5).max(1).default(0.9),
+      PII_DETECTION_CONCURRENCY: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(10)
+        .default(4),
+      PII_DETECTION_TIMEOUT_MS: z.coerce
+        .number()
+        .int()
+        .min(1_000)
+        .max(30_000)
+        .default(10_000),
     })
     .refine(
       (value) =>

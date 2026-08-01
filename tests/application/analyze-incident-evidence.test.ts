@@ -14,6 +14,11 @@ import {
   IncidentAnalyzerError,
   type IncidentAnalyzer,
 } from '../../src/application/ports/incident-analyzer.js';
+import {
+  IncidentDeidentificationError,
+  type IncidentDeidentifier,
+} from '../../src/application/ports/incident-deidentifier.js';
+import type { IncidentParticipantIdentitySource } from '../../src/application/ports/incident-participant-identity-source.js';
 import type {
   CreateIncidentResult,
   IncidentRepository,
@@ -197,12 +202,21 @@ function useCase(
   repository: InMemoryAnalysisRepository,
   incidents: InMemoryIncidentRepository,
   analyzer: IncidentAnalyzer,
+  participantIdentities: IncidentParticipantIdentitySource = {
+    resolve: () => Promise.resolve([]),
+  },
+  deidentifier: IncidentDeidentifier = {
+    deidentify: ({ texts }) => Promise.resolve(texts),
+    assertSafe: () => Promise.resolve(),
+  },
 ): AnalyzeIncidentEvidence {
   let generatedId = 0;
   return new AnalyzeIncidentEvidence(
     repository,
     incidents,
     analyzer,
+    participantIdentities,
+    deidentifier,
     { now: () => now },
     { generate: () => `generated-${++generatedId}` },
     {
@@ -258,6 +272,90 @@ describe('AnalyzeIncidentEvidence', () => {
     expect(repository.acquiredInput?.manifestSha256).toMatch(/^[0-9a-f]{64}$/);
     expect(repository.completedInput?.providerResponseId).toBe('resp-1');
     expect(incidents.incident.status).toBe('GENERATING');
+  });
+
+  it('sends only de-identified evidence to the model and scans its output', async () => {
+    const repository = new InMemoryAnalysisRepository();
+    repository.evidence = {
+      ...repository.evidence,
+      artifacts: [
+        {
+          ...repository.evidence.artifacts[0]!,
+          authorExternalId: 'U12345678',
+          content: 'Sarah Patel emailed jane@example.com.',
+        },
+      ],
+    };
+    const incidents = new InMemoryIncidentRepository();
+    const analyze = vi.fn<IncidentAnalyzer['analyze']>().mockResolvedValue({
+      analysis,
+      providerResponseId: 'resp-privacy',
+      model: 'approved-model-2026-07-01',
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+    });
+    const deidentify = vi.fn<IncidentDeidentifier['deidentify']>(({ texts }) =>
+      Promise.resolve(
+        texts.map((text) =>
+          text
+            .replace('Sarah Patel', 'participant_1')
+            .replace('jane@example.com', '[EMAIL_1]'),
+        ),
+      ),
+    );
+    const assertSafe = vi.fn<IncidentDeidentifier['assertSafe']>(() =>
+      Promise.resolve(),
+    );
+    const deidentifier: IncidentDeidentifier = {
+      deidentify,
+      assertSafe,
+    };
+
+    await useCase(
+      repository,
+      incidents,
+      { analyze },
+      {
+        resolve: () =>
+          Promise.resolve([
+            { externalId: 'U12345678', aliases: ['Sarah Patel'] },
+          ]),
+      },
+      deidentifier,
+    ).execute({ tenantId, incidentId });
+
+    const modelInput = analyze.mock.calls[0]?.[0].manifest;
+    expect(JSON.stringify(modelInput)).not.toContain('Sarah Patel');
+    expect(JSON.stringify(modelInput)).not.toContain('jane@example.com');
+    expect(modelInput?.evidence[0]?.content).toBe(
+      'participant_1 emailed [EMAIL_1].',
+    );
+    expect(assertSafe.mock.calls[0]?.[0].texts).toContain(
+      'The rollback started.',
+    );
+  });
+
+  it('does not persist model output that fails the privacy gate', async () => {
+    const repository = new InMemoryAnalysisRepository();
+    const incidents = new InMemoryIncidentRepository();
+    const analyze = vi.fn<IncidentAnalyzer['analyze']>().mockResolvedValue({
+      analysis,
+      providerResponseId: 'resp-privacy-failure',
+      model: 'approved-model-2026-07-01',
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+    });
+
+    await expect(
+      useCase(repository, incidents, { analyze }, undefined, {
+        deidentify: ({ texts }) => Promise.resolve(texts),
+        assertSafe: () =>
+          Promise.reject(
+            new IncidentDeidentificationError('PII_REMAINS', false),
+          ),
+      }).execute({ tenantId, incidentId }),
+    ).resolves.toMatchObject({ status: 'FAILED', failureCode: 'PII_REMAINS' });
+
+    expect(repository.completedInput).toBeUndefined();
+    expect(incidents.incident.status).toBe('FAILED');
   });
 
   it('waits durably after an explicit retryable provider response', async () => {
@@ -376,6 +474,11 @@ describe('AnalyzeIncidentEvidence', () => {
       repository,
       incidents,
       { analyze },
+      { resolve: () => Promise.resolve([]) },
+      {
+        deidentify: ({ texts }) => Promise.resolve(texts),
+        assertSafe: () => Promise.resolve(),
+      },
       { now: () => now },
       { generate: () => `generated-${++generatedId}` },
       {

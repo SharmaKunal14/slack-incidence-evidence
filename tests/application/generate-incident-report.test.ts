@@ -4,6 +4,10 @@ import {
   IncidentReportGeneratorError,
   type IncidentReportGenerator,
 } from '../../src/application/ports/incident-report-generator.js';
+import {
+  IncidentDeidentificationError,
+  type IncidentDeidentifier,
+} from '../../src/application/ports/incident-deidentifier.js';
 import type {
   AcquireIncidentReportDraftInput,
   AcquireIncidentReportDraftResult,
@@ -193,12 +197,17 @@ function useCase(
   repository: InMemoryReportRepository,
   incidents: InMemoryIncidentRepository,
   generator: IncidentReportGenerator,
+  deidentifier: IncidentDeidentifier = {
+    deidentify: ({ texts }) => Promise.resolve(texts),
+    assertSafe: () => Promise.resolve(),
+  },
 ): GenerateIncidentReport {
   let sequence = 0;
   return new GenerateIncidentReport(
     repository,
     incidents,
     generator,
+    deidentifier,
     { now: () => now },
     { generate: () => `generated-${++sequence}` },
     {
@@ -245,6 +254,37 @@ describe('GenerateIncidentReport', () => {
       'Human review is required',
     );
     expect(incidents.incident.status).toBe('NEEDS_REVIEW');
+  });
+
+  it('does not persist or render report output that fails the privacy gate', async () => {
+    const repository = new InMemoryReportRepository();
+    const incidents = new InMemoryIncidentRepository();
+    const generate = vi
+      .fn<IncidentReportGenerator['generate']>()
+      .mockResolvedValue({
+        report,
+        providerResponseId: 'resp-report-pii',
+        model: 'approved-model-2026-07-01',
+        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      });
+
+    await expect(
+      useCase(
+        repository,
+        incidents,
+        { generate },
+        {
+          deidentify: ({ texts }) => Promise.resolve(texts),
+          assertSafe: () =>
+            Promise.reject(
+              new IncidentDeidentificationError('PII_REMAINS', false),
+            ),
+        },
+      ).execute({ tenantId, incidentId, analysisRunId }),
+    ).resolves.toMatchObject({ status: 'FAILED', failureCode: 'PII_REMAINS' });
+
+    expect(repository.completedInput).toBeUndefined();
+    expect(incidents.incident.status).toBe('FAILED');
   });
 
   it('returns an existing completed draft without a second model call', async () => {

@@ -148,6 +148,7 @@ describe('Lambda environment configuration', () => {
       DATABASE_HOST: 'pooler.example.test',
       DATABASE_NAME: 'postgres',
       OPENAI_API_SECRET_ARN: 'openai-secret-arn',
+      SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
       OPENAI_MODEL: 'approved-model-snapshot',
       ANALYSIS_MAX_ARTIFACTS: '75',
       ANALYSIS_MAX_INPUT_CHARACTERS: '90000',
@@ -155,6 +156,8 @@ describe('Lambda environment configuration', () => {
       ANALYSIS_LEASE_SECONDS: '180',
       OPENAI_TIMEOUT_MS: '90000',
       OPENAI_MAX_OUTPUT_TOKENS: '5000',
+      PII_LANGUAGE_CODE: 'en',
+      PII_MIN_CONFIDENCE: '0.9',
     };
 
     expect(loadIncidentAnalysisLambdaEnvironment(source)).toMatchObject({
@@ -165,6 +168,8 @@ describe('Lambda environment configuration', () => {
       ANALYSIS_LEASE_SECONDS: 180,
       OPENAI_TIMEOUT_MS: 90000,
       OPENAI_MAX_OUTPUT_TOKENS: 5000,
+      PII_LANGUAGE_CODE: 'en',
+      PII_MIN_CONFIDENCE: 0.9,
     });
     expect(() =>
       loadIncidentAnalysisLambdaEnvironment({

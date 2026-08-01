@@ -671,6 +671,50 @@ variable "openai_max_output_tokens" {
   }
 }
 
+variable "pii_language_code" {
+  description = "Language submitted to Amazon Comprehend PII detection. DetectPiiEntities supports English and Spanish."
+  type        = string
+  default     = "en"
+
+  validation {
+    condition     = contains(["en", "es"], var.pii_language_code)
+    error_message = "pii_language_code must be en or es."
+  }
+}
+
+variable "pii_min_confidence" {
+  description = "Minimum Comprehend confidence accepted as a PII finding. Lower values reduce false negatives but increase false positives."
+  type        = number
+  default     = 0.9
+
+  validation {
+    condition     = var.pii_min_confidence >= 0.5 && var.pii_min_confidence <= 1
+    error_message = "pii_min_confidence must be between 0.5 and 1."
+  }
+}
+
+variable "pii_detection_concurrency" {
+  description = "Maximum concurrent Comprehend requests within one Lambda invocation."
+  type        = number
+  default     = 4
+
+  validation {
+    condition     = var.pii_detection_concurrency >= 1 && var.pii_detection_concurrency <= 10
+    error_message = "pii_detection_concurrency must be between 1 and 10."
+  }
+}
+
+variable "pii_detection_timeout_milliseconds" {
+  description = "Timeout for each real-time Comprehend PII detection request."
+  type        = number
+  default     = 10000
+
+  validation {
+    condition     = var.pii_detection_timeout_milliseconds >= 1000 && var.pii_detection_timeout_milliseconds <= 30000
+    error_message = "pii_detection_timeout_milliseconds must be between 1000 and 30000."
+  }
+}
+
 variable "incident_report_memory_mb" {
   description = "Memory assigned to evidence-constrained incident report generation."
   type        = number

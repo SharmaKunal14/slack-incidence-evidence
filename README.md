@@ -169,7 +169,9 @@ npm run dev:worker
 - Set the Events API URL to
   `https://<development-host>/integrations/slack/events`.
 - Subscribe to `app_mention`.
-- Grant `app_mentions:read`, `chat:write`, and `channels:history`.
+- Grant `app_mentions:read`, `chat:write`, `channels:history`, and `users:read`.
+  `users:read` resolves only incident authors for de-identification; the app
+  does not request `users:read.email` or enumerate the directory.
 - Reinstall the app after changing scopes.
 - Invite the bot to a public test channel.
 

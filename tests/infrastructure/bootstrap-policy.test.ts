@@ -161,6 +161,18 @@ describe('deployment bootstrap policy', () => {
     }
   });
 
+  it('permits runtime PII detection without broader Comprehend access', async () => {
+    const template = await loadTemplate();
+    const boundary = template.Resources?.['LambdaRolePermissionsBoundary'];
+    const policy = boundary?.Properties?.PolicyDocument;
+    const comprehend = policy?.Statement?.find(
+      ({ Sid }) => Sid === 'DetectIncidentPii',
+    );
+
+    expect(comprehend?.Action).toBe('comprehend:DetectPiiEntities');
+    expect(comprehend?.Resource).toBe('*');
+  });
+
   it('can read versions only for environment-scoped Lambda functions', async () => {
     const template = await loadTemplate();
     const statement = policyStatements(template).find(

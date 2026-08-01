@@ -12,11 +12,20 @@ import {
   type IncidentEvidenceManifest,
 } from './ports/incident-analyzer.js';
 import type { IncidentRepository } from './ports/incident-repository.js';
+import {
+  IncidentDeidentificationError,
+  type IncidentDeidentifier,
+  type KnownIncidentPerson,
+} from './ports/incident-deidentifier.js';
+import {
+  IncidentParticipantIdentitySourceError,
+  type IncidentParticipantIdentitySource,
+} from './ports/incident-participant-identity-source.js';
 import { IncidentAggregate, type Incident } from '../domain/incident.js';
 
-const ANALYSIS_VERSION = 1;
+const ANALYSIS_VERSION = 2;
 const PROVIDER = 'openai';
-const PROMPT_VERSION = 'incident-extraction-v2';
+const PROMPT_VERSION = 'incident-extraction-deidentified-v3';
 const SCHEMA_VERSION = 'incident-analysis-v2';
 const MAX_WORKFLOW_WAIT_SECONDS = 900;
 
@@ -57,6 +66,8 @@ export class AnalyzeIncidentEvidence {
     private readonly analyses: IncidentAnalysisRepository,
     private readonly incidents: IncidentRepository,
     private readonly analyzer: IncidentAnalyzer,
+    private readonly participantIdentities: IncidentParticipantIdentitySource,
+    private readonly deidentifier: IncidentDeidentifier,
     private readonly clock: Clock,
     private readonly idGenerator: IdGenerator,
     private readonly configuration: AnalyzeIncidentEvidenceConfiguration,
@@ -84,7 +95,7 @@ export class AnalyzeIncidentEvidence {
     }
 
     const authorReferences = new Map<string, string>();
-    const manifest: IncidentEvidenceManifest = {
+    const rawManifest: IncidentEvidenceManifest = {
       incidentTitle: evidence.incidentTitle,
       evidence: evidence.artifacts.map((artifact) => ({
         id: artifact.id,
@@ -97,7 +108,7 @@ export class AnalyzeIncidentEvidence {
         content: artifact.content,
       })),
     };
-    const serializedManifest = JSON.stringify(manifest);
+    const serializedManifest = JSON.stringify(rawManifest);
     if (serializedManifest.length > this.configuration.maxInputCharacters) {
       throw new IncidentAnalysisConfigurationError(
         'Incident evidence exceeds the configured character limit',
@@ -124,7 +135,7 @@ export class AnalyzeIncidentEvidence {
       promptVersion: PROMPT_VERSION,
       schemaVersion: SCHEMA_VERSION,
       clientRequestId: this.idGenerator.generate(),
-      inputArtifactCount: manifest.evidence.length,
+      inputArtifactCount: rawManifest.evidence.length,
       inputCharacters: serializedManifest.length,
       maxAttempts: this.configuration.maxAttempts,
       leaseToken,
@@ -173,12 +184,57 @@ export class AnalyzeIncidentEvidence {
 
     const run = acquired.run;
     try {
+      const incident = await this.requireIncident(
+        input.tenantId,
+        input.incidentId,
+      );
+      const knownPeople = await this.resolveKnownPeople(
+        incident.sourceWorkspaceId,
+        authorReferences,
+      );
+      const deidentifiedTexts = await this.deidentifier.deidentify({
+        texts: [
+          rawManifest.incidentTitle,
+          ...rawManifest.evidence.map((artifact) => artifact.content),
+        ],
+        knownPeople,
+      });
+      if (deidentifiedTexts.length !== rawManifest.evidence.length + 1) {
+        throw new IncidentDeidentificationError(
+          'PII_DEIDENTIFIER_INVALID_OUTPUT',
+          false,
+        );
+      }
+      const incidentTitle = deidentifiedTexts[0];
+      if (incidentTitle === undefined) {
+        throw new IncidentDeidentificationError(
+          'PII_DEIDENTIFIER_INVALID_OUTPUT',
+          false,
+        );
+      }
+      const manifest: IncidentEvidenceManifest = {
+        incidentTitle,
+        evidence: rawManifest.evidence.map((artifact, index) => {
+          const content = deidentifiedTexts[index + 1];
+          if (content === undefined) {
+            throw new IncidentDeidentificationError(
+              'PII_DEIDENTIFIER_INVALID_OUTPUT',
+              false,
+            );
+          }
+          return { ...artifact, content };
+        }),
+      };
       const result = await this.analyzer.analyze({
         manifest,
         availableEvidenceIds: new Set(
           manifest.evidence.map((artifact) => artifact.id),
         ),
         clientRequestId: run.clientRequestId,
+      });
+      await this.deidentifier.assertSafe({
+        texts: analysisText(result.analysis),
+        knownPeople,
       });
       const completed = await this.analyses.complete({
         run,
@@ -194,12 +250,18 @@ export class AnalyzeIncidentEvidence {
       await this.advanceToGeneration(completed);
       return completeOutcome(completed);
     } catch (error) {
-      if (!(error instanceof IncidentAnalyzerError)) {
+      if (
+        !(error instanceof IncidentAnalyzerError) &&
+        !(error instanceof IncidentDeidentificationError) &&
+        !(error instanceof IncidentParticipantIdentitySourceError)
+      ) {
         throw error;
       }
       if (error.retryable && run.attemptCount < run.maxAttempts) {
         const retryAfterSeconds = boundWait(
-          error.retryAfterSeconds ?? 2 ** run.attemptCount,
+          (error instanceof IncidentAnalyzerError
+            ? error.retryAfterSeconds
+            : null) ?? 2 ** run.attemptCount,
         );
         const retryAt = new Date(
           this.clock.now().getTime() + retryAfterSeconds * 1_000,
@@ -223,6 +285,27 @@ export class AnalyzeIncidentEvidence {
       await this.advanceToFailure(failed);
       return failedOutcome(failed);
     }
+  }
+
+  private async resolveKnownPeople(
+    workspaceId: string,
+    authorReferences: ReadonlyMap<string, string>,
+  ): Promise<readonly KnownIncidentPerson[]> {
+    const resolvableIds = [...authorReferences.keys()].filter((id) =>
+      /^[UW][A-Z0-9]{1,63}$/u.test(id),
+    );
+    const identities = await this.participantIdentities.resolve(
+      workspaceId,
+      resolvableIds,
+    );
+    const aliasesById = new Map(
+      identities.map((identity) => [identity.externalId, identity.aliases]),
+    );
+    return [...authorReferences.entries()].map(([externalId, replacement]) => ({
+      externalId,
+      replacement,
+      aliases: aliasesById.get(externalId) ?? [],
+    }));
   }
 
   private async advanceToExtraction(
@@ -295,6 +378,19 @@ export class AnalyzeIncidentEvidence {
     await this.incidents.save(updated, incident.version);
     return updated;
   }
+}
+
+function analysisText(
+  analysis: Awaited<ReturnType<IncidentAnalyzer['analyze']>>['analysis'],
+): readonly string[] {
+  return [
+    ...analysis.timeline.flatMap((event) => [event.key, event.summary]),
+    ...analysis.claims.flatMap((claim) => [claim.key, claim.statement]),
+    ...analysis.openQuestions.flatMap((question) => [
+      question.key,
+      question.question,
+    ]),
+  ];
 }
 
 function pseudonymizeAuthor(

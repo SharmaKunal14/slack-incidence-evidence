@@ -766,6 +766,19 @@ data "aws_iam_policy_document" "incident_analysis" {
     resources = [var.openai_api_secret_arn]
   }
 
+  statement {
+    # DetectPiiEntities does not support resource-level permissions.
+    sid       = "DetectIncidentPii"
+    actions   = ["comprehend:DetectPiiEntities"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "ReadSlackBotToken"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.slack_bot_token_secret_arn]
+  }
+
   dynamic "statement" {
     for_each = length(var.secrets_kms_key_arns) == 0 ? [] : [1]
     content {
@@ -828,6 +841,13 @@ data "aws_iam_policy_document" "incident_report" {
     sid       = "ReadOpenAiApiKey"
     actions   = ["secretsmanager:GetSecretValue"]
     resources = [var.openai_api_secret_arn]
+  }
+
+  statement {
+    # DetectPiiEntities does not support resource-level permissions.
+    sid       = "DetectIncidentPii"
+    actions   = ["comprehend:DetectPiiEntities"]
+    resources = ["*"]
   }
 
   dynamic "statement" {
@@ -1187,6 +1207,11 @@ resource "aws_lambda_function" "incident_analysis" {
       OPENAI_MAX_OUTPUT_TOKENS            = tostring(var.openai_max_output_tokens)
       OPENAI_MODEL                        = var.openai_model
       OPENAI_TIMEOUT_MS                   = tostring(var.openai_timeout_milliseconds)
+      PII_DETECTION_CONCURRENCY           = tostring(var.pii_detection_concurrency)
+      PII_DETECTION_TIMEOUT_MS            = tostring(var.pii_detection_timeout_milliseconds)
+      PII_LANGUAGE_CODE                   = var.pii_language_code
+      PII_MIN_CONFIDENCE                  = tostring(var.pii_min_confidence)
+      SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
     }
   }
 
@@ -1257,6 +1282,10 @@ resource "aws_lambda_function" "incident_report" {
       OPENAI_MODEL                        = var.openai_model
       OPENAI_REPORT_MAX_OUTPUT_TOKENS     = tostring(var.openai_report_max_output_tokens)
       OPENAI_REPORT_TIMEOUT_MS            = tostring(var.openai_report_timeout_milliseconds)
+      PII_DETECTION_CONCURRENCY           = tostring(var.pii_detection_concurrency)
+      PII_DETECTION_TIMEOUT_MS            = tostring(var.pii_detection_timeout_milliseconds)
+      PII_LANGUAGE_CODE                   = var.pii_language_code
+      PII_MIN_CONFIDENCE                  = tostring(var.pii_min_confidence)
       REPORT_LEASE_SECONDS                = tostring(var.report_lease_seconds)
       REPORT_MAX_ATTEMPTS                 = tostring(var.report_max_attempts)
       REPORT_MAX_INPUT_CHARACTERS         = tostring(var.report_max_input_characters)

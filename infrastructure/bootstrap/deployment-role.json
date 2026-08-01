@@ -132,6 +132,12 @@
               }
             },
             {
+              "Sid": "DetectIncidentPii",
+              "Effect": "Allow",
+              "Action": "comprehend:DetectPiiEntities",
+              "Resource": "*"
+            },
+            {
               "Sid": "ManageVpcNetworkInterfacesWhenExplicitlyConfigured",
               "Effect": "Allow",
               "Action": [

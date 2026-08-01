@@ -1,4 +1,5 @@
 import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { ComprehendClient } from '@aws-sdk/client-comprehend';
 import type { Context } from 'aws-lambda';
 import { Pool } from 'pg';
 import { AnalyzeIncidentEvidence } from '../application/analyze-incident-evidence.js';
@@ -8,12 +9,15 @@ import { loadIncidentAnalysisLambdaEnvironment } from '../config/environment.js'
 import {
   parseDatabaseConnectionSecret,
   parseOpenAiApiSecret,
+  parseSlackBotTokenSecret,
 } from '../config/runtime-secrets.js';
 import { PostgresIncidentAnalysisRepository } from '../infrastructure/postgres/incident-analysis-repository.js';
 import { PostgresIncidentRepository } from '../infrastructure/postgres/incident-repository.js';
 import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { ResponsesIncidentAnalyzer } from '../integrations/openai/responses-incident-analyzer.js';
+import { ComprehendIncidentDeidentifier } from '../integrations/aws/comprehend-incident-deidentifier.js';
+import { SlackIncidentParticipantIdentitySource } from '../integrations/slack/web-api-incident-participant-identity-source.js';
 import { createLogger } from '../observability/logger.js';
 import {
   createIncidentAnalysisHandler,
@@ -64,15 +68,19 @@ async function buildHandler(): Promise<IncidentAnalysisHandler> {
       : { endpoint: environment.AWS_ENDPOINT_URL }),
   };
   const secrets = new SecretsManagerClient(clientConfiguration);
+  const comprehend = new ComprehendClient(clientConfiguration);
   let database: Pool | undefined;
   try {
     const secretReader = new SecretsManagerSecretReader(secrets);
-    const [databaseSecretValue, openAiSecretValue] = await Promise.all([
-      secretReader.readString(environment.DATABASE_SECRET_ARN),
-      secretReader.readString(environment.OPENAI_API_SECRET_ARN),
-    ]);
+    const [databaseSecretValue, openAiSecretValue, slackSecretValue] =
+      await Promise.all([
+        secretReader.readString(environment.DATABASE_SECRET_ARN),
+        secretReader.readString(environment.OPENAI_API_SECRET_ARN),
+        secretReader.readString(environment.SLACK_BOT_TOKEN_SECRET_ARN),
+      ]);
     const connectionSecret = parseDatabaseConnectionSecret(databaseSecretValue);
     const openAiSecret = parseOpenAiApiSecret(openAiSecretValue);
+    const slackSecret = parseSlackBotTokenSecret(slackSecretValue);
     secrets.destroy();
 
     database = new Pool({
@@ -102,6 +110,13 @@ async function buildHandler(): Promise<IncidentAnalysisHandler> {
         model: environment.OPENAI_MODEL,
         timeoutMilliseconds: environment.OPENAI_TIMEOUT_MS,
         maxOutputTokens: environment.OPENAI_MAX_OUTPUT_TOKENS,
+      }),
+      new SlackIncidentParticipantIdentitySource(slackSecret),
+      new ComprehendIncidentDeidentifier(comprehend, {
+        languageCode: environment.PII_LANGUAGE_CODE,
+        minimumConfidence: environment.PII_MIN_CONFIDENCE,
+        concurrency: environment.PII_DETECTION_CONCURRENCY,
+        timeoutMilliseconds: environment.PII_DETECTION_TIMEOUT_MS,
       }),
       systemClock,
       uuidGenerator,

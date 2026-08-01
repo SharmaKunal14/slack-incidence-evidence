@@ -467,10 +467,14 @@ Required controls:
 - a kill switch that disables model calls without disabling incident ingestion.
 
 Current controls tenant-scope the manifest query and every evidence reference,
-pseudonymise explicit Slack author IDs before provider submission, keep prompts
-and responses out of workflow/log state, and use separate secret/IAM boundaries.
-Provider contractual controls, regional endpoint selection, sensitivity
-classification, and a graceful kill switch remain gaps.
+resolve only incident-author Slack profiles, replace known and structured
+identifiers, use regional Amazon Comprehend PII detection, and fail closed on
+sanitized model input and generated output. Prompts and responses remain out of
+workflow/log state and separate secret/IAM boundaries apply. Comprehend supports
+only English and Spanish and probabilistic detection can miss unusual aliases,
+images, and contextual identifiers. Provider contractual controls, sensitivity
+classification, an agency identity roster, and a graceful kill switch remain
+gaps.
 
 ### Sensitive content sent to a provider
 

@@ -123,7 +123,8 @@ Leave both VPC input lists empty for Supabase's public pooler. When both lists
 are supplied, database-using functions are attached to those subnets and receive
 the minimal Lambda ENI-management IAM actions. A private deployment then needs either
 Secrets Manager and Step Functions interface endpoints or controlled NAT egress
-to reach those AWS APIs. Slack, OpenAI, Confluence, and Notion calls require deliberate
+to reach those AWS APIs. Slack, Amazon Comprehend, OpenAI, Confluence, and
+Notion calls require deliberate
 HTTPS egress; a private-subnet deployment without NAT or another approved
 egress path will fail. Supabase PrivateLink can replace the public database path
 when its cost and availability requirements justify it.
@@ -155,9 +156,28 @@ token, and outbound Slack access does not require the signing secret. The
 outbound adapters validate that every requested workspace matches the workspace
 bound to the token before making an API request. The app needs `chat:write` for
 status replies and `channels:history` for public-channel thread retrieval, in
-addition to ingress's `app_mentions:read`. Reinstall the Slack app after adding
+addition to ingress's `app_mentions:read`. Incident analysis also needs
+`users:read` so it can call `users.info` only for authors present in the selected
+evidence; it does not request email access or enumerate the workspace directory.
+Reinstall the Slack app after adding
 a scope and update the secret if Slack issues a new bot token. The app must be
 able to access the triggering channel.
+
+## PII de-identification
+
+The analysis and report Lambdas call Amazon Comprehend `DetectPiiEntities` in
+the deployment region. Deterministic rules first replace known Slack identities,
+mentions, email addresses, phone numbers, IP addresses, and common secret-token
+formats. Comprehend then detects unstructured PII such as names and addresses.
+The same layered gate scans sanitized model input and generated output; detector
+failure or a remaining finding prevents the model call or report persistence.
+
+Configure `pii_language_code` (`en` or `es`), `pii_min_confidence`,
+`pii_detection_concurrency`, and `pii_detection_timeout_milliseconds` through
+Terraform. Comprehend PII detection does not support other languages. This is
+pseudonymisation and risk reduction, not a guarantee of legal anonymisation.
+Raw Slack evidence remains in the evidence store under its existing retention
+and access controls; it is not sent to OpenAI.
 
 Pipeline database connection secret:
 
