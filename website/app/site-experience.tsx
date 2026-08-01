@@ -7,122 +7,28 @@ const demoHref = "/review-demo/demo.html";
 const workflow = [
   {
     step: "01",
-    title: "Scope the incident",
-    copy: "Choose the exact Slack channels, time window, threads, and reviewer. Nothing is searched in the background.",
+    kicker: "Approved scope",
+    title: "Start with the evidence.",
+    copy: "Choose the channels, threads, and time window. OnRecord collects only what you approve.",
   },
   {
     step: "02",
-    title: "Build the evidence graph",
-    copy: "Messages become cited timeline events, claims, contradictions, and questions—not a loose prompt transcript.",
+    kicker: "Evidence graph",
+    title: "Separate fact from assumption.",
+    copy: "Every claim stays linked to its source. Contradictions and unanswered questions remain visible.",
   },
   {
     step: "03",
-    title: "Review every conclusion",
-    copy: "Keep, edit, exclude, or reclassify each statement while the source evidence stays beside it.",
-  },
-  {
-    step: "04",
-    title: "Approve one record",
-    copy: "Only a human-approved immutable revision can be published to Confluence or Notion.",
+    kicker: "Human authority",
+    title: "Let a human make the record.",
+    copy: "Edit, approve, and publish one revision. The model never gets the final word.",
   },
 ] as const;
 
 const principles = [
-  ["Evidence before prose", "The draft is generated from structured, cited claims—not directly from raw conversation."],
-  ["Uncertainty stays visible", "Hypotheses, disputes, partial coverage, and unanswered questions cannot be polished away."],
-  ["Approval means something", "The model cannot confirm a cause, approve a revision, or create an external effect."],
-] as const;
-
-const productProof = [
-  {
-    index: "01",
-    eyebrow: "Slack intake",
-    title: "Scope what the system is allowed to see.",
-    copy: "A signed Slack shortcut opens a bounded scoping flow: time window, one primary public channel, up to four additional public channels, optional thread anchors, and a named reviewer.",
-    status: "Implemented · requires connected Slack",
-  },
-  {
-    index: "02",
-    eyebrow: "Evidence pipeline",
-    title: "Create the record before writing the story.",
-    copy: "Collection is checkpointed. Analysis persists cited timeline events, claims, contradictions, questions, source coverage, model metadata, and token usage before report generation begins.",
-    status: "Implemented · synthetic demo data",
-  },
-  {
-    index: "03",
-    eyebrow: "Human review",
-    title: "Use the same interface reviewers use.",
-    copy: "The public demo is a production build of the real review console—not a marketing recreation. Only its API boundary is replaced with validated, in-memory synthetic incident data.",
-    status: "Live in this demo",
-  },
-  {
-    index: "04",
-    eyebrow: "Controlled publication",
-    title: "Publish exactly what was approved.",
-    copy: "Approval locks one immutable revision and queues retry-safe publication through configured Confluence or Notion adapters, followed by a final Slack notification.",
-    status: "Implemented · external effects disabled here",
-  },
-] as const;
-
-const capabilityGroups = [
-  {
-    status: "Implemented",
-    tone: "implemented",
-    description: "Code and focused automated tests exist in the product repository.",
-    visual: {
-      src: "/proof/review-overview.jpg",
-      alt: "The production OnRecord review console showing the EU checkout outage, evidence counts, report, and evidence explorer.",
-      caption: "Production review console · synthetic incident",
-    },
-    items: [
-      "Signed Slack trigger and incident-scoping modal",
-      "Multi-channel collection, thread expansion, and coverage manifest",
-      "Structured claims, timeline, contradictions, and open questions",
-      "Evidence-constrained report generation and citation validation",
-      "Authenticated review console with immutable revision history",
-      "Human approval and Confluence or Notion publication adapters",
-    ],
-  },
-  {
-    status: "Proven here",
-    tone: "demoed",
-    description: "The production review UI runs against constrained synthetic state.",
-    visual: {
-      src: "/proof/evidence-review.jpg",
-      alt: "The OnRecord evidence review interface showing cited statements, reviewer decisions, source coverage, and claims.",
-      caption: "Real reviewer controls · safe browser-memory state",
-    },
-    items: [
-      "Inspect claims, timeline events, evidence, and source coverage",
-      "Keep, edit, exclude, or add evidence-linked statements",
-      "Answer open questions and acknowledge contradictions",
-      "Save a revision, approve it, and inspect the read-only result",
-    ],
-  },
-  {
-    status: "Customer setup",
-    tone: "configured",
-    description: "Implemented paths that still require a provisioned customer environment.",
-    visual: null,
-    items: [
-      "Slack app installation and approved workspace scopes",
-      "AWS, PostgreSQL, Cognito, networking, and runtime secrets",
-      "A destination Confluence space or private Notion data source",
-      "Operational ownership for retention, alarms, and deployment promotion",
-    ],
-  },
-  {
-    status: "Future work",
-    tone: "planned",
-    description: "Explicit roadmap—not represented as available product functionality.",
-    visual: null,
-    items: [
-      "Slack OAuth installation and token lifecycle management",
-      "GitHub App evidence collection",
-      "Enforced retention-deletion jobs",
-      "Action-item creation and semantic quality benchmarking",
-    ],
-  },
+  ["Sources stay attached.", "Every conclusion keeps a visible path back to the evidence."],
+  ["Uncertainty stays visible.", "Disputes, gaps, and unanswered questions cannot be polished away."],
+  ["Nothing publishes without approval.", "Only a human can approve the record or create an external effect."],
 ] as const;
 
 type TechnologyIconSpec = {
@@ -333,19 +239,14 @@ function ProductWorkspace() {
     <section className="product-section section-pad" id="product">
       <div className="shell product-shell">
         <div className="product-copy" data-reveal>
-          <p className="kicker kicker-light">The actual review workspace</p>
-          <h2>This is product code, not a product rendering.</h2>
+          <p className="kicker kicker-light">The review workspace</p>
+          <h2>Every sentence has somewhere to point.</h2>
           <p>
-            The window beside this copy loads the same React application used
-            by the authenticated review console. The public demo swaps only
-            the API boundary for validated synthetic state.
+            Review the draft beside its evidence. Keep what holds up. Change
+            what doesn&apos;t. Publish only when the record is ready.
           </p>
-          <div className="product-proof-note">
-            <span><i /> Real console components</span>
-            <span><i /> Synthetic evidence</span>
-            <span><i /> External effects blocked</span>
-          </div>
-          <a className="button button-ivory" href={demoHref}>Use the actual interface <span aria-hidden="true">→</span></a>
+          <a className="button button-ivory" href={demoHref}>Open the review workspace <span aria-hidden="true">→</span></a>
+          <small className="product-disclosure">Production interface with synthetic evidence. External effects are disabled.</small>
         </div>
         <div className="product-window product-window-live" data-reveal>
           <div className="window-bar"><span className="window-mark">OR</span><span>Production review UI · synthetic API</span><div><i /><i /><i /></div></div>
@@ -365,50 +266,87 @@ function ProductWorkspace() {
   );
 }
 
-function WorkflowWalkthrough() {
+function StoryReveal({ activeStep }: { activeStep: number }) {
   return (
-    <section className="walkthrough-section section-pad" id="walkthrough">
-      <div className="shell">
-        <div className="walkthrough-heading" data-reveal>
-          <div>
-            <p className="kicker">2-minute product walkthrough</p>
-            <h2>Watch one incident travel from Slack to an approved Confluence record.</h2>
+    <section className="story-section" id="method">
+      <div className="shell story-layout">
+        <div className="story-stage" data-active-step={activeStep} aria-label="An incident moving from Slack evidence to a human-approved record">
+          <div className="story-stage-topline"><span>Incident · INC-DEMO-1042</span><span>0{activeStep + 1} / 03</span></div>
+          <div className="story-panel story-panel-sources" data-story-panel="0">
+            <p className="story-panel-label">Approved Slack scope</p>
+            <div className="story-source-card"><span>09:07 · #incident-checkout</span><p>Failures may be happening before requests reach checkout.</p></div>
+            <div className="story-source-card"><span>09:10 · #security-alerts</span><p>Unapproved WAF change found 24 seconds before impact.</p></div>
+            <div className="story-source-card"><span>09:12 · #deployments</span><p>Deployment timing is suspicious, but not yet causal.</p></div>
           </div>
-          <p>
-            Recorded in a connected test environment with synthetic incident
-            data. Processing and review sequences are visibly accelerated; the
-            approval and publication path is real.
-          </p>
+          <div className="story-panel story-panel-graph" data-story-panel="1">
+            <p className="story-panel-label">Evidence graph</p>
+            <div className="story-graph-row"><span>Observed</span><strong>WAF rule changed at 08:57:42</strong><i>2 sources</i></div>
+            <div className="story-graph-row"><span>Disputed</span><strong>Deployment caused the outage</strong><i>3 sources</i></div>
+            <div className="story-graph-row"><span>Unknown</span><strong>How was the session acquired?</strong><i>Open question</i></div>
+          </div>
+          <div className="story-panel story-panel-approved" data-story-panel="2">
+            <p className="story-panel-label">Human-approved revision</p>
+            <span className="story-approved-state"><i /> Approved</span>
+            <h3>EU checkout outage</h3>
+            <p>An unauthorized WAF rule blocked checkout requests at the edge.</p>
+            <div><span>7 evidence sources</span><span>Revision 01</span></div>
+          </div>
         </div>
-        <figure className="walkthrough-frame" data-reveal>
-          <div className="walkthrough-topline">
-            <span><i /> Connected test environment</span>
-            <span>02:00 · Slack to Confluence</span>
-          </div>
-          <div className="walkthrough-video">
-            <video
-              controls
-              playsInline
-              preload="metadata"
-              poster="/video/onrecord-workflow-poster.jpg"
-              aria-label="OnRecord workflow from Slack incident scoping through human approval and Confluence publication"
-            >
-              <source src="/video/onrecord-workflow-120s.mp4" type="video/mp4" />
-              <track
-                kind="captions"
-                src="/video/onrecord-workflow-120s.vtt"
-                srcLang="en"
-                label="English workflow captions"
-              />
-              Your browser does not support embedded video.
-            </video>
-          </div>
-          <figcaption>
-            <span>Slack intake</span><i /><span>AWS evidence pipeline</span><i />
-            <span>Human review</span><i /><span>Approved publication</span>
-          </figcaption>
-        </figure>
+        <div className="story-chapters">
+          <header data-reveal>
+            <p className="kicker">From noise to record</p>
+            <h2>One incident.<br />Three acts.</h2>
+          </header>
+          {workflow.map((item, index) => (
+            <article className="story-chapter" data-story-step={index} key={item.step}>
+              <span>{item.step}</span>
+              <p className="kicker">{item.kicker}</p>
+              <h3>{item.title}</h3>
+              <p>{item.copy}</p>
+            </article>
+          ))}
+        </div>
       </div>
+    </section>
+  );
+}
+
+function WalkthroughDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="walkthrough-dialog" role="dialog" aria-modal="true" aria-labelledby="walkthrough-title">
+      <button className="walkthrough-backdrop" type="button" onClick={onClose} aria-label="Close walkthrough" />
+      <div className="walkthrough-dialog-panel">
+        <div className="walkthrough-dialog-heading">
+          <div>
+            <p className="kicker">2-minute product story</p>
+            <h2 id="walkthrough-title">Slack evidence to approved record.</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close walkthrough" autoFocus>×</button>
+        </div>
+        <video controls autoPlay playsInline preload="metadata" poster="/video/onrecord-workflow-poster.jpg">
+          <source src="/video/onrecord-workflow-120s.mp4" type="video/mp4" />
+          <track kind="captions" src="/video/onrecord-workflow-120s.vtt" srcLang="en" label="English workflow captions" />
+          Your browser does not support embedded video.
+        </video>
+        <p>Connected test environment · synthetic incident data · sequences accelerated</p>
+      </div>
+    </div>
+  );
+}
+
+function TechnicalProof() {
+  return (
+    <section className="technical-proof" id="technical">
+      <details className="shell technical-disclosure">
+        <summary>
+          <span><small>Technical appendix</small><strong>Want to see how it is built?</strong></span>
+          <i aria-hidden="true">+</i>
+        </summary>
+        <div className="technical-content">
+          <ArchitectureJourney />
+          <ImplementationStack />
+        </div>
+      </details>
     </section>
   );
 }
@@ -443,6 +381,8 @@ function ImplementationStack() {
 
 export function OnRecordSite() {
   const [navOpen, setNavOpen] = useState(false);
+  const [activeStory, setActiveStory] = useState(0);
+  const [walkthroughOpen, setWalkthroughOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.add("motion-ready");
@@ -462,6 +402,36 @@ export function OnRecordSite() {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    const steps = document.querySelectorAll<HTMLElement>("[data-story-step]");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0];
+        if (visible?.target instanceof HTMLElement) {
+          setActiveStory(Number(visible.target.dataset.storyStep));
+        }
+      },
+      { rootMargin: "-30% 0px -30%", threshold: [0.2, 0.5, 0.8] },
+    );
+    for (const step of steps) observer.observe(step);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!walkthroughOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setWalkthroughOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = "";
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [walkthroughOpen]);
+
   return (
     <main className="marketing-site">
       <section className="hero" id="top">
@@ -473,10 +443,9 @@ export function OnRecordSite() {
           </a>
           <div className="nav-links" data-open={navOpen}>
             <a href="#product" onClick={() => setNavOpen(false)}>Product</a>
-            <a href="#method" onClick={() => setNavOpen(false)}>Method</a>
-            <a href="#proof" onClick={() => setNavOpen(false)}>Product proof</a>
-            <a href="#architecture" onClick={() => setNavOpen(false)}>Architecture</a>
+            <a href="#method" onClick={() => setNavOpen(false)}>How it works</a>
             <a href="#trust" onClick={() => setNavOpen(false)}>Trust</a>
+            <a href="#technical" onClick={() => setNavOpen(false)}>Technical proof</a>
           </div>
           <div className="nav-actions">
             <button
@@ -499,20 +468,17 @@ export function OnRecordSite() {
             <p className="kicker hero-kicker">Evidence-first incident review</p>
             <h1>The incident is over.<br /><em>The truth isn’t ready.</em></h1>
             <p className="hero-intro">
-              OnRecord turns fragmented Slack conversations into a source-linked
-              postmortem your team can verify, revise, and stand behind.
+              OnRecord turns messy Slack conversations into an evidence-linked
+              incident record—reviewed and approved by a human.
             </p>
             <div className="hero-actions">
               <a className="button button-signal" href={demoHref}>
-                Explore the incident <span aria-hidden="true">→</span>
+                Review an incident <span aria-hidden="true">→</span>
               </a>
               <div className="hero-action-links">
-                <a className="text-link" href="#walkthrough">
-                  See how it works <span aria-hidden="true">↓</span>
-                </a>
-                <a className="text-link" href="#architecture">
-                  Explore the detailed system flow <span aria-hidden="true">↘</span>
-                </a>
+                <button className="text-link" type="button" onClick={() => setWalkthroughOpen(true)}>
+                  Watch the 2-minute story <span aria-hidden="true">↗</span>
+                </button>
               </div>
             </div>
             <div className="hero-proof" aria-label="Product safeguards">
@@ -554,18 +520,13 @@ export function OnRecordSite() {
       <section className="manifesto section-pad">
         <div className="shell manifesto-grid">
           <div data-reveal>
-            <p className="kicker">The dangerous part isn’t the blank page</p>
-            <h2>It’s the confident sentence nobody can defend.</h2>
+            <p className="kicker">The risk</p>
+            <h2>Fluent is not the same as true.</h2>
           </div>
           <div className="manifesto-copy" data-reveal>
             <p>
-              During an incident, observations sit beside guesses. Decisions are
-              buried between status updates. Contradictions arrive out of order.
-            </p>
-            <p>
-              A conventional AI summary smooths that mess into fluent prose.
-              OnRecord does the opposite: it preserves the seams, so a reviewer
-              can see why every conclusion exists.
+              AI can write a convincing postmortem. OnRecord makes every
+              conclusion show its evidence.
             </p>
           </div>
         </div>
@@ -574,98 +535,15 @@ export function OnRecordSite() {
         </div>
       </section>
 
+      <StoryReveal activeStep={activeStory} />
+
       <ProductWorkspace />
-
-      <WorkflowWalkthrough />
-
-      <section className="method section-pad" id="method">
-        <div className="shell">
-          <div className="section-heading" data-reveal>
-            <p className="kicker">From signal to record</p>
-            <h2>A disciplined path through messy evidence.</h2>
-            <p>No autonomous diagnosis. No one-prompt postmortem. No silent upgrade from “maybe” to “fact”.</p>
-          </div>
-          <div className="workflow-line" data-reveal>
-            {workflow.map((item) => (
-              <article className="workflow-step" key={item.step}>
-                <div className="workflow-index"><span>{item.step}</span><i /></div>
-                <h3>{item.title}</h3>
-                <p>{item.copy}</p>
-              </article>
-            ))}
-          </div>
-
-        </div>
-      </section>
-
-      <section className="proof-section section-pad" id="proof">
-        <div className="shell">
-          <div className="section-heading section-heading-wide" data-reveal>
-            <p className="kicker">Show the work</p>
-            <h2>Four product boundaries.<br />Each one is inspectable.</h2>
-            <p>“Implemented” means code and tests exist. It does not mean a customer environment has already been provisioned.</p>
-          </div>
-          <div className="proof-journey">
-            {productProof.map((item) => (
-              <article key={item.index} data-reveal>
-                <div className="proof-index"><span>{item.index}</span><i /></div>
-                <p className="kicker">{item.eyebrow}</p>
-                <h3>{item.title}</h3>
-                <p>{item.copy}</p>
-                <span className="proof-status">{item.status}</span>
-              </article>
-            ))}
-          </div>
-          <div className="capability-heading" data-reveal>
-            <div><p className="kicker">Capability ledger</p><h3>What exists, what runs here, and what comes next.</h3></div>
-            <a className="text-link" href={demoHref}>Verify the review experience <span aria-hidden="true">↗</span></a>
-          </div>
-          <div className="capability-story">
-            {capabilityGroups.slice(0, 2).map((group, index) => (
-              <article className="capability-card capability-card-featured" data-tone={group.tone} data-side={index % 2 === 0 ? "right" : "left"} key={group.status} data-reveal>
-                <div className="capability-copy">
-                  <div className="capability-status"><i /><span>{group.status}</span></div>
-                  <p>{group.description}</p>
-                  <ul>
-                    {group.items.map((item) => <li key={item}>{item}</li>)}
-                  </ul>
-                </div>
-                {group.visual ? (
-                  <figure className="capability-visual">
-                    <div className="capability-browser-bar" aria-hidden="true"><span /><span /><span /><b>onrecord / review</b></div>
-                    {/* Fixed, repository-owned demo captures do not need a runtime image optimizer. */}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={group.visual.src} alt={group.visual.alt} width={1280} height={720} loading="lazy" decoding="async" />
-                    <figcaption><i />{group.visual.caption}</figcaption>
-                  </figure>
-                ) : null}
-              </article>
-            ))}
-            <div className="capability-followups">
-              {capabilityGroups.slice(2).map((group) => (
-                <article className="capability-card capability-card-compact" data-tone={group.tone} key={group.status} data-reveal>
-                  <div className="capability-status"><i /><span>{group.status}</span></div>
-                  <p>{group.description}</p>
-                  <ul>
-                    {group.items.map((item) => <li key={item}>{item}</li>)}
-                  </ul>
-                </article>
-              ))}
-            </div>
-          </div>
-          <p className="ledger-note" data-reveal>Capability status reflects the repository as of July 2026. The public demo never connects to customer systems or publishes externally.</p>
-        </div>
-      </section>
-
-      <ArchitectureJourney />
-
-      <ImplementationStack />
 
       <section className="principles section-pad" id="trust">
         <div className="shell">
           <div className="section-heading section-heading-wide" data-reveal>
-            <p className="kicker">Trust is a product behaviour</p>
-            <h2>The model drafts.<br />It does not decide.</h2>
+            <p className="kicker">Human authority</p>
+            <h2>The model drafts.<br />Your team decides.</h2>
           </div>
           <div className="principle-list">
             {principles.map(([title, copy], index) => (
@@ -676,21 +554,31 @@ export function OnRecordSite() {
           </div>
           <div className="trust-note" data-reveal>
             <div className="trust-symbol" aria-hidden="true"><span /><span /><span /></div>
-            <p>Built with tenant-scoped authorization, immutable revisions, bounded model access, retry-safe publication, and source-content-free operational logs.</p>
+            <p>Real interface. Tested workflow. Controlled external effects.</p>
             <span className="trust-state"><i /> Human approval required</span>
           </div>
+        </div>
+      </section>
+
+      <section className="proof-strip" aria-label="Product proof">
+        <div className="shell proof-strip-grid">
+          <div><span>01</span><strong>Production review components</strong></div>
+          <div><span>02</span><strong>Evidence-linked revision history</strong></div>
+          <div><span>03</span><strong>Confluence and Notion publication paths</strong></div>
         </div>
       </section>
 
       <section className="closing">
         <div className="closing-glow" aria-hidden="true" />
         <div className="shell closing-content" data-reveal>
-          <p className="kicker kicker-light">Synthetic incident. Production interface.</p>
-          <h2>See what changes when every conclusion has to show its work.</h2>
-          <p>Review the evidence, challenge the draft, and put one revision on the record.</p>
+          <p className="kicker kicker-light">Evidence first. Human approved.</p>
+          <h2>Put the incident on the record.</h2>
+          <p>Review the evidence. Challenge the draft. Approve what your team can defend.</p>
           <a className="button button-signal button-large" href={demoHref}>Enter the demo <span aria-hidden="true">→</span></a>
         </div>
       </section>
+
+      <TechnicalProof />
 
       <footer className="site-footer">
         <div className="shell footer-main">
@@ -700,6 +588,7 @@ export function OnRecordSite() {
         </div>
         <div className="shell footer-meta"><span>OnRecord · 2026</span><span>Built for incident truth, not incident theatre.</span></div>
       </footer>
+      {walkthroughOpen ? <WalkthroughDialog onClose={() => setWalkthroughOpen(false)} /> : null}
     </main>
   );
 }

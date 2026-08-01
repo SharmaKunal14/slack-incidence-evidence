@@ -35,25 +35,30 @@ test('server-renders the OnRecord landing page', async () => {
   );
   assert.match(html, /The incident is over/);
   assert.match(html, /The truth isn’t ready/);
-  assert.match(html, /Evidence before prose/);
-  assert.match(html, /Future work/);
+  assert.match(html, /Fluent is not the same as true/);
+  assert.match(html, /One incident/);
+  assert.match(html, /Three acts/);
+  assert.match(html, /Start with the evidence/);
+  assert.match(html, /Separate fact from assumption/);
+  assert.match(html, /Let a human make the record/);
+  assert.match(html, /Every sentence has somewhere to point/);
+  assert.match(html, /The model drafts/);
+  assert.match(html, /Your team decides/);
+  assert.match(html, /Put the incident on the record/);
   assert.match(html, /The implementation stack/);
   assert.match(html, /OpenAI Responses API/);
-  assert.match(html, /2-minute product walkthrough/);
-  assert.match(html, /Watch one event become an approved record/);
   assert.match(html, /incident.review.requested/);
   assert.match(html, /Publisher Lambda/);
   assert.match(html, /EventBridge/);
   const orderedSections = [
-    'The dangerous part isn’t the blank page',
-    'The actual review workspace',
-    'Watch one incident travel from Slack to an approved Confluence record',
-    'From signal to record',
-    'Capability ledger',
-    'Watch one event become an approved record',
+    'Fluent is not the same as true',
+    'One incident',
+    'Every sentence has somewhere to point',
+    'The model drafts',
+    'Production review components',
+    'Put the incident on the record',
+    'Want to see how it is built',
     'The implementation stack',
-    'Trust is a product behaviour',
-    'See what changes when every conclusion has to show its work',
   ];
   for (let index = 1; index < orderedSections.length; index += 1) {
     assert.ok(
@@ -63,19 +68,11 @@ test('server-renders the OnRecord landing page', async () => {
     );
   }
   assert.match(html, /href="\/review-demo\/demo\.html"/);
-  assert.match(html, /\/video\/onrecord-workflow-120s\.mp4/);
-  assert.match(html, /\/video\/onrecord-workflow-poster\.jpg/);
-  assert.match(html, /\/video\/onrecord-workflow-120s\.vtt/);
-  assert.match(
-    html,
-    /href="#walkthrough">See how it works/,
-  );
-  assert.match(
-    html,
-    /href="#architecture">Explore the detailed system flow/,
-  );
-  assert.match(html, /id="walkthrough"/);
+  assert.match(html, /Watch the 2-minute story/);
+  assert.match(html, /id="method"/);
+  assert.match(html, /id="technical"/);
   assert.match(html, /id="architecture"/);
+  assert.doesNotMatch(html, /Capability ledger/);
   assert.doesNotMatch(
     html,
     /codex-preview|Your site is taking shape|react-loading-skeleton/i,

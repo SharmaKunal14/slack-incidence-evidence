@@ -7,9 +7,9 @@ const siteUrl =
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: 'OnRecord — Evidence-first incident review',
+  title: 'OnRecord — Put every incident on the record',
   description:
-    'Turn scattered incident conversations into a source-linked record a human can stand behind.',
+    'Turn messy Slack incident conversations into an evidence-linked record reviewed and approved by a human.',
   icons: {
     icon: '/favicon.svg',
     shortcut: '/favicon.svg',
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'OnRecord — Put every incident on the record',
     description:
-      'Evidence-linked incident reviews, with uncertainty preserved and human approval built in.',
+      'Turn messy Slack incident conversations into an evidence-linked record reviewed and approved by a human.',
     type: 'website',
     images: [
       {
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'OnRecord — Put every incident on the record',
     description:
-      'Evidence-linked incident reviews, with uncertainty preserved and human approval built in.',
+      'Turn messy Slack incident conversations into an evidence-linked record reviewed and approved by a human.',
     images: ['/og.png'],
   },
 };
