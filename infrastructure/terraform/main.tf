@@ -368,7 +368,7 @@ resource "aws_sfn_state_machine" "incident_workflow" {
           {
             Variable     = "$.status"
             StringEquals = "FAILED"
-            Next         = "IncidentAnalysisFailed"
+            Next         = "NotifyIncidentAnalysisFailed"
           }
         ]
         Default = "IncidentAnalysisFailed"
@@ -419,7 +419,7 @@ resource "aws_sfn_state_machine" "incident_workflow" {
           {
             Variable     = "$.status"
             StringEquals = "FAILED"
-            Next         = "IncidentReportFailed"
+            Next         = "NotifyIncidentReportFailed"
           }
         ]
         Default = "IncidentReportFailed"
@@ -435,6 +435,7 @@ resource "aws_sfn_state_machine" "incident_workflow" {
         Parameters = {
           FunctionName = aws_lambda_function.incident_review_notification.arn
           Payload = {
+            notificationType       = "REVIEW_READY"
             "version.$"            = "$.version"
             "tenantId.$"           = "$.tenantId"
             "incidentId.$"         = "$.incidentId"
@@ -480,6 +481,108 @@ resource "aws_sfn_state_machine" "incident_workflow" {
         Type        = "Wait"
         SecondsPath = "$.retryAfterSeconds"
         Next        = "NotifyIncidentReviewReady"
+      }
+      NotifyIncidentAnalysisFailed = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::lambda:invoke"
+        Parameters = {
+          FunctionName = aws_lambda_function.incident_review_notification.arn
+          Payload = {
+            notificationType = "PROCESSING_FAILED"
+            failureStage     = "ANALYSIS"
+            "version.$"      = "$.version"
+            "tenantId.$"     = "$.tenantId"
+            "incidentId.$"   = "$.incidentId"
+            "jobId.$"        = "$.jobId"
+            "failureId.$"    = "$.analysisRunId"
+            "failureCode.$"  = "$.failureCode"
+          }
+        }
+        OutputPath = "$.Payload"
+        Retry = [{
+          ErrorEquals     = ["States.TaskFailed"]
+          IntervalSeconds = 2
+          MaxAttempts     = 3
+          BackoffRate     = 2
+        }]
+        Next = "AnalysisFailureNotificationStatus"
+      }
+      AnalysisFailureNotificationStatus = {
+        Type = "Choice"
+        Choices = [
+          {
+            Variable     = "$.status"
+            StringEquals = "RETRY_WAIT"
+            Next         = "WaitForAnalysisFailureNotificationRetry"
+          },
+          {
+            Variable     = "$.status"
+            StringEquals = "NOTIFIED"
+            Next         = "IncidentAnalysisFailed"
+          },
+          {
+            Variable     = "$.status"
+            StringEquals = "FAILED"
+            Next         = "IncidentAnalysisFailed"
+          }
+        ]
+        Default = "IncidentAnalysisFailed"
+      }
+      WaitForAnalysisFailureNotificationRetry = {
+        Type        = "Wait"
+        SecondsPath = "$.retryAfterSeconds"
+        Next        = "NotifyIncidentAnalysisFailed"
+      }
+      NotifyIncidentReportFailed = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::lambda:invoke"
+        Parameters = {
+          FunctionName = aws_lambda_function.incident_review_notification.arn
+          Payload = {
+            notificationType = "PROCESSING_FAILED"
+            failureStage     = "REPORT"
+            "version.$"      = "$.version"
+            "tenantId.$"     = "$.tenantId"
+            "incidentId.$"   = "$.incidentId"
+            "jobId.$"        = "$.jobId"
+            "failureId.$"    = "$.reportDraftId"
+            "failureCode.$"  = "$.failureCode"
+          }
+        }
+        OutputPath = "$.Payload"
+        Retry = [{
+          ErrorEquals     = ["States.TaskFailed"]
+          IntervalSeconds = 2
+          MaxAttempts     = 3
+          BackoffRate     = 2
+        }]
+        Next = "ReportFailureNotificationStatus"
+      }
+      ReportFailureNotificationStatus = {
+        Type = "Choice"
+        Choices = [
+          {
+            Variable     = "$.status"
+            StringEquals = "RETRY_WAIT"
+            Next         = "WaitForReportFailureNotificationRetry"
+          },
+          {
+            Variable     = "$.status"
+            StringEquals = "NOTIFIED"
+            Next         = "IncidentReportFailed"
+          },
+          {
+            Variable     = "$.status"
+            StringEquals = "FAILED"
+            Next         = "IncidentReportFailed"
+          }
+        ]
+        Default = "IncidentReportFailed"
+      }
+      WaitForReportFailureNotificationRetry = {
+        Type        = "Wait"
+        SecondsPath = "$.retryAfterSeconds"
+        Next        = "NotifyIncidentReportFailed"
       }
       IncidentReviewReady = {
         Type = "Succeed"

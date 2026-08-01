@@ -8,6 +8,10 @@ import type {
   IncidentReviewReadyNotifier,
 } from '../../application/ports/incident-review-ready-notifier.js';
 import type {
+  IncidentProcessingFailedNotification,
+  IncidentProcessingFailedNotifier,
+} from '../../application/ports/incident-processing-failed-notifier.js';
+import type {
   IncidentReportPublishedNotification,
   IncidentReportPublishedNotifier,
 } from '../../application/ports/incident-report-published-notifier.js';
@@ -36,6 +40,17 @@ const readyNotificationSchema = z
     timelineEventCount: z.number().int().nonnegative().max(100_000),
     claimCount: z.number().int().nonnegative().max(100_000),
     openQuestionCount: z.number().int().nonnegative().max(100_000),
+  })
+  .strict();
+
+const failedNotificationSchema = z
+  .object({
+    workspaceId: z.string().regex(/^T[A-Z0-9]{1,63}$/),
+    incidentId: z.uuid(),
+    failureId: z.uuid(),
+    channelId: z.string().regex(/^C[A-Z0-9]{1,63}$/),
+    threadTs: slackTimestampSchema,
+    stage: z.enum(['ANALYSIS', 'REPORT']),
   })
   .strict();
 
@@ -110,6 +125,7 @@ export class SlackWebApiIncidentStatusNotifier
   implements
     IncidentStatusNotifier,
     IncidentReviewReadyNotifier,
+    IncidentProcessingFailedNotifier,
     IncidentReportPublishedNotifier
 {
   private readonly request: typeof fetch;
@@ -188,6 +204,28 @@ export class SlackWebApiIncidentStatusNotifier
         `Open questions: ${input.openQuestionCount}`,
         'Status: human review required.',
         ...(reviewUrl === null ? [] : [`Review: ${reviewUrl}`]),
+      ].join('\n'),
+    });
+  }
+
+  public async notifyProcessingFailed(
+    notification: IncidentProcessingFailedNotification,
+  ): Promise<void> {
+    const input = failedNotificationSchema.parse(notification);
+    if (input.workspaceId !== this.installation.workspaceId) {
+      throw new SlackWebApiError('SLACK_WORKSPACE_MISMATCH');
+    }
+
+    await this.postStatus({
+      channelId: input.channelId,
+      threadTs: input.threadTs,
+      clientMessageId: input.failureId,
+      incidentId: input.incidentId,
+      text: [
+        'Incident processing stopped before a review draft could be created.',
+        `Reference: ${input.incidentId}`,
+        `Stage: ${input.stage.toLocaleLowerCase()}.`,
+        'Status: operator attention required.',
       ].join('\n'),
     });
   }

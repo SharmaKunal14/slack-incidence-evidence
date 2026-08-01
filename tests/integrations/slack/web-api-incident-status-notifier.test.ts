@@ -145,6 +145,43 @@ describe('SlackWebApiIncidentStatusNotifier', () => {
     expect(body).not.toContain(botToken);
   });
 
+  it('posts a content-free terminal failure with a stable idempotency ID', async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        jsonResponse({ ok: true, channel: 'C001', ts: '1721178001.000200' }),
+      );
+    const notifier = new SlackWebApiIncidentStatusNotifier(
+      { workspaceId: 'T001', botToken },
+      { request },
+    );
+    const failureId = '7df1bcac-5583-4cd6-91db-981989f4c482';
+
+    await notifier.notifyProcessingFailed({
+      workspaceId: 'T001',
+      incidentId,
+      failureId,
+      channelId: 'C001',
+      threadTs: '1721178000.000100',
+      stage: 'ANALYSIS',
+    });
+
+    const body = request.mock.calls[0]?.[1]?.body;
+    if (typeof body !== 'string') {
+      throw new Error('Expected Slack request body');
+    }
+    const parsedBody = z
+      .object({
+        client_msg_id: z.string(),
+        text: z.string(),
+      })
+      .parse(JSON.parse(body) as unknown);
+    expect(parsedBody.client_msg_id).toBe(failureId);
+    expect(parsedBody.text).toContain('operator attention required');
+    expect(parsedBody.text).not.toContain('PII_REMAINS');
+    expect(body).not.toContain(botToken);
+  });
+
   it('rejects review links that are not plain HTTPS origins', () => {
     expect(
       () =>

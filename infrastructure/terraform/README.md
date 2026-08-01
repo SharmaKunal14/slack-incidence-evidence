@@ -169,8 +169,18 @@ The analysis and report Lambdas call Amazon Comprehend `DetectPiiEntities` in
 the deployment region. Deterministic rules first replace known Slack identities,
 mentions, email addresses, phone numbers, IP addresses, and common secret-token
 formats. Comprehend then detects unstructured PII such as names and addresses.
-The same layered gate scans sanitized model input and generated output; detector
-failure or a remaining finding prevents the model call or report persistence.
+Input de-identification runs up to three bounded detect-and-redact passes plus a
+final confirmation scan, so entities exposed by an earlier replacement can be
+removed without unbounded calls. Generated output remains a strict scan-only
+gate because rewriting structured output could invalidate evidence citations.
+Detector failure or a remaining finding prevents the model call or report
+persistence. Logs contain only the scan operation, pass, finding count, and
+normalized entity types; detected values and offsets are never logged.
+
+When analysis or report generation fails terminally, the workflow posts a
+content-free Slack reply before entering its failed state. The reply contains
+only the incident reference, failed stage, and operator-attention status; the
+internal failure code and evidence content are excluded.
 
 Configure `pii_language_code` (`en` or `es`), `pii_min_confidence`,
 `pii_detection_concurrency`, and `pii_detection_timeout_milliseconds` through

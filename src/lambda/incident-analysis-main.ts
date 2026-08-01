@@ -117,6 +117,9 @@ async function buildHandler(): Promise<IncidentAnalysisHandler> {
         minimumConfidence: environment.PII_MIN_CONFIDENCE,
         concurrency: environment.PII_DETECTION_CONCURRENCY,
         timeoutMilliseconds: environment.PII_DETECTION_TIMEOUT_MS,
+        onScan: (scan) => {
+          logger.info({ privacyScan: scan }, 'Incident privacy scan processed');
+        },
       }),
       systemClock,
       uuidGenerator,

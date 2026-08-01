@@ -9,6 +9,7 @@ import {
 
 const MAX_COMPREHEND_TEXT_BYTES = 90_000;
 const DEFAULT_CONCURRENCY = 4;
+const MAX_REDACTION_PASSES = 3;
 
 interface ComprehendClientLike {
   send(
@@ -36,6 +37,15 @@ export interface ComprehendIncidentDeidentifierConfiguration {
   readonly minimumConfidence: number;
   readonly timeoutMilliseconds: number;
   readonly concurrency?: number;
+  readonly onScan?: (event: IncidentPrivacyScanEvent) => void;
+}
+
+export interface IncidentPrivacyScanEvent {
+  readonly operation: 'DEIDENTIFICATION' | 'SAFETY_CHECK';
+  readonly pass: number;
+  readonly findingCount: number;
+  readonly findingTypes: readonly string[];
+  readonly status: 'REDACTED' | 'SAFE' | 'BLOCKED';
 }
 
 /** Layered deterministic replacement plus managed NER detection. */
@@ -77,48 +87,122 @@ export class ComprehendIncidentDeidentifier implements IncidentDeidentifier {
   ): Promise<readonly string[]> {
     validateKnownPeople(input.knownPeople ?? []);
     const replacementState = new ReplacementState();
-    const deterministic = input.texts.map((text) =>
+    let redacted = input.texts.map((text) =>
       redactDeterministic(
         replaceKnownPeople(text, input.knownPeople ?? []),
         replacementState,
       ),
     );
-    const findings = await mapWithConcurrency(
-      deterministic,
+
+    for (let pass = 1; pass <= MAX_REDACTION_PASSES; pass += 1) {
+      const localTypes = localFindingTypes(redacted, input.knownPeople ?? []);
+      if (localTypes.length > 0) {
+        this.reportScan({
+          operation: 'DEIDENTIFICATION',
+          pass,
+          findingCount: localTypes.length,
+          findingTypes: uniqueSorted(localTypes),
+          status: 'BLOCKED',
+        });
+        throw new IncidentDeidentificationError('PII_REMAINS', false);
+      }
+
+      const findings = await mapWithConcurrency(
+        redacted,
+        this.concurrency,
+        (text) => this.detect(text),
+      );
+      const flattened = findings.flat();
+      if (flattened.length === 0) {
+        this.reportScan({
+          operation: 'DEIDENTIFICATION',
+          pass,
+          findingCount: 0,
+          findingTypes: [],
+          status: 'SAFE',
+        });
+        return redacted;
+      }
+      this.reportScan({
+        operation: 'DEIDENTIFICATION',
+        pass,
+        findingCount: flattened.length,
+        findingTypes: uniqueSorted(flattened.map((finding) => finding.type)),
+        status: 'REDACTED',
+      });
+      redacted = redacted.map((text, index) =>
+        replaceFindings(text, findings[index] ?? [], replacementState),
+      );
+    }
+
+    const residualFindings = await mapWithConcurrency(
+      redacted,
       this.concurrency,
       (text) => this.detect(text),
     );
-    const redacted = deterministic.map((text, index) =>
-      replaceFindings(text, findings[index] ?? [], replacementState),
-    );
-    await this.assertSafe({
-      texts: redacted,
-      ...(input.knownPeople === undefined
-        ? {}
-        : { knownPeople: input.knownPeople }),
+    const flattenedResidualFindings = residualFindings.flat();
+    if (flattenedResidualFindings.length > 0) {
+      this.reportScan({
+        operation: 'DEIDENTIFICATION',
+        pass: MAX_REDACTION_PASSES + 1,
+        findingCount: flattenedResidualFindings.length,
+        findingTypes: uniqueSorted(
+          flattenedResidualFindings.map((finding) => finding.type),
+        ),
+        status: 'BLOCKED',
+      });
+      throw new IncidentDeidentificationError('PII_REMAINS', false);
+    }
+    this.reportScan({
+      operation: 'DEIDENTIFICATION',
+      pass: MAX_REDACTION_PASSES + 1,
+      findingCount: 0,
+      findingTypes: [],
+      status: 'SAFE',
     });
     return redacted;
   }
 
   public async assertSafe(input: InspectIncidentTextInput): Promise<void> {
     validateKnownPeople(input.knownPeople ?? []);
-    for (const text of input.texts) {
-      validateText(text);
-      if (
-        containsKnownPerson(text, input.knownPeople ?? []) ||
-        findDeterministicPii(text).length > 0
-      ) {
-        throw new IncidentDeidentificationError('PII_REMAINS', false);
-      }
+    const localTypes = localFindingTypes(input.texts, input.knownPeople ?? []);
+    if (localTypes.length > 0) {
+      this.reportScan({
+        operation: 'SAFETY_CHECK',
+        pass: 1,
+        findingCount: localTypes.length,
+        findingTypes: uniqueSorted(localTypes),
+        status: 'BLOCKED',
+      });
+      throw new IncidentDeidentificationError('PII_REMAINS', false);
     }
     const findings = await mapWithConcurrency(
       input.texts,
       this.concurrency,
       (text) => this.detect(text),
     );
-    if (findings.some((items) => items.length > 0)) {
+    const flattened = findings.flat();
+    if (flattened.length > 0) {
+      this.reportScan({
+        operation: 'SAFETY_CHECK',
+        pass: 1,
+        findingCount: flattened.length,
+        findingTypes: uniqueSorted(flattened.map((finding) => finding.type)),
+        status: 'BLOCKED',
+      });
       throw new IncidentDeidentificationError('PII_REMAINS', false);
     }
+    this.reportScan({
+      operation: 'SAFETY_CHECK',
+      pass: 1,
+      findingCount: 0,
+      findingTypes: [],
+      status: 'SAFE',
+    });
+  }
+
+  private reportScan(event: IncidentPrivacyScanEvent): void {
+    this.configuration.onScan?.(event);
   }
 
   private async detect(text: string): Promise<readonly Finding[]> {
@@ -190,6 +274,25 @@ export class ComprehendIncidentDeidentifier implements IncidentDeidentifier {
     }
     return removeOverlappingFindings(findings);
   }
+}
+
+function localFindingTypes(
+  texts: readonly string[],
+  knownPeople: readonly KnownIncidentPerson[],
+): string[] {
+  const types: string[] = [];
+  for (const text of texts) {
+    validateText(text);
+    if (containsKnownPerson(text, knownPeople)) {
+      types.push('KNOWN_PERSON');
+    }
+    types.push(...findDeterministicPii(text).map((finding) => finding.type));
+  }
+  return types;
+}
+
+function uniqueSorted(values: readonly string[]): string[] {
+  return [...new Set(values)].sort();
 }
 
 class ReplacementState {

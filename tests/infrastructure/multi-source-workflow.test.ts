@@ -18,5 +18,10 @@ describe('multi-source workflow infrastructure', () => {
     expect(terraform).not.toContain('ItemReader');
     expect(terraform).toContain('include_execution_data = false');
     expect(terraform).toContain('"sourceId.$"   = "$$.Map.Item.Value"');
+    expect(terraform).toContain('NotifyIncidentAnalysisFailed');
+    expect(terraform).toContain('NotifyIncidentReportFailed');
+    expect(terraform).toContain('notificationType = "PROCESSING_FAILED"');
+    expect(terraform).toContain('failureStage     = "ANALYSIS"');
+    expect(terraform).toContain('failureStage     = "REPORT"');
   });
 });

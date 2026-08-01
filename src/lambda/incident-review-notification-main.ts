@@ -2,6 +2,7 @@ import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import type { Context } from 'aws-lambda';
 import { Pool } from 'pg';
 import { NotifyIncidentReviewReady } from '../application/notify-incident-review-ready.js';
+import { NotifyIncidentProcessingFailed } from '../application/notify-incident-processing-failed.js';
 import { loadIncidentReviewNotificationLambdaEnvironment } from '../config/environment.js';
 import {
   parseDatabaseConnectionSecret,
@@ -90,21 +91,28 @@ async function buildHandler(): Promise<IncidentReviewNotificationHandler> {
     });
     await assertDatabaseSchemaCompatible(database);
     const reportDrafts = new PostgresIncidentReportRepository(database);
-    const useCase = new NotifyIncidentReviewReady(
-      new PostgresIncidentRepository(database),
+    const incidents = new PostgresIncidentRepository(database);
+    const statusNotifier = new SlackWebApiIncidentStatusNotifier(
+      {
+        workspaceId: slackSecret.workspaceId,
+        botToken: slackSecret.botToken,
+      },
+      {
+        reviewAppBaseUrl: environment.REVIEW_APP_BASE_URL,
+      },
+    );
+    const reviewReadyNotifier = new NotifyIncidentReviewReady(
+      incidents,
       reportDrafts,
-      new SlackWebApiIncidentStatusNotifier(
-        {
-          workspaceId: slackSecret.workspaceId,
-          botToken: slackSecret.botToken,
-        },
-        {
-          reviewAppBaseUrl: environment.REVIEW_APP_BASE_URL,
-        },
-      ),
+      statusNotifier,
+    );
+    const processingFailedNotifier = new NotifyIncidentProcessingFailed(
+      incidents,
+      statusNotifier,
     );
     return createIncidentReviewNotificationHandler({
-      notifier: useCase,
+      reviewReadyNotifier,
+      processingFailedNotifier,
       logger,
     });
   } catch (error) {
