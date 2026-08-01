@@ -2,15 +2,10 @@
 
 :root {
   color-scheme: light;
-  font-family:
-    Inter,
-    Aptos,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
+  font-family: 'Avenir Next', Avenir, Aptos, 'Segoe UI', system-ui, sans-serif;
+  font-size: 16px;
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures contextual;
   color: #17231f;
   background: #f4f7f6;
   font-synthesis: none;
@@ -117,11 +112,10 @@ a {
 .eyebrow {
   margin: 0 0 0.55rem;
   color: var(--teal);
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  line-height: 1.2;
 }
 
 .eyebrow-light {
@@ -142,8 +136,8 @@ a {
   border: 1px solid transparent;
   border-radius: 0.75rem;
   padding: 0.7rem 1rem;
-  font-size: 0.86rem;
-  font-weight: 750;
+  font-size: 0.875rem;
+  font-weight: 700;
   line-height: 1;
   transition:
     transform 180ms ease,
@@ -266,8 +260,8 @@ a {
   max-width: 10ch;
   margin: 0;
   font-size: clamp(3.4rem, 7vw, 6.8rem);
-  font-weight: 560;
-  letter-spacing: -0.065em;
+  font-weight: 600;
+  letter-spacing: -0.03em;
   line-height: 0.92;
 }
 
@@ -296,7 +290,7 @@ a {
   color: rgb(236 255 249 / 86%);
   background: rgb(255 255 255 / 7%);
   font-size: 0.77rem;
-  font-weight: 650;
+  font-weight: 600;
   backdrop-filter: blur(8px);
 }
 
@@ -327,8 +321,8 @@ a {
 .auth-card h2 {
   margin: 0;
   font-size: clamp(2rem, 3vw, 2.65rem);
-  font-weight: 620;
-  letter-spacing: -0.045em;
+  font-weight: 600;
+  letter-spacing: -0.025em;
   line-height: 1.08;
 }
 
@@ -470,16 +464,15 @@ a {
 
 .brand-copy strong {
   font-size: 0.94rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .brand-copy small {
   color: var(--ink-faint);
-  font-size: 0.61rem;
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.025em;
 }
 
 .brand[data-light='true'] .brand-copy small {
@@ -497,10 +490,9 @@ a {
   align-items: center;
   gap: 0.42rem;
   color: var(--ink-faint);
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.015em;
 }
 
 .environment-indicator > span {
@@ -548,10 +540,10 @@ a {
 .inbox-hero h1 {
   max-width: 16ch;
   margin: 0;
-  font-size: clamp(2.65rem, 5vw, 5rem);
-  font-weight: 570;
-  letter-spacing: -0.06em;
-  line-height: 0.98;
+  font-size: clamp(2.5rem, 4.5vw, 4.5rem);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.04;
 }
 
 .hero-copy {
@@ -572,7 +564,7 @@ a {
 .focus-label {
   color: var(--ink-faint);
   font-size: 0.68rem;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -581,8 +573,8 @@ a {
   margin: 0.25rem 0 -0.15rem;
   color: var(--brand);
   font-size: 3.6rem;
-  font-weight: 560;
-  letter-spacing: -0.07em;
+  font-weight: 600;
+  letter-spacing: -0.03em;
   line-height: 1;
 }
 
@@ -648,14 +640,14 @@ a {
 
 .metric-card strong {
   font-size: 1.55rem;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.04em;
 }
 
 .metric-card small {
   color: var(--ink-faint);
   font-size: 0.72rem;
-  font-weight: 620;
+  font-weight: 600;
 }
 
 .inbox-section {
@@ -673,8 +665,8 @@ a {
 .workspace-heading h2 {
   margin: 0;
   font-size: 1.55rem;
-  font-weight: 650;
-  letter-spacing: -0.035em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .search-field {
@@ -719,7 +711,7 @@ a {
   color: var(--ink-soft);
   background: transparent;
   font-size: 0.75rem;
-  font-weight: 720;
+  font-weight: 700;
   transition:
     color 160ms ease,
     background 160ms ease;
@@ -806,7 +798,7 @@ a {
 .incident-title-row > strong {
   overflow: hidden;
   font-size: 0.98rem;
-  font-weight: 690;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -866,7 +858,7 @@ a {
   border-radius: 999px;
   padding: 0.34rem 0.55rem;
   font-size: 0.64rem;
-  font-weight: 780;
+  font-weight: 700;
   letter-spacing: 0.035em;
   line-height: 1;
   text-transform: uppercase;
@@ -941,7 +933,7 @@ a {
   padding: 0.3rem 0;
   color: var(--ink-soft);
   background: transparent;
-  font-weight: 680;
+  font-weight: 600;
 }
 
 .incident-hero {
@@ -968,10 +960,10 @@ a {
 .incident-hero h1 {
   max-width: 20ch;
   margin: 0;
-  font-size: clamp(2.3rem, 4vw, 4.4rem);
-  font-weight: 570;
-  letter-spacing: -0.057em;
-  line-height: 1;
+  font-size: clamp(2.25rem, 3.4vw, 3.75rem);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
 }
 
 .revision-context {
@@ -981,7 +973,7 @@ a {
   gap: 0.45rem;
   margin: 1rem 0 0;
   color: var(--ink-soft);
-  font-size: 0.78rem;
+  font-size: 0.875rem;
 }
 
 .revision-context > span {
@@ -1021,12 +1013,12 @@ a {
 
 .incident-health small {
   color: var(--ink-faint);
-  font-size: 0.66rem;
+  font-size: 0.75rem;
 }
 
 .incident-health strong {
-  font-size: 0.78rem;
-  font-weight: 720;
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
 .incident-metrics {
@@ -1063,12 +1055,12 @@ a {
 }
 .compact-metric strong {
   font-size: 1.1rem;
-  font-weight: 680;
+  font-weight: 600;
 }
 .compact-metric small {
   grid-column: 1 / -1;
   color: var(--ink-faint);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   text-align: center;
 }
 .compact-metric[data-warning='true'] > span,
@@ -1109,7 +1101,7 @@ a {
   align-items: center;
   gap: 0.4rem;
   color: var(--ink-faint);
-  font-size: 0.66rem;
+  font-size: 0.75rem;
 }
 
 .version-picker {
@@ -1123,8 +1115,8 @@ a {
   align-items: center;
   gap: 0.35rem;
   color: var(--ink-faint);
-  font-size: 0.65rem;
-  font-weight: 720;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .version-picker select {
@@ -1134,8 +1126,8 @@ a {
   padding: 0.6rem 2rem 0.6rem 0.75rem;
   color: var(--ink);
   background: var(--surface-muted);
-  font-size: 0.72rem;
-  font-weight: 650;
+  font-size: 0.8125rem;
+  font-weight: 600;
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
@@ -1190,20 +1182,20 @@ a {
 
 .report-section-heading > span {
   color: var(--brand);
-  font-size: 0.64rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
 }
 
 .report-section-heading h3 {
   margin: 0;
-  font-size: 0.92rem;
-  font-weight: 720;
+  font-size: 1rem;
+  font-weight: 700;
 }
 
 .report-section-heading small {
   color: var(--ink-faint);
-  font-size: 0.64rem;
+  font-size: 0.75rem;
 }
 
 .statement-list {
@@ -1275,11 +1267,10 @@ a {
   padding: 0.3rem 0.5rem;
   color: #4e5d57;
   background: #edf1ef;
-  font-size: 0.59rem;
-  font-weight: 780;
-  letter-spacing: 0.035em;
-  line-height: 1;
-  text-transform: uppercase;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
 }
 
 .classification-badge > span {
@@ -1336,8 +1327,8 @@ a {
   padding: 0.38rem 0.48rem;
   color: var(--ink-faint);
   background: transparent;
-  font-size: 0.62rem;
-  font-weight: 720;
+  font-size: 0.75rem;
+  font-weight: 600;
   transition:
     color 150ms ease,
     background 150ms ease,
@@ -1358,8 +1349,8 @@ a {
 .statement-copy {
   margin: 0.85rem 0;
   color: #26342f;
-  font-size: 0.83rem;
-  line-height: 1.65;
+  font-size: 0.9375rem;
+  line-height: 1.6;
 }
 
 .statement-editor-fields {
@@ -1377,7 +1368,7 @@ a {
 .statement-editor-fields label > span {
   color: var(--ink-faint);
   font-size: 0.63rem;
-  font-weight: 720;
+  font-weight: 600;
 }
 
 .statement-editor-fields textarea,
@@ -1431,8 +1422,8 @@ a {
   padding: 0.34rem 0.48rem;
   color: var(--ink-soft);
   background: #fff;
-  font-size: 0.59rem;
-  font-weight: 690;
+  font-size: 0.6875rem;
+  font-weight: 600;
   transition:
     color 150ms ease,
     border-color 150ms ease,
@@ -1452,7 +1443,7 @@ a {
   margin: -0.2rem 0 0.7rem;
   color: var(--red);
   font-size: 0.68rem;
-  font-weight: 680;
+  font-weight: 600;
 }
 
 .add-statement-button {
@@ -1466,8 +1457,8 @@ a {
   padding: 0.72rem;
   color: var(--brand-deep);
   background: rgb(238 240 255 / 46%);
-  font-size: 0.7rem;
-  font-weight: 740;
+  font-size: 0.8125rem;
+  font-weight: 600;
   transition:
     border-color 160ms ease,
     background 160ms ease,
@@ -1519,7 +1510,7 @@ a {
   align-items: center;
   gap: 0.35rem;
   font-size: 0.62rem;
-  font-weight: 740;
+  font-weight: 700;
 }
 
 .reviewer-added-badge {
@@ -1555,7 +1546,7 @@ a {
   padding: 0.65rem 0.7rem;
   color: var(--ink-soft);
   font-size: 0.66rem;
-  font-weight: 720;
+  font-weight: 600;
   list-style: none;
 }
 
@@ -1627,8 +1618,8 @@ a {
   padding: 0.35rem 0.55rem;
   color: var(--teal);
   background: var(--teal-soft);
-  font-size: 0.62rem;
-  font-weight: 750;
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
 .coverage-panel {
@@ -1660,8 +1651,8 @@ a {
   padding: 0.3rem 0.48rem;
   color: var(--red);
   background: var(--red-soft);
-  font-size: 0.58rem;
-  font-weight: 760;
+  font-size: 0.6875rem;
+  font-weight: 700;
 }
 
 .coverage-list {
@@ -1678,7 +1669,7 @@ a {
   justify-content: space-between;
   gap: 0.7rem;
   color: var(--ink-faint);
-  font-size: 0.64rem;
+  font-size: 0.75rem;
 }
 
 .coverage-list li[data-state='INACCESSIBLE'],
@@ -1691,7 +1682,7 @@ a {
 .coverage-source {
   overflow: hidden;
   color: var(--ink);
-  font-weight: 720;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1714,8 +1705,8 @@ a {
   padding: 0.55rem 0.3rem;
   color: var(--ink-faint);
   background: transparent;
-  font-size: 0.61rem;
-  font-weight: 720;
+  font-size: 0.75rem;
+  font-weight: 600;
   transition:
     color 160ms ease,
     background 160ms ease,
@@ -1723,7 +1714,7 @@ a {
 }
 
 .evidence-tab-trigger span {
-  font-size: 0.57rem;
+  font-size: 0.6875rem;
   opacity: 0.72;
 }
 
@@ -1823,7 +1814,7 @@ a {
   padding: 0.65rem 0.75rem;
   color: var(--ink-faint);
   background: linear-gradient(135deg, #fff, var(--surface-muted));
-  font-size: 0.63rem;
+  font-size: 0.75rem;
 }
 
 .question-stepper {
@@ -1844,8 +1835,8 @@ a {
   border-radius: 999px;
   color: var(--ink-faint);
   background: #fff;
-  font-size: 0.62rem;
-  font-weight: 780;
+  font-size: 0.75rem;
+  font-weight: 700;
   transition:
     color 160ms ease,
     border-color 160ms ease,
@@ -1882,14 +1873,14 @@ a {
 
 .question-progress strong {
   color: var(--ink-soft);
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .question-card-heading > span:first-child {
   color: var(--amber);
-  font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.015em;
 }
 
 .question-card[data-answered='true'] .question-card-heading > span:first-child {
@@ -1901,8 +1892,8 @@ a {
   padding: 0.3rem 0.48rem;
   color: #8a5d0b;
   background: rgb(255 244 219 / 88%);
-  font-size: 0.56rem;
-  font-weight: 760;
+  font-size: 0.6875rem;
+  font-weight: 700;
 }
 
 .question-card[data-answered='true'] .question-answer-status {
@@ -1916,8 +1907,8 @@ a {
 .source-card > p {
   margin: 0;
   color: #2b3833;
-  font-size: 0.77rem;
-  line-height: 1.58;
+  font-size: 0.875rem;
+  line-height: 1.6;
 }
 
 .question-answer-field {
@@ -1929,10 +1920,9 @@ a {
 .question-answer-field > span,
 .preserved-question-answer > span {
   color: var(--ink-faint);
-  font-size: 0.59rem;
-  font-weight: 740;
-  letter-spacing: 0.035em;
-  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .question-answer-field textarea {
@@ -1944,8 +1934,8 @@ a {
   padding: 0.7rem 0.75rem 1.45rem;
   color: var(--ink);
   background: rgb(255 255 255 / 92%);
-  font-size: 0.74rem;
-  line-height: 1.55;
+  font-size: 0.875rem;
+  line-height: 1.6;
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
@@ -1968,7 +1958,7 @@ a {
   right: 0.65rem;
   bottom: 0.48rem;
   color: var(--ink-faint);
-  font-size: 0.55rem;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1988,8 +1978,8 @@ a {
   padding: 0.42rem 0.55rem;
   color: var(--ink-faint);
   background: transparent;
-  font-size: 0.61rem;
-  font-weight: 720;
+  font-size: 0.75rem;
+  font-weight: 600;
   transition:
     color 160ms ease,
     background 160ms ease;
@@ -2038,8 +2028,8 @@ a {
   padding: 0.62rem 0.68rem;
   color: var(--ink-soft);
   background: rgb(255 255 255 / 76%);
-  font-size: 0.65rem;
-  font-weight: 720;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .question-evidence-button span {
@@ -2087,16 +2077,15 @@ a {
   justify-content: space-between;
   gap: 0.5rem;
   color: var(--ink-faint);
-  font-size: 0.56rem;
-  font-weight: 720;
-  text-transform: uppercase;
+  font-size: 0.6875rem;
+  font-weight: 600;
 }
 
 .question-evidence-card p,
 .question-evidence-unavailable {
   margin: 0;
   color: var(--ink-soft);
-  font-size: 0.68rem;
+  font-size: 0.8125rem;
   line-height: 1.5;
 }
 
@@ -2106,8 +2095,8 @@ a {
   align-items: center;
   gap: 0.3rem;
   color: var(--brand-deep);
-  font-size: 0.61rem;
-  font-weight: 720;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .evidence-card,
@@ -2136,7 +2125,7 @@ a {
   gap: 0.25rem;
   color: var(--red);
   font-size: 0.57rem;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .evidence-card .source-chip-row,
@@ -2181,8 +2170,8 @@ a {
   display: block;
   margin-bottom: 0.35rem;
   color: var(--ink-faint);
-  font-size: 0.6rem;
-  font-weight: 680;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .timeline-card > .classification-badge {
@@ -2200,9 +2189,8 @@ a {
 .source-card-meta {
   margin-bottom: 0.6rem;
   color: var(--ink-faint);
-  font-size: 0.58rem;
-  font-weight: 700;
-  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .source-card > p {
@@ -2216,7 +2204,7 @@ a {
   border-top: 1px solid var(--line);
   padding-top: 0.65rem;
   color: var(--ink-faint);
-  font-size: 0.58rem;
+  font-size: 0.75rem;
 }
 
 .source-card-footer a {
@@ -2224,7 +2212,7 @@ a {
   align-items: center;
   gap: 0.3rem;
   color: var(--brand-deep);
-  font-weight: 720;
+  font-weight: 600;
   text-decoration: none;
 }
 
@@ -2298,7 +2286,7 @@ a {
 .review-action-heading h2 {
   margin: 0;
   font-size: 0.88rem;
-  font-weight: 720;
+  font-weight: 700;
 }
 
 .acknowledgement-list {
@@ -2313,8 +2301,8 @@ a {
   align-items: center;
   gap: 0.42rem;
   color: var(--ink-soft);
-  font-size: 0.67rem;
-  font-weight: 620;
+  font-size: 0.75rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -2365,7 +2353,7 @@ a {
   border-radius: 0.6rem;
   padding: 0.6rem 0.7rem;
   font-size: 0.68rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .action-success {
@@ -2426,7 +2414,7 @@ a {
 .loading-screen p {
   color: var(--ink-soft);
   font-size: 0.78rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .loading-orbit {
@@ -2480,8 +2468,8 @@ a {
 .error-state h1 {
   margin: 0;
   font-size: clamp(1.8rem, 3vw, 2.6rem);
-  font-weight: 620;
-  letter-spacing: -0.04em;
+  font-weight: 600;
+  letter-spacing: -0.025em;
 }
 
 .error-state > p:not(.eyebrow) {
