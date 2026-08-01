@@ -108,6 +108,20 @@ describe('ResponsesIncidentAnalyzer', () => {
         },
       },
     });
+    expect(body).toMatchObject({
+      text: {
+        format: {
+          schema: {
+            $defs: {
+              evidenceId: {
+                type: 'string',
+                enum: ['artifact-1'],
+              },
+            },
+          },
+        },
+      },
+    });
   });
 
   it('rejects model output containing a fabricated evidence ID', async () => {
@@ -127,9 +141,50 @@ describe('ResponsesIncidentAnalyzer', () => {
         clientRequestId: 'client-request-1',
       }),
     ).rejects.toMatchObject({
-      code: 'OPENAI_INVALID_ANALYSIS',
+      code: 'OPENAI_UNKNOWN_EVIDENCE_REFERENCE',
       retryable: true,
     });
+  });
+
+  it('reports application schema failures without logging model content', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      successfulResponse({
+        ...analysis,
+        claims: [
+          {
+            ...analysis.claims[0]!,
+            supportingEvidenceIds: ['artifact-1', 'artifact-1'],
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      adapter(request).analyze({
+        manifest,
+        availableEvidenceIds: new Set(['artifact-1']),
+        clientRequestId: 'client-request-1',
+      }),
+    ).rejects.toMatchObject({
+      code: 'OPENAI_INVALID_ANALYSIS_SCHEMA',
+      retryable: true,
+    });
+  });
+
+  it('rejects an invalid internal evidence schema before calling OpenAI', async () => {
+    const request = vi.fn<typeof fetch>();
+
+    await expect(
+      adapter(request).analyze({
+        manifest,
+        availableEvidenceIds: new Set(),
+        clientRequestId: 'client-request-1',
+      }),
+    ).rejects.toMatchObject({
+      code: 'OPENAI_INVALID_EVIDENCE_SCHEMA',
+      retryable: false,
+    });
+    expect(request).not.toHaveBeenCalled();
   });
 
   it('honours bounded rate-limit retry hints', async () => {

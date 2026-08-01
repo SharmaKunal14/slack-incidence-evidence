@@ -139,6 +139,36 @@ export class InvalidEvidenceReferenceError extends Error {
   }
 }
 
+/** Builds a strict provider schema whose citations are limited to this run's evidence. */
+export function buildIncidentAnalysisJsonSchema(
+  availableEvidenceIds: ReadonlySet<string>,
+): typeof INCIDENT_ANALYSIS_JSON_SCHEMA & {
+  readonly $defs: {
+    readonly evidenceId: {
+      readonly type: 'string';
+      readonly enum: readonly string[];
+    };
+  };
+} {
+  const evidenceIds = [...availableEvidenceIds].sort();
+  if (
+    evidenceIds.length === 0 ||
+    evidenceIds.length > 500 ||
+    evidenceIds.some((id) => !evidenceIdSchema.safeParse(id).success)
+  ) {
+    throw new Error('Available evidence IDs cannot form a provider schema');
+  }
+  return {
+    ...INCIDENT_ANALYSIS_JSON_SCHEMA,
+    $defs: {
+      evidenceId: {
+        type: 'string',
+        enum: evidenceIds,
+      },
+    },
+  };
+}
+
 /** Validates model structure and the application-level citation invariant. */
 export function parseIncidentAnalysis(
   value: unknown,
@@ -182,6 +212,11 @@ function requireUnique(
 export const INCIDENT_ANALYSIS_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
+  $defs: {
+    evidenceId: {
+      type: 'string',
+    },
+  },
   required: ['timeline', 'claims', 'openQuestions'],
   properties: {
     timeline: {
@@ -212,7 +247,7 @@ export const INCIDENT_ANALYSIS_JSON_SCHEMA = {
             type: 'array',
             minItems: 1,
             maxItems: 20,
-            items: { type: 'string' },
+            items: { $ref: '#/$defs/evidenceId' },
           },
         },
       },
@@ -243,12 +278,12 @@ export const INCIDENT_ANALYSIS_JSON_SCHEMA = {
           supportingEvidenceIds: {
             type: 'array',
             maxItems: 20,
-            items: { type: 'string' },
+            items: { $ref: '#/$defs/evidenceId' },
           },
           contradictingEvidenceIds: {
             type: 'array',
             maxItems: 20,
-            items: { type: 'string' },
+            items: { $ref: '#/$defs/evidenceId' },
           },
         },
       },
@@ -270,7 +305,7 @@ export const INCIDENT_ANALYSIS_JSON_SCHEMA = {
             type: 'array',
             minItems: 1,
             maxItems: 20,
-            items: { type: 'string' },
+            items: { $ref: '#/$defs/evidenceId' },
           },
         },
       },
