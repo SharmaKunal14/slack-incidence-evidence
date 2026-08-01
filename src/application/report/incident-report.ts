@@ -167,13 +167,6 @@ export class InvalidReportSourceReferenceError extends Error {
   }
 }
 
-export class ReportClassificationOverstatementError extends Error {
-  public constructor() {
-    super('Report statement is more certain than its supporting source');
-    this.name = 'ReportClassificationOverstatementError';
-  }
-}
-
 export class ReportCoverageError extends Error {
   public constructor(message: string) {
     super(message);
@@ -221,7 +214,16 @@ export function parseIncidentReport(
         ...sourceClassifications.map(classificationCaution),
       );
       if (classificationCaution(statement.classification) < requiredCaution) {
-        throw new ReportClassificationOverstatementError();
+        const requiredClassification = sourceClassifications.find(
+          (classification) =>
+            classificationCaution(classification) === requiredCaution,
+        );
+        if (requiredClassification === undefined) {
+          throw new Error('Report statement has no source classification');
+        }
+        // Source-derived metadata is authoritative. The model may be more
+        // cautious, but it can never upgrade the certainty of cited evidence.
+        statement.classification = requiredClassification;
       }
     }
   }

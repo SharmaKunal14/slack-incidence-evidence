@@ -3,7 +3,6 @@ import {
   buildIncidentReportJsonSchema,
   InvalidReportSourceReferenceError,
   parseIncidentReport,
-  ReportClassificationOverstatementError,
   ReportCoverageError,
 } from '../../application/report/incident-report.js';
 import {
@@ -261,9 +260,6 @@ export class ResponsesIncidentReportGenerator implements IncidentReportGenerator
 function reportFailureCode(error: unknown): string {
   if (error instanceof InvalidReportSourceReferenceError) {
     return 'OPENAI_REPORT_UNKNOWN_SOURCE_REFERENCE';
-  }
-  if (error instanceof ReportClassificationOverstatementError) {
-    return 'OPENAI_REPORT_CLASSIFICATION_OVERSTATEMENT';
   }
   if (error instanceof ReportCoverageError) {
     return 'OPENAI_REPORT_INCOMPLETE_COVERAGE';

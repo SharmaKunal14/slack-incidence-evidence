@@ -137,7 +137,7 @@ describe('ResponsesIncidentReportGenerator', () => {
     });
   });
 
-  it('reports classification overstatement without exposing draft text', async () => {
+  it('normalizes classification overstatement to the cited source', async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(
       response({
         sections: INCIDENT_REPORT_SECTION_TYPES.map((sectionType) => ({
@@ -159,11 +159,14 @@ describe('ResponsesIncidentReportGenerator', () => {
       }),
     );
 
-    await expect(
-      generator(request).generate({ manifest, clientRequestId: 'request-1' }),
-    ).rejects.toMatchObject({
-      code: 'OPENAI_REPORT_CLASSIFICATION_OVERSTATEMENT',
-      retryable: true,
+    const result = await generator(request).generate({
+      manifest,
+      clientRequestId: 'request-1',
+    });
+
+    expect(result.report.sections[0]!.statements[0]).toMatchObject({
+      text: 'Recovery followed rollback.',
+      classification: 'correlated_inference',
     });
   });
 

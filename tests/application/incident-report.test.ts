@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   INCIDENT_REPORT_SECTION_TYPES,
   InvalidReportSourceReferenceError,
-  ReportClassificationOverstatementError,
   parseIncidentReport,
   type IncidentReport,
   type IncidentReportManifest,
@@ -134,13 +133,16 @@ describe('incident report validation and rendering', () => {
     );
   });
 
-  it('rejects prose that upgrades a correlated inference to observation', () => {
+  it('downgrades model metadata that overstates a cited source', () => {
     const report = validReport();
-    report.sections[0]!.statements[0]!.classification = 'directly_observed';
+    const statement = report.sections[0]!.statements[0]!;
+    statement.classification = 'directly_observed';
 
-    expect(() => parseIncidentReport(report, manifest)).toThrow(
-      ReportClassificationOverstatementError,
-    );
+    const parsed = parseIncidentReport(report, manifest);
+    expect(parsed.sections[0]!.statements[0]).toMatchObject({
+      text: statement.text,
+      classification: 'correlated_inference',
+    });
   });
 
   it('rejects omission of a materially contradicted claim', () => {
