@@ -2831,9 +2831,10 @@ a {
 }
 
 /* Sample incident tour */
-.tour-replay-button {
+.breadcrumb .tour-replay-button {
   display: inline-flex;
   min-height: 2.2rem;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.4rem;
   margin-left: auto;
@@ -2844,13 +2845,14 @@ a {
   background: rgb(238 240 255 / 76%);
   font-size: 0.78rem;
   font-weight: 700;
+  white-space: nowrap;
   transition:
     transform 160ms ease,
     border-color 160ms ease,
     background 160ms ease;
 }
 
-.tour-replay-button:hover {
+.breadcrumb .tour-replay-button:hover {
   border-color: #aeb8fa;
   background: #fff;
   transform: translateY(-1px);
@@ -3286,7 +3288,7 @@ a {
     font-size: 1.55rem;
   }
 
-  .tour-replay-button {
+  .breadcrumb .tour-replay-button {
     width: 2.2rem;
     justify-content: center;
     padding: 0;
