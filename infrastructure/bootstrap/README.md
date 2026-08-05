@@ -185,7 +185,8 @@ Some AWS APIs do not expose a useful resource ARN before creation. Wildcard
 resources therefore remain for narrowly enumerated actions, including:
 
 - CloudFront origin access control and response-header policy creation;
-- CloudFront provider reads and updates for generated IDs;
+- CloudFront provider reads and updates for generated IDs, including discovery
+  of the AWS-managed cache and origin-request policies referenced by Terraform;
 - tagged CloudWatch alarm creation because `PutMetricAlarm` does not support a
   pre-existing resource ARN;
 - Cognito user-pool creation and domain discovery;

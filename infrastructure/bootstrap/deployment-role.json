@@ -991,7 +991,9 @@
               "Action": [
                 "cloudfront:GetCachePolicy",
                 "cloudfront:GetCachePolicyConfig",
-                "cloudfront:ListCachePolicies"
+                "cloudfront:GetOriginRequestPolicy",
+                "cloudfront:ListCachePolicies",
+                "cloudfront:ListOriginRequestPolicies"
               ],
               "Resource": "*"
             },

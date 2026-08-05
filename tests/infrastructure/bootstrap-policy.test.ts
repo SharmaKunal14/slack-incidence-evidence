@@ -225,6 +225,22 @@ describe('deployment bootstrap policy', () => {
     expect(logGroups?.Resource).not.toBe('*');
   });
 
+  it('can discover only the managed CloudFront policies referenced by Terraform', async () => {
+    const template = await loadTemplate();
+    const statement = policyStatements(template).find(
+      ({ Sid }) => Sid === 'ReadCloudFrontManagedPolicies',
+    );
+
+    expect(statement?.Action).toEqual([
+      'cloudfront:GetCachePolicy',
+      'cloudfront:GetCachePolicyConfig',
+      'cloudfront:GetOriginRequestPolicy',
+      'cloudfront:ListCachePolicies',
+      'cloudfront:ListOriginRequestPolicies',
+    ]);
+    expect(statement?.Resource).toBe('*');
+  });
+
   it('permits runtime PII detection without broader Comprehend access', async () => {
     const template = await loadTemplate();
     const boundary = template.Resources?.['LambdaRolePermissionsBoundary'];
