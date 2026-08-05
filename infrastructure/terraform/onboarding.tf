@@ -1,5 +1,5 @@
 locals {
-  slack_oauth_redirect_uri = "${aws_apigatewayv2_api.public.api_endpoint}/onboarding/slack/callback"
+  slack_oauth_redirect_uri = "${local.review_application_url}/onboarding/slack/callback"
   slack_onboarding_routes = toset([
     "GET /onboarding/slack/callback",
     "POST /onboarding/slack/start",

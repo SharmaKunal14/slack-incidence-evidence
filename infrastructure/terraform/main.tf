@@ -1643,14 +1643,6 @@ resource "aws_apigatewayv2_api" "public" {
   name          = "${local.name_prefix}-api"
   protocol_type = "HTTP"
   description   = "Public integration API for Incident Evidence Copilot"
-
-  cors_configuration {
-    allow_credentials = true
-    allow_headers     = ["authorization", "content-type"]
-    allow_methods     = ["GET", "POST", "OPTIONS"]
-    allow_origins     = ["https://${aws_cloudfront_distribution.review.domain_name}"]
-    max_age           = 300
-  }
 }
 
 resource "aws_apigatewayv2_integration" "slack_ingress" {

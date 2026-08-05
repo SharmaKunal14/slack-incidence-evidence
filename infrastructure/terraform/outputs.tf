@@ -80,12 +80,12 @@ output "review_distribution_id" {
 
 output "review_api_url" {
   description = "Authenticated review API base URL. Browser calls require a Cognito access token and active database membership."
-  value       = "${aws_apigatewayv2_api.public.api_endpoint}/review"
+  value       = "${local.review_application_url}/review"
 }
 
 output "slack_onboarding_start_url" {
   description = "Authenticated endpoint the review console uses to begin Slack onboarding."
-  value       = "${aws_apigatewayv2_api.public.api_endpoint}/onboarding/slack/start"
+  value       = "${local.review_application_url}/onboarding/slack/start"
 }
 
 output "slack_oauth_redirect_url" {

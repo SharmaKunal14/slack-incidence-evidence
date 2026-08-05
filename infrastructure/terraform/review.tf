@@ -8,6 +8,10 @@ data "aws_cloudfront_cache_policy" "caching_disabled" {
   name = "Managed-CachingDisabled"
 }
 
+data "aws_cloudfront_origin_request_policy" "all_viewer_except_host_header" {
+  name = "Managed-AllViewerExceptHostHeader"
+}
+
 locals {
   review_bucket_name     = "${substr(local.name_prefix, 0, 24)}-review-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
   review_cognito_domain  = "${substr(local.name_prefix, 0, 40)}-${data.aws_caller_identity.current.account_id}"
@@ -147,7 +151,7 @@ resource "aws_cloudfront_response_headers_policy" "review_security" {
 
   security_headers_config {
     content_security_policy {
-      content_security_policy = "default-src 'self'; base-uri 'none'; connect-src 'self' https://*.auth.${var.aws_region}.amazoncognito.com https://*.execute-api.${var.aws_region}.amazonaws.com; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'"
+      content_security_policy = "default-src 'self'; base-uri 'none'; connect-src 'self' https://*.auth.${var.aws_region}.amazoncognito.com; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'"
       override                = true
     }
 
@@ -188,6 +192,18 @@ resource "aws_cloudfront_distribution" "review" {
     origin_access_control_id = aws_cloudfront_origin_access_control.review.id
   }
 
+  origin {
+    domain_name = replace(aws_apigatewayv2_api.public.api_endpoint, "https://", "")
+    origin_id   = "application-api"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
   default_cache_behavior {
     allowed_methods            = ["GET", "HEAD", "OPTIONS"]
     cached_methods             = ["GET", "HEAD", "OPTIONS"]
@@ -209,19 +225,33 @@ resource "aws_cloudfront_distribution" "review" {
     viewer_protocol_policy     = "redirect-to-https"
   }
 
-  custom_error_response {
-    error_code            = 403
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
+  ordered_cache_behavior {
+    path_pattern               = "review/*"
+    allowed_methods            = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods             = ["GET", "HEAD", "OPTIONS"]
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
+    compress                   = true
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host_header.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.review_security.id
+    target_origin_id           = "application-api"
+    viewer_protocol_policy     = "redirect-to-https"
   }
 
-  custom_error_response {
-    error_code            = 404
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
+  ordered_cache_behavior {
+    path_pattern               = "onboarding/*"
+    allowed_methods            = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods             = ["GET", "HEAD", "OPTIONS"]
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
+    compress                   = true
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host_header.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.review_security.id
+    target_origin_id           = "application-api"
+    viewer_protocol_policy     = "redirect-to-https"
   }
+
+  # The console uses hash routes, so unknown S3 paths do not need an index.html
+  # fallback. Distribution-wide custom error responses would also mask API
+  # authorization and routing failures as successful HTML responses.
 
   restrictions {
     geo_restriction {
@@ -319,7 +349,7 @@ resource "aws_s3_object" "review_runtime_configuration" {
   content_type  = "application/javascript; charset=utf-8"
   cache_control = "no-store, max-age=0"
   content = "window.__INCIDENT_REVIEW_CONFIG__ = ${jsonencode({
-    apiBaseUrl      = aws_apigatewayv2_api.public.api_endpoint
+    apiBaseUrl      = local.review_application_url
     cognitoBaseUrl  = "https://${aws_cognito_user_pool_domain.reviewers.domain}.auth.${var.aws_region}.amazoncognito.com"
     cognitoClientId = aws_cognito_user_pool_client.review_console.id
     redirectUri     = "${local.review_application_url}/"

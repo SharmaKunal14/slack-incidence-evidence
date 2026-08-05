@@ -77,7 +77,8 @@ describe('Slack onboarding HTTP handlers', () => {
 
   it('does not call Slack without the binding cookie or after Slack denial', async () => {
     const complete = vi.fn();
-    const handler = callbackHandler(complete);
+    const warn = vi.fn();
+    const handler = callbackHandler(complete, { warn });
 
     const missingCookie = structured(
       await handler(
@@ -95,6 +96,16 @@ describe('Slack onboarding HTTP handlers', () => {
     );
     expect(denied.headers?.['location']).toBe(
       'https://app.example.test/?slack=failed',
+    );
+    expect(warn).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ onboardingCode: 'BROWSER_BINDING_MISSING' }),
+      'Slack onboarding callback rejected',
+    );
+    expect(warn).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ onboardingCode: 'SLACK_OAUTH_DENIED' }),
+      'Slack onboarding callback rejected',
     );
     expect(complete).not.toHaveBeenCalled();
   });
@@ -123,10 +134,11 @@ describe('Slack onboarding HTTP handlers', () => {
 
 function callbackHandler(
   complete: ReturnType<typeof vi.fn>,
+  loggerOverride: Pick<typeof logger, 'warn'> = logger,
 ): SlackOnboardingCallbackHandler {
   return createSlackOnboardingCallbackHandler({
     onboarding: { complete },
-    logger,
+    logger: loggerOverride,
     successRedirectUrl: 'https://app.example.test/?slack=connected',
     failureRedirectUrl: 'https://app.example.test/?slack=failed',
   });

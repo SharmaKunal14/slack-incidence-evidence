@@ -33,6 +33,9 @@ the application's at-least-once and idempotency assumptions.
   optional TOTP MFA.
 - A private, encrypted, versioned S3 bucket exposed only through an origin-
   access-controlled CloudFront review console with restrictive response headers.
+- Non-cached CloudFront `/review/*` and `/onboarding/*` behaviors which proxy to
+  API Gateway. Browser API calls and the HttpOnly OAuth binding cookie therefore
+  remain same-origin; the Slack Events API continues to use API Gateway directly.
 - A scheduled, single-concurrency publication Lambda which leases approved
   revisions from a transactional PostgreSQL outbox, creates one complete page
   in the configured Confluence or Notion destination, checkpoints its URL, and
@@ -78,9 +81,13 @@ Slack
         -> authenticated CloudFront review URL
 
 Reviewer browser -> Cognito authorization code + PKCE
+                 -> CloudFront (non-cached API behavior)
                  -> API Gateway JWT authorizer
                  -> review API Lambda
                  -> active tenant membership + PostgreSQL review transaction
+
+Reviewer browser -> CloudFront /onboarding/* (browser-bound HttpOnly cookie)
+                 -> API Gateway -> Slack onboarding Lambdas
 
 Approval transaction -> PostgreSQL report_publications outbox
 EventBridge schedule -> publication Lambda (leased, bounded retries)

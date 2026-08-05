@@ -10,7 +10,7 @@ import { SLACK_ONBOARDING_BROWSER_COOKIE } from './slack-onboarding-start-handle
 
 export interface SlackOnboardingCallbackHandlerDependencies {
   readonly onboarding: Pick<SlackOnboardingService, 'complete'>;
-  readonly logger: Logger;
+  readonly logger: Pick<Logger, 'warn'>;
   readonly successRedirectUrl: string;
   readonly failureRedirectUrl: string;
 }
@@ -37,17 +37,26 @@ export function createSlackOnboardingCallbackHandler(
     const browserBinding = readCookie(event, SLACK_ONBOARDING_BROWSER_COOKIE);
     const state = query?.['state'];
     const code = query?.['code'];
-    if (
-      query?.['error'] !== undefined ||
-      browserBinding === undefined ||
-      state === undefined ||
-      code === undefined
-    ) {
+    const callback = parseCallback({
+      slackError: query?.['error'],
+      browserBinding,
+      state,
+      code,
+    });
+    if ('rejectionCode' in callback) {
+      dependencies.logger.warn(
+        {
+          requestId: event.requestContext.requestId,
+          onboardingCode: callback.rejectionCode,
+          retryable: false,
+        },
+        'Slack onboarding callback rejected',
+      );
       return redirect(failureRedirectUrl);
     }
 
     try {
-      await dependencies.onboarding.complete({ state, browserBinding, code });
+      await dependencies.onboarding.complete(callback.value);
       return redirect(successRedirectUrl);
     } catch (error) {
       dependencies.logger.warn(
@@ -62,6 +71,41 @@ export function createSlackOnboardingCallbackHandler(
       );
       return redirect(failureRedirectUrl);
     }
+  };
+}
+
+function parseCallback(input: {
+  readonly slackError: string | undefined;
+  readonly browserBinding: string | undefined;
+  readonly state: string | undefined;
+  readonly code: string | undefined;
+}):
+  | { readonly rejectionCode: string }
+  | {
+      readonly value: {
+        readonly browserBinding: string;
+        readonly state: string;
+        readonly code: string;
+      };
+    } {
+  if (input.slackError !== undefined) {
+    return { rejectionCode: 'SLACK_OAUTH_DENIED' };
+  }
+  if (input.browserBinding === undefined) {
+    return { rejectionCode: 'BROWSER_BINDING_MISSING' };
+  }
+  if (input.state === undefined) {
+    return { rejectionCode: 'OAUTH_STATE_MISSING' };
+  }
+  if (input.code === undefined) {
+    return { rejectionCode: 'OAUTH_CODE_MISSING' };
+  }
+  return {
+    value: {
+      browserBinding: input.browserBinding,
+      state: input.state,
+      code: input.code,
+    },
   };
 }
 
