@@ -94,8 +94,12 @@ describe('deployment bootstrap policy', () => {
 
   it('cannot manage or pass the unbounded GitHub deployment role', async () => {
     const template = await loadTemplate();
-    const roleManagement = template.Resources?.['RuntimeRoleManagementPolicy'];
-    const policy = JSON.stringify(roleManagement?.Properties?.PolicyDocument);
+    const policy = JSON.stringify([
+      template.Resources?.['RuntimeRoleManagementPolicy']?.Properties
+        ?.PolicyDocument,
+      template.Resources?.['OnboardingRoleManagementPolicy']?.Properties
+        ?.PolicyDocument,
+    ]);
 
     expect(policy).not.toContain('github-deploy');
     expect(policy).not.toContain('role/${ProjectName}-${Environment}-*');
@@ -107,7 +111,7 @@ describe('deployment bootstrap policy', () => {
       (statement) => statement.Action === 'iam:CreateRole',
     );
 
-    expect(createRoles).toHaveLength(2);
+    expect(createRoles).toHaveLength(3);
     for (const statement of createRoles) {
       expect(statement.Condition).toMatchObject({
         StringEquals: {
@@ -132,6 +136,40 @@ describe('deployment bootstrap policy', () => {
         { Ref: 'WorkflowRolePermissionsBoundary' },
       ]),
     );
+  });
+
+  it('allows managing and passing only the two exact onboarding roles', async () => {
+    const template = await loadTemplate();
+    const policy =
+      template.Resources?.['OnboardingRoleManagementPolicy']?.Properties
+        ?.PolicyDocument;
+    const statements = policy?.Statement ?? [];
+    const expectedResources = [
+      {
+        'Fn::Sub':
+          'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-start-role',
+      },
+      {
+        'Fn::Sub':
+          'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-callback-role',
+      },
+    ];
+
+    expect(statements.map(({ Sid }) => Sid)).toEqual([
+      'CreateBoundedOnboardingRoles',
+      'ManageExactOnboardingRoles',
+      'SetExactOnboardingBoundaries',
+      'PassExactOnboardingRoles',
+    ]);
+    for (const statement of statements) {
+      expect(statement.Resource).toEqual(expectedResources);
+    }
+    expect(
+      statements.find(({ Sid }) => Sid === 'PassExactOnboardingRoles')
+        ?.Condition,
+    ).toMatchObject({
+      StringEquals: { 'iam:PassedToService': 'lambda.amazonaws.com' },
+    });
   });
 
   it('contains provisioning actions for every Terraform service group', async () => {

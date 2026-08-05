@@ -632,6 +632,103 @@
         }
       }
     },
+    "OnboardingRoleManagementPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": {
+          "Fn::Sub": "${ProjectName}-${Environment}-deploy-onboarding-roles"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "CreateBoundedOnboardingRoles",
+              "Effect": "Allow",
+              "Action": "iam:CreateRole",
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-start-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-callback-role"
+                }
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "iam:PermissionsBoundary": {
+                    "Ref": "LambdaRolePermissionsBoundary"
+                  },
+                  "aws:RequestTag/Application": { "Ref": "ProjectName" },
+                  "aws:RequestTag/Environment": { "Ref": "Environment" },
+                  "aws:RequestTag/ManagedBy": "Terraform"
+                }
+              }
+            },
+            {
+              "Sid": "ManageExactOnboardingRoles",
+              "Effect": "Allow",
+              "Action": [
+                "iam:GetRole",
+                "iam:GetRolePolicy",
+                "iam:ListAttachedRolePolicies",
+                "iam:ListRolePolicies",
+                "iam:ListRoleTags",
+                "iam:PutRolePolicy",
+                "iam:TagRole",
+                "iam:UntagRole",
+                "iam:UpdateAssumeRolePolicy"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-start-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-callback-role"
+                }
+              ]
+            },
+            {
+              "Sid": "SetExactOnboardingBoundaries",
+              "Effect": "Allow",
+              "Action": "iam:PutRolePermissionsBoundary",
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-start-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-callback-role"
+                }
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "iam:PermissionsBoundary": {
+                    "Ref": "LambdaRolePermissionsBoundary"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "PassExactOnboardingRoles",
+              "Effect": "Allow",
+              "Action": "iam:PassRole",
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-start-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-callback-role"
+                }
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "iam:PassedToService": "lambda.amazonaws.com"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
     "ComputeInfrastructurePolicy": {
       "Type": "AWS::IAM::ManagedPolicy",
       "Properties": {
@@ -967,6 +1064,7 @@
           { "Ref": "StateAndMigrationPolicy" },
           { "Ref": "CoreInfrastructurePolicy" },
           { "Ref": "RuntimeRoleManagementPolicy" },
+          { "Ref": "OnboardingRoleManagementPolicy" },
           { "Ref": "ComputeInfrastructurePolicy" },
           { "Ref": "EdgeAndIdentityInfrastructurePolicy" },
           {
