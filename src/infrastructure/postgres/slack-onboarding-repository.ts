@@ -149,24 +149,24 @@ export class PostgresSlackOnboardingRepository implements SlackOnboardingReposit
         FROM consumed
         UNION ALL
         SELECT
-          authorization.status,
-          authorization.id,
-          authorization.cognito_subject,
-          authorization.redirect_uri,
-          authorization.requested_scopes,
-          authorization.created_at,
-          authorization.expires_at,
-          authorization.consumed_at,
-          authorization.completed_installation_id,
-          authorization.completion_kind,
+          oauth_authorization.status,
+          oauth_authorization.id,
+          oauth_authorization.cognito_subject,
+          oauth_authorization.redirect_uri,
+          oauth_authorization.requested_scopes,
+          oauth_authorization.created_at,
+          oauth_authorization.expires_at,
+          oauth_authorization.consumed_at,
+          oauth_authorization.completed_installation_id,
+          oauth_authorization.completion_kind,
           installation.team_id AS completed_team_id
-        FROM slack_oauth_authorizations authorization
+        FROM slack_oauth_authorizations AS oauth_authorization
         JOIN slack_installations installation
-          ON installation.id = authorization.completed_installation_id
-        WHERE authorization.state_sha256 = $1
-          AND authorization.browser_binding_sha256 = $2
-          AND authorization.status = 'COMPLETED'
-          AND authorization.expires_at > $3
+          ON installation.id = oauth_authorization.completed_installation_id
+        WHERE oauth_authorization.state_sha256 = $1
+          AND oauth_authorization.browser_binding_sha256 = $2
+          AND oauth_authorization.status = 'COMPLETED'
+          AND oauth_authorization.expires_at > $3
           AND NOT EXISTS (SELECT 1 FROM consumed)
         LIMIT 1
       `,
@@ -300,17 +300,17 @@ async function lockAuthorization(
   const result = await client.query<CompletionAuthorizationRow>(
     `
       SELECT
-        authorization.status,
-        authorization.completed_installation_id,
-        authorization.completion_kind,
+        oauth_authorization.status,
+        oauth_authorization.completed_installation_id,
+        oauth_authorization.completion_kind,
         installation.team_id AS completed_team_id
-      FROM slack_oauth_authorizations authorization
+      FROM slack_oauth_authorizations AS oauth_authorization
       LEFT JOIN slack_installations installation
-        ON installation.id = authorization.completed_installation_id
-      WHERE authorization.id = $1
-        AND authorization.cognito_subject = $2
-        AND authorization.status IN ('CONSUMED', 'COMPLETED')
-      FOR UPDATE OF authorization
+        ON installation.id = oauth_authorization.completed_installation_id
+      WHERE oauth_authorization.id = $1
+        AND oauth_authorization.cognito_subject = $2
+        AND oauth_authorization.status IN ('CONSUMED', 'COMPLETED')
+      FOR UPDATE OF oauth_authorization
     `,
     [input.authorizationId, input.cognitoSubject],
   );

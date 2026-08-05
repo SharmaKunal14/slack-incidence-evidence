@@ -104,6 +104,12 @@ describe('PostgresSlackOnboardingRepository', () => {
     expect(query.mock.calls[0]?.[0]).toContain('state_sha256');
     expect(query.mock.calls[1]?.[0]).toContain("status = 'PENDING'");
     expect(query.mock.calls[1]?.[0]).toContain('expires_at > $3');
+    expect(query.mock.calls[1]?.[0]).toContain(
+      'slack_oauth_authorizations AS oauth_authorization',
+    );
+    expect(query.mock.calls[1]?.[0]).not.toMatch(
+      /slack_oauth_authorizations(?:\s+AS)?\s+authorization\b/u,
+    );
     expect(query.mock.calls[1]?.[1]).toEqual([
       stateSha256,
       browserBindingSha256,
@@ -150,7 +156,7 @@ describe('PostgresSlackOnboardingRepository', () => {
       },
     });
     expect(query.mock.calls[0]?.[0]).toContain(
-      "authorization.status = 'COMPLETED'",
+      "oauth_authorization.status = 'COMPLETED'",
     );
     expect(query.mock.calls[0]?.[0]).toContain('browser_binding_sha256 = $2');
   });
@@ -188,6 +194,12 @@ describe('PostgresSlackOnboardingRepository', () => {
       idempotent: false,
     });
 
+    expect(query.mock.calls[1]?.[0]).toContain(
+      'slack_oauth_authorizations AS oauth_authorization',
+    );
+    expect(query.mock.calls[1]?.[0]).toContain(
+      'FOR UPDATE OF oauth_authorization',
+    );
     expect(query.mock.calls[2]?.[0]).toContain('pg_advisory_xact_lock');
     expect(query.mock.calls[5]?.[0]).toContain('INSERT INTO tenants');
     expect(query.mock.calls[6]?.[0]).toContain(
