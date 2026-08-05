@@ -345,6 +345,8 @@
               "Action": [
                 "logs:CreateLogGroup",
                 "logs:DescribeLogStreams",
+                "logs:FilterLogEvents",
+                "logs:GetLogEvents",
                 "logs:ListTagsForResource",
                 "logs:PutMetricFilter",
                 "logs:PutRetentionPolicy",
@@ -362,6 +364,20 @@
                   "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vendedlogs/states/${ProjectName}-${Environment}-*"
                 }
               ]
+            },
+            {
+              "Sid": "ManageServiceLogDelivery",
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogDelivery",
+                "logs:DeleteLogDelivery",
+                "logs:DescribeResourcePolicies",
+                "logs:GetLogDelivery",
+                "logs:ListLogDeliveries",
+                "logs:PutResourcePolicy",
+                "logs:UpdateLogDelivery"
+              ],
+              "Resource": "*"
             },
             {
               "Sid": "DescribeLogsForProviderRead",

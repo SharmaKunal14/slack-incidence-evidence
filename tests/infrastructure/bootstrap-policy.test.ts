@@ -199,6 +199,32 @@ describe('deployment bootstrap policy', () => {
     }
   });
 
+  it('grants the exact delivery APIs required to activate HTTP API access logs', async () => {
+    const template = await loadTemplate();
+    const statements = policyStatements(template);
+    const delivery = statements.find(
+      ({ Sid }) => Sid === 'ManageServiceLogDelivery',
+    );
+    const logGroups = statements.find(
+      ({ Sid }) => Sid === 'ManageEnvironmentLogGroups',
+    );
+
+    expect(delivery?.Action).toEqual([
+      'logs:CreateLogDelivery',
+      'logs:DeleteLogDelivery',
+      'logs:DescribeResourcePolicies',
+      'logs:GetLogDelivery',
+      'logs:ListLogDeliveries',
+      'logs:PutResourcePolicy',
+      'logs:UpdateLogDelivery',
+    ]);
+    expect(delivery?.Resource).toBe('*');
+    expect(logGroups?.Action).toEqual(
+      expect.arrayContaining(['logs:FilterLogEvents', 'logs:GetLogEvents']),
+    );
+    expect(logGroups?.Resource).not.toBe('*');
+  });
+
   it('permits runtime PII detection without broader Comprehend access', async () => {
     const template = await loadTemplate();
     const boundary = template.Resources?.['LambdaRolePermissionsBoundary'];

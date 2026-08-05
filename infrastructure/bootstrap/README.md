@@ -71,7 +71,11 @@ Rerun this same command after pulling Stage 3 onboarding changes. CloudFormation
 updates the existing Lambda permissions boundary in place so only the callback
 role can create tagged secrets under
 `incident-copilot/<environment>/slack/installations/`. Terraform cannot safely
-update this CloudFormation-owned boundary itself.
+update this CloudFormation-owned boundary itself. The update also grants the
+GitHub deployment role the CloudWatch Logs delivery APIs AWS requires whenever
+API Gateway creates or updates HTTP API access-log settings. Those delivery APIs
+do not support resource-level IAM permissions; log-group creation and log reads
+remain restricted to this application's environment-scoped groups.
 
 The script asks GitHub for the repository's current OIDC `sub_claim_prefix`,
 validates that it belongs to the requested repository, and appends the selected
