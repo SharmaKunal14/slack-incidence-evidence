@@ -11,6 +11,15 @@ export const SLACK_REQUIRED_BOT_SCOPES = [
 
 export const SLACK_OAUTH_AUTHORIZATION_TTL_SECONDS = 10 * 60;
 
+const sha256Hex = z.string().regex(/^[0-9a-f]{64}$/u);
+const cognitoSubject = z.string().trim().min(1).max(128);
+const safeErrorCode = z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/u);
+const secretsManagerArn = z
+  .string()
+  .regex(
+    /^arn:(?:aws|aws-us-gov|aws-cn):secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]{1,512}$/u,
+  );
+
 export const SLACK_INSTALLATION_STATUSES = [
   'PENDING',
   'ACTIVE',
@@ -35,6 +44,8 @@ const printableSecret = z
 
 const slackWorkspaceId = z.string().regex(/^T[A-Z0-9]{1,63}$/u);
 const slackUserId = z.string().regex(/^U[A-Z0-9]{1,63}$/u);
+const slackAppId = z.string().regex(/^A[A-Z0-9]{1,63}$/u);
+const slackEnterpriseId = z.string().regex(/^E[A-Z0-9]{1,63}$/u);
 
 const longLivedCredentialSchema = z
   .object({
@@ -67,6 +78,95 @@ export const slackInstallationCredentialSchema = z
 export type SlackInstallationCredential = z.infer<
   typeof slackInstallationCredentialSchema
 >;
+
+const requiredScopesSchema = z
+  .array(z.enum(SLACK_REQUIRED_BOT_SCOPES))
+  .length(SLACK_REQUIRED_BOT_SCOPES.length)
+  .refine(
+    (scopes) =>
+      scopes.every(
+        (scope, index) => scope === SLACK_REQUIRED_BOT_SCOPES[index],
+      ),
+    'Slack scopes must exactly match the canonical ordered scope set',
+  );
+
+export const createSlackOAuthAuthorizationSchema = z
+  .object({
+    id: z.uuid(),
+    stateSha256: sha256Hex,
+    browserBindingSha256: sha256Hex,
+    cognitoSubject,
+    redirectUri: z
+      .url()
+      .max(2_048)
+      .refine((value) => new URL(value).protocol === 'https:', {
+        message: 'OAuth redirect URI must use HTTPS',
+      }),
+    requestedScopes: requiredScopesSchema,
+    createdAt: z.date(),
+    expiresAt: z.date(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const lifetimeMilliseconds =
+      value.expiresAt.getTime() - value.createdAt.getTime();
+    if (
+      lifetimeMilliseconds <= 0 ||
+      lifetimeMilliseconds > SLACK_OAUTH_AUTHORIZATION_TTL_SECONDS * 1_000
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['expiresAt'],
+        message:
+          'OAuth authorization lifetime must be between 1 and 600 seconds',
+      });
+    }
+  });
+
+export const consumeSlackOAuthAuthorizationSchema = z
+  .object({
+    stateSha256: sha256Hex,
+    browserBindingSha256: sha256Hex,
+    cognitoSubject,
+    consumedAt: z.date(),
+  })
+  .strict();
+
+export const completeSlackInstallationSchema = z
+  .object({
+    authorizationId: z.uuid(),
+    installationId: z.string().trim().min(1).max(128),
+    cognitoSubject,
+    teamId: slackWorkspaceId,
+    teamName: z.string().trim().min(1).max(200),
+    enterpriseId: slackEnterpriseId.nullable(),
+    appId: slackAppId,
+    botUserId: slackUserId,
+    authedSlackUserId: slackUserId,
+    credentialSecretArn: secretsManagerArn,
+    credentialExpiresAt: z.date().nullable(),
+    grantedScopes: requiredScopesSchema,
+    completedAt: z.date(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.credentialExpiresAt === null ||
+      value.credentialExpiresAt.getTime() > value.completedAt.getTime(),
+    {
+      path: ['credentialExpiresAt'],
+      message: 'Rotating Slack credential must be current at installation',
+    },
+  );
+
+export const failSlackOAuthAuthorizationSchema = z
+  .object({
+    authorizationId: z.uuid(),
+    cognitoSubject,
+    failureCode: safeErrorCode,
+    failedAt: z.date(),
+  })
+  .strict();
 
 const ALLOWED_STATUS_TRANSITIONS: Readonly<
   Record<SlackInstallationStatus, ReadonlySet<SlackInstallationStatus>>

@@ -14,3 +14,9 @@ export {
   DatabaseSchemaCompatibilityError,
   REQUIRED_SCHEMA_MIGRATIONS,
 } from './schema-compatibility.js';
+export {
+  PostgresSlackOnboardingRepository,
+  SlackOnboardingAdminRequiredError,
+  SlackOnboardingAuthorizationError,
+  SlackOnboardingIdentityConflictError,
+} from './slack-onboarding-repository.js';

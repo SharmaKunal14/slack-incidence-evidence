@@ -83,6 +83,7 @@ describe('runMigrations', () => {
         '0009_multi_channel_incident_sources.sql',
         '0010_auto_discovered_slack_threads.sql',
         '0011_evidence_linked_review_content.sql',
+        '0012_slack_oauth_onboarding.sql',
       ],
       alreadyApplied: 0,
     });
@@ -113,6 +114,9 @@ describe('runMigrations', () => {
     );
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('CREATE TABLE reviewer_memberships'),
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE TABLE slack_oauth_authorizations'),
     );
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('CREATE TABLE report_publications'),
