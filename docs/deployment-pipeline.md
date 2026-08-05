@@ -76,6 +76,10 @@ Minimal Confluence example:
 {
   "slack_signing_secret_arn": "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/development/slack-signing-AbCdEf",
   "slack_bot_token_secret_arn": "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/development/slack-bot-AbCdEf",
+  "slack_oauth_app_secret_arn": "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/development/slack-oauth-AbCdEf",
+  "slack_oauth_client_id": "123456789.123456789",
+  "slack_oauth_app_id": "A0123456789",
+  "slack_installation_kms_key_arn": "arn:aws:kms:ap-southeast-2:123456789012:key/11111111-2222-3333-4444-555555555555",
   "database_secret_arn": "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/development/database-AbCdEf",
   "openai_api_secret_arn": "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/development/openai-AbCdEf",
   "publication_provider": "CONFLUENCE",

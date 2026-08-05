@@ -102,6 +102,18 @@ variable "incident_review_api_lambda_handler" {
   default     = "incident-review-api-main.handler"
 }
 
+variable "slack_onboarding_start_lambda_handler" {
+  description = "Authenticated Slack onboarding start handler exported at the root of the shared Lambda artifact."
+  type        = string
+  default     = "slack-onboarding-start-main.handler"
+}
+
+variable "slack_onboarding_callback_lambda_handler" {
+  description = "Public Slack OAuth callback handler exported at the root of the shared Lambda artifact."
+  type        = string
+  default     = "slack-onboarding-callback-main.handler"
+}
+
 variable "approved_report_publication_lambda_handler" {
   description = "Scheduled approved-report publication handler exported at the root of the shared Lambda artifact."
   type        = string
@@ -167,6 +179,61 @@ variable "review_database_secret_arn" {
       can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.review_database_secret_arn))
     )
     error_message = "review_database_secret_arn must be null or a Secrets Manager secret ARN."
+  }
+}
+
+variable "onboarding_database_secret_arn" {
+  description = "Optional development override and required production ARN for a dedicated onboarding PostgreSQL user. Terraform never reads its value."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = (
+      var.onboarding_database_secret_arn == null ||
+      can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.onboarding_database_secret_arn))
+    )
+    error_message = "onboarding_database_secret_arn must be null or a Secrets Manager secret ARN."
+  }
+}
+
+variable "slack_oauth_app_secret_arn" {
+  description = "ARN of an existing secret containing JSON {\"clientSecret\":\"...\"}. Terraform never reads the value."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.slack_oauth_app_secret_arn))
+    error_message = "slack_oauth_app_secret_arn must be a Secrets Manager secret ARN."
+  }
+}
+
+variable "slack_oauth_client_id" {
+  description = "Public Slack OAuth client ID. This value is not a secret."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9.]+$", var.slack_oauth_client_id))
+    error_message = "slack_oauth_client_id must contain only digits and periods."
+  }
+}
+
+variable "slack_oauth_app_id" {
+  description = "Expected public Slack app ID used to reject grants issued for another app."
+  type        = string
+
+  validation {
+    condition     = can(regex("^A[A-Z0-9]{1,63}$", var.slack_oauth_app_id))
+    error_message = "slack_oauth_app_id must be a Slack app ID."
+  }
+}
+
+variable "slack_installation_kms_key_arn" {
+  description = "Customer-managed KMS key used only for tenant Slack installation credentials."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:[^:]+:kms:[^:]+:[0-9]{12}:key/", var.slack_installation_kms_key_arn))
+    error_message = "slack_installation_kms_key_arn must be a KMS key ARN."
   }
 }
 
@@ -1009,6 +1076,61 @@ variable "review_api_throttle_burst_limit" {
   validation {
     condition     = var.review_api_throttle_burst_limit >= 1
     error_message = "review_api_throttle_burst_limit must be at least one."
+  }
+}
+
+variable "slack_onboarding_memory_mb" {
+  description = "Memory assigned to each Slack onboarding Lambda."
+  type        = number
+  default     = 512
+
+  validation {
+    condition     = var.slack_onboarding_memory_mb >= 128 && var.slack_onboarding_memory_mb <= 10240
+    error_message = "slack_onboarding_memory_mb must be between 128 and 10240 MB."
+  }
+}
+
+variable "slack_onboarding_timeout_seconds" {
+  description = "Timeout for one onboarding database or Slack OAuth operation."
+  type        = number
+  default     = 20
+
+  validation {
+    condition     = var.slack_onboarding_timeout_seconds >= 10 && var.slack_onboarding_timeout_seconds <= 29
+    error_message = "slack_onboarding_timeout_seconds must be between 10 and 29 seconds."
+  }
+}
+
+variable "slack_onboarding_reserved_concurrency" {
+  description = "Hard concurrency boundary protecting PostgreSQL and Slack OAuth from onboarding bursts."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.slack_onboarding_reserved_concurrency >= 1 && var.slack_onboarding_reserved_concurrency <= 20
+    error_message = "slack_onboarding_reserved_concurrency must be between 1 and 20."
+  }
+}
+
+variable "slack_onboarding_throttle_rate_limit" {
+  description = "Steady onboarding requests per second."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.slack_onboarding_throttle_rate_limit > 0
+    error_message = "slack_onboarding_throttle_rate_limit must be greater than zero."
+  }
+}
+
+variable "slack_onboarding_throttle_burst_limit" {
+  description = "Short onboarding request burst accepted by API Gateway."
+  type        = number
+  default     = 4
+
+  validation {
+    condition     = var.slack_onboarding_throttle_burst_limit >= 1
+    error_message = "slack_onboarding_throttle_burst_limit must be at least one."
   }
 }
 

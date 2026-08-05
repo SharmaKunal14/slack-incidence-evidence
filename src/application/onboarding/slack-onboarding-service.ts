@@ -80,7 +80,6 @@ const botIdentitySchema = z
   .strict();
 const completeOnboardingInputSchema = z
   .object({
-    cognitoSubject: cognitoSubjectSchema,
     state: secureTokenSchema,
     browserBinding: secureTokenSchema,
     code: callbackValueSchema,
@@ -118,6 +117,38 @@ export interface StartedSlackOnboarding {
   readonly expiresAt: Date;
 }
 
+/** Creates a browser-bound Slack authorization without requiring OAuth secrets. */
+export class SlackOnboardingStartService {
+  private readonly clientId: string;
+  private readonly redirectUri: string;
+
+  public constructor(
+    private readonly repository: SlackOnboardingRepository,
+    private readonly tokenGenerator: SecureTokenGenerator,
+    private readonly idGenerator: IdGenerator,
+    private readonly clock: Clock,
+    configuration: {
+      readonly clientId: string;
+      readonly redirectUri: string;
+    },
+  ) {
+    this.clientId = slackClientIdSchema.parse(configuration.clientId);
+    this.redirectUri = requireHttpsUrl(configuration.redirectUri);
+  }
+
+  public async start(cognitoSubject: string): Promise<StartedSlackOnboarding> {
+    return startSlackOnboarding(
+      this.repository,
+      this.tokenGenerator,
+      this.idGenerator,
+      this.clock,
+      this.clientId,
+      this.redirectUri,
+      cognitoSubject,
+    );
+  }
+}
+
 /** Coordinates provider and persistence ports without exposing credentials. */
 export class SlackOnboardingService {
   private readonly clientId: string;
@@ -143,57 +174,18 @@ export class SlackOnboardingService {
   }
 
   public async start(cognitoSubject: string): Promise<StartedSlackOnboarding> {
-    const subject = cognitoSubjectSchema.parse(cognitoSubject);
-    const state = secureTokenSchema.parse(this.tokenGenerator.generate());
-    const browserBinding = secureTokenSchema.parse(
-      this.tokenGenerator.generate(),
+    return startSlackOnboarding(
+      this.repository,
+      this.tokenGenerator,
+      this.idGenerator,
+      this.clock,
+      this.clientId,
+      this.redirectUri,
+      cognitoSubject,
     );
-    if (state === browserBinding) {
-      throw new SlackOnboardingError(
-        'ONBOARDING_STATE_PERSISTENCE_FAILED',
-        false,
-      );
-    }
-    const authorizationId = z.uuid().parse(this.idGenerator.generate());
-    const createdAt = requireValidDate(this.clock.now());
-    const expiresAt = new Date(
-      createdAt.getTime() + SLACK_OAUTH_AUTHORIZATION_TTL_SECONDS * 1_000,
-    );
-    try {
-      await this.repository.createAuthorization({
-        id: authorizationId,
-        stateSha256: sha256(state),
-        browserBindingSha256: sha256(browserBinding),
-        cognitoSubject: subject,
-        redirectUri: this.redirectUri,
-        requestedScopes: [...SLACK_REQUIRED_BOT_SCOPES],
-        createdAt,
-        expiresAt,
-      });
-    } catch {
-      throw new SlackOnboardingError(
-        'ONBOARDING_STATE_PERSISTENCE_FAILED',
-        true,
-      );
-    }
-
-    const authorizationUrl = new URL(SLACK_AUTHORIZE_URL);
-    authorizationUrl.searchParams.set('client_id', this.clientId);
-    authorizationUrl.searchParams.set(
-      'scope',
-      SLACK_REQUIRED_BOT_SCOPES.join(','),
-    );
-    authorizationUrl.searchParams.set('redirect_uri', this.redirectUri);
-    authorizationUrl.searchParams.set('state', state);
-    return {
-      authorizationUrl: authorizationUrl.toString(),
-      browserBinding,
-      expiresAt,
-    };
   }
 
   public async complete(input: {
-    readonly cognitoSubject: string;
     readonly state: string;
     readonly browserBinding: string;
     readonly code: string;
@@ -202,19 +194,13 @@ export class SlackOnboardingService {
     if (!parsedInput.success) {
       throw new SlackOnboardingError('OAUTH_STATE_INVALID', false);
     }
-    const {
-      cognitoSubject: subject,
-      state,
-      browserBinding,
-      code,
-    } = parsedInput.data;
+    const { state, browserBinding, code } = parsedInput.data;
     const claimedAt = requireValidDate(this.clock.now());
     let authorization;
     try {
       authorization = await this.repository.consumeAuthorization({
         stateSha256: sha256(state),
         browserBindingSha256: sha256(browserBinding),
-        cognitoSubject: subject,
         consumedAt: claimedAt,
       });
     } catch {
@@ -233,7 +219,7 @@ export class SlackOnboardingService {
     try {
       return await this.completeConsumedAuthorization(
         authorization,
-        subject,
+        authorization.cognitoSubject,
         code,
       );
     } catch (error) {
@@ -241,7 +227,7 @@ export class SlackOnboardingService {
       try {
         await this.repository.failAuthorization({
           authorizationId: authorization.id,
-          cognitoSubject: subject,
+          cognitoSubject: authorization.cognitoSubject,
           failureCode: safeError.code,
           failedAt: requireValidDate(this.clock.now()),
         });
@@ -382,6 +368,59 @@ export class SlackOnboardingService {
       );
     }
   }
+}
+
+async function startSlackOnboarding(
+  repository: SlackOnboardingRepository,
+  tokenGenerator: SecureTokenGenerator,
+  idGenerator: IdGenerator,
+  clock: Clock,
+  clientId: string,
+  redirectUri: string,
+  cognitoSubject: string,
+): Promise<StartedSlackOnboarding> {
+  const subject = cognitoSubjectSchema.parse(cognitoSubject);
+  const state = secureTokenSchema.parse(tokenGenerator.generate());
+  const browserBinding = secureTokenSchema.parse(tokenGenerator.generate());
+  if (state === browserBinding) {
+    throw new SlackOnboardingError(
+      'ONBOARDING_STATE_PERSISTENCE_FAILED',
+      false,
+    );
+  }
+  const authorizationId = z.uuid().parse(idGenerator.generate());
+  const createdAt = requireValidDate(clock.now());
+  const expiresAt = new Date(
+    createdAt.getTime() + SLACK_OAUTH_AUTHORIZATION_TTL_SECONDS * 1_000,
+  );
+  try {
+    await repository.createAuthorization({
+      id: authorizationId,
+      stateSha256: sha256(state),
+      browserBindingSha256: sha256(browserBinding),
+      cognitoSubject: subject,
+      redirectUri,
+      requestedScopes: [...SLACK_REQUIRED_BOT_SCOPES],
+      createdAt,
+      expiresAt,
+    });
+  } catch {
+    throw new SlackOnboardingError('ONBOARDING_STATE_PERSISTENCE_FAILED', true);
+  }
+
+  const authorizationUrl = new URL(SLACK_AUTHORIZE_URL);
+  authorizationUrl.searchParams.set('client_id', clientId);
+  authorizationUrl.searchParams.set(
+    'scope',
+    SLACK_REQUIRED_BOT_SCOPES.join(','),
+  );
+  authorizationUrl.searchParams.set('redirect_uri', redirectUri);
+  authorizationUrl.searchParams.set('state', state);
+  return {
+    authorizationUrl: authorizationUrl.toString(),
+    browserBinding,
+    expiresAt,
+  };
 }
 
 function assertCanonicalScopes(scopes: readonly string[]): void {

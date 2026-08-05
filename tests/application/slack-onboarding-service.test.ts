@@ -218,7 +218,6 @@ describe('SlackOnboardingService', () => {
 
     await expect(
       service.complete({
-        cognitoSubject: 'cognito-user-1',
         state,
         browserBinding,
         code: 'temporary-code',
@@ -271,7 +270,6 @@ describe('SlackOnboardingService', () => {
 
     await expect(
       service.complete({
-        cognitoSubject: 'cognito-user-1',
         state,
         browserBinding,
         code: 'already-used-code',
@@ -288,7 +286,6 @@ describe('SlackOnboardingService', () => {
 
     await expect(
       service.complete({
-        cognitoSubject: 'cognito-user-1',
         state,
         browserBinding,
         code: 'temporary-code',
@@ -303,7 +300,6 @@ describe('SlackOnboardingService', () => {
 
     await expect(
       service.complete({
-        cognitoSubject: 'cognito-user-1',
         state: 'not valid state',
         browserBinding,
         code: 'temporary-code',
@@ -325,7 +321,6 @@ describe('SlackOnboardingService', () => {
 
     await expect(
       service.complete({
-        cognitoSubject: 'cognito-user-1',
         state,
         browserBinding,
         code: 'temporary-code',
@@ -355,7 +350,6 @@ describe('SlackOnboardingService', () => {
 
     await expect(
       service.complete({
-        cognitoSubject: 'cognito-user-1',
         state,
         browserBinding,
         code: 'temporary-code',
@@ -381,7 +375,6 @@ describe('SlackOnboardingService', () => {
 
     await expect(
       service.complete({
-        cognitoSubject: 'cognito-user-1',
         state,
         browserBinding,
         code: 'temporary-code',

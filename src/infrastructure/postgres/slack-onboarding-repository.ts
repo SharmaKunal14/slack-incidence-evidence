@@ -126,13 +126,12 @@ export class PostgresSlackOnboardingRepository implements SlackOnboardingReposit
         WITH consumed AS (
           UPDATE slack_oauth_authorizations
           SET status = 'CONSUMED',
-              consumed_at = $4
+              consumed_at = $3
           WHERE state_sha256 = $1
             AND browser_binding_sha256 = $2
-            AND cognito_subject = $3
             AND status = 'PENDING'
-            AND created_at <= $4
-            AND expires_at > $4
+            AND created_at <= $3
+            AND expires_at > $3
           RETURNING *
         )
         SELECT
@@ -166,18 +165,12 @@ export class PostgresSlackOnboardingRepository implements SlackOnboardingReposit
           ON installation.id = authorization.completed_installation_id
         WHERE authorization.state_sha256 = $1
           AND authorization.browser_binding_sha256 = $2
-          AND authorization.cognito_subject = $3
           AND authorization.status = 'COMPLETED'
-          AND authorization.expires_at > $4
+          AND authorization.expires_at > $3
           AND NOT EXISTS (SELECT 1 FROM consumed)
         LIMIT 1
       `,
-      [
-        input.stateSha256,
-        input.browserBindingSha256,
-        input.cognitoSubject,
-        input.consumedAt,
-      ],
+      [input.stateSha256, input.browserBindingSha256, input.consumedAt],
     );
     const row = result.rows[0];
     return row === undefined ? null : toClaimedAuthorization(row);

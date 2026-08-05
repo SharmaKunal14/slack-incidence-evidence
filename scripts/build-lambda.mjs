@@ -37,6 +37,9 @@ await build({
     'slack-evidence-collector-main':
       'src/lambda/slack-evidence-collector-main.ts',
     'slack-ingress-main': 'src/lambda/slack-ingress-main.ts',
+    'slack-onboarding-callback-main':
+      'src/lambda/slack-onboarding-callback-main.ts',
+    'slack-onboarding-start-main': 'src/lambda/slack-onboarding-start-main.ts',
   },
   entryNames: '[name]',
   format: 'cjs',
@@ -68,6 +71,8 @@ const expectedBundleFiles = [
   'package.json',
   'slack-evidence-collector-main.js',
   'slack-ingress-main.js',
+  'slack-onboarding-callback-main.js',
+  'slack-onboarding-start-main.js',
 ];
 if (JSON.stringify(bundleFiles) !== JSON.stringify(expectedBundleFiles)) {
   throw new Error(`Unexpected Lambda bundle files: ${bundleFiles.join(', ')}`);
@@ -81,7 +86,7 @@ await executeFile(
   process.execPath,
   [
     '-e',
-    "const publication = require('./approved-report-publication-main.js'); const ingress = require('./slack-ingress-main.js'); const worker = require('./incident-worker-main.js'); const collector = require('./slack-evidence-collector-main.js'); const analysis = require('./incident-analysis-main.js'); const report = require('./incident-report-main.js'); const reviewApi = require('./incident-review-api-main.js'); const notification = require('./incident-review-notification-main.js'); if (typeof publication.handler !== 'function' || typeof ingress.handler !== 'function' || typeof worker.handler !== 'function' || typeof collector.handler !== 'function' || typeof analysis.handler !== 'function' || typeof report.handler !== 'function' || typeof reviewApi.handler !== 'function' || typeof notification.handler !== 'function') throw new Error('Lambda handler export missing');",
+    "const publication = require('./approved-report-publication-main.js'); const ingress = require('./slack-ingress-main.js'); const worker = require('./incident-worker-main.js'); const collector = require('./slack-evidence-collector-main.js'); const analysis = require('./incident-analysis-main.js'); const report = require('./incident-report-main.js'); const reviewApi = require('./incident-review-api-main.js'); const notification = require('./incident-review-notification-main.js'); const onboardingStart = require('./slack-onboarding-start-main.js'); const onboardingCallback = require('./slack-onboarding-callback-main.js'); if (typeof publication.handler !== 'function' || typeof ingress.handler !== 'function' || typeof worker.handler !== 'function' || typeof collector.handler !== 'function' || typeof analysis.handler !== 'function' || typeof report.handler !== 'function' || typeof reviewApi.handler !== 'function' || typeof notification.handler !== 'function' || typeof onboardingStart.handler !== 'function' || typeof onboardingCallback.handler !== 'function') throw new Error('Lambda handler export missing');",
   ],
   {
     cwd: stagingDirectory,
@@ -113,6 +118,17 @@ await executeFile(
       SLACK_BOT_TOKEN_SECRET_ARN: 'test-slack-bot-secret',
       SLACK_THREAD_MAX_PAGES: '100',
       SLACK_SIGNING_SECRET_ARN: 'test-slack-secret',
+      SLACK_OAUTH_APP_ID: 'A001',
+      SLACK_OAUTH_APP_SECRET_ARN: 'test-slack-oauth-secret',
+      SLACK_OAUTH_CLIENT_ID: '123.456',
+      SLACK_OAUTH_REDIRECT_URI:
+        'https://api.example.test/onboarding/slack/callback',
+      SLACK_INSTALLATION_KMS_KEY_ARN: 'test-kms-key',
+      SLACK_INSTALLATION_SECRET_PREFIX:
+        'incident-copilot/test/slack/installations',
+      ONBOARDING_SUCCESS_REDIRECT_URL:
+        'https://app.example.test/?slack=connected',
+      ONBOARDING_FAILURE_REDIRECT_URL: 'https://app.example.test/?slack=failed',
     },
   },
 );

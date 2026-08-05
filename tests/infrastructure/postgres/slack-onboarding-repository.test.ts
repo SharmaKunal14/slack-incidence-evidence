@@ -97,18 +97,16 @@ describe('PostgresSlackOnboardingRepository', () => {
       repository.consumeAuthorization({
         stateSha256,
         browserBindingSha256,
-        cognitoSubject,
         consumedAt,
       }),
     ).resolves.toMatchObject({ id: authorizationId, consumedAt });
 
     expect(query.mock.calls[0]?.[0]).toContain('state_sha256');
     expect(query.mock.calls[1]?.[0]).toContain("status = 'PENDING'");
-    expect(query.mock.calls[1]?.[0]).toContain('expires_at > $4');
+    expect(query.mock.calls[1]?.[0]).toContain('expires_at > $3');
     expect(query.mock.calls[1]?.[1]).toEqual([
       stateSha256,
       browserBindingSha256,
-      cognitoSubject,
       consumedAt,
     ]);
   });
@@ -139,7 +137,6 @@ describe('PostgresSlackOnboardingRepository', () => {
       repository.consumeAuthorization({
         stateSha256,
         browserBindingSha256,
-        cognitoSubject,
         consumedAt,
       }),
     ).resolves.toEqual({

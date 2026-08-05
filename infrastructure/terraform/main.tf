@@ -1,9 +1,11 @@
 locals {
-  name_prefix                 = "${var.project_name}-${var.environment}"
-  node_env                    = var.environment == "production" ? "production" : "development"
-  worker_vpc_enabled          = length(var.worker_subnet_ids) > 0 && length(var.worker_security_group_ids) > 0
-  publication_database_secret = coalesce(var.publication_database_secret_arn, var.database_secret_arn)
-  publication_provider_secret = var.publication_provider == "NOTION" ? var.notion_api_secret_arn : var.confluence_api_secret_arn
+  name_prefix                      = "${var.project_name}-${var.environment}"
+  node_env                         = var.environment == "production" ? "production" : "development"
+  worker_vpc_enabled               = length(var.worker_subnet_ids) > 0 && length(var.worker_security_group_ids) > 0
+  publication_database_secret      = coalesce(var.publication_database_secret_arn, var.database_secret_arn)
+  publication_provider_secret      = var.publication_provider == "NOTION" ? var.notion_api_secret_arn : var.confluence_api_secret_arn
+  onboarding_database_secret       = coalesce(var.onboarding_database_secret_arn, var.database_secret_arn)
+  slack_installation_secret_prefix = "${var.project_name}/${var.environment}/slack/installations"
 }
 
 # -----------------------------------------------------------------------------
@@ -1643,7 +1645,7 @@ resource "aws_apigatewayv2_api" "public" {
   description   = "Public integration API for Incident Evidence Copilot"
 
   cors_configuration {
-    allow_credentials = false
+    allow_credentials = true
     allow_headers     = ["authorization", "content-type"]
     allow_methods     = ["GET", "POST", "OPTIONS"]
     allow_origins     = ["https://${aws_cloudfront_distribution.review.domain_name}"]
@@ -1700,10 +1702,24 @@ resource "aws_apigatewayv2_stage" "default" {
     }
   }
 
+  dynamic "route_settings" {
+    for_each = local.slack_onboarding_routes
+    content {
+      route_key                = route_settings.value
+      throttling_burst_limit   = var.slack_onboarding_throttle_burst_limit
+      throttling_rate_limit    = var.slack_onboarding_throttle_rate_limit
+      detailed_metrics_enabled = true
+    }
+  }
+
   # API Gateway rejects per-route settings until every referenced route exists.
   # The settings above use stable string keys, so Terraform cannot infer this
   # dependency from attribute references alone.
-  depends_on = [aws_apigatewayv2_route.incident_review]
+  depends_on = [
+    aws_apigatewayv2_route.incident_review,
+    aws_apigatewayv2_route.slack_onboarding_callback,
+    aws_apigatewayv2_route.slack_onboarding_start,
+  ]
 }
 
 resource "aws_lambda_permission" "api_gateway_ingress" {

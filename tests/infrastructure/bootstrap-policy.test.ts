@@ -173,6 +173,37 @@ describe('deployment bootstrap policy', () => {
     expect(comprehend?.Resource).toBe('*');
   });
 
+  it('limits runtime secret creation to tagged Slack installation credentials', async () => {
+    const template = await loadTemplate();
+    const boundary = template.Resources?.['LambdaRolePermissionsBoundary'];
+    const statements = boundary?.Properties?.PolicyDocument?.Statement ?? [];
+    const create = statements.find(
+      ({ Sid }) => Sid === 'CreateTaggedSlackInstallationSecrets',
+    );
+    const write = statements.find(
+      ({ Sid }) => Sid === 'WriteSlackInstallationSecretVersions',
+    );
+
+    expect(create?.Action).toEqual([
+      'secretsmanager:CreateSecret',
+      'secretsmanager:TagResource',
+    ]);
+    expect(create?.Resource).toEqual({
+      'Fn::Sub':
+        'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/slack/installations/*',
+    });
+    expect(create?.Condition).toMatchObject({
+      StringEquals: {
+        'aws:RequestTag/onrecord:managed-by': 'onboarding',
+        'aws:RequestTag/onrecord:credential-type': 'slack-installation',
+      },
+    });
+    expect(write?.Action).toBe('secretsmanager:PutSecretValue');
+    expect(JSON.stringify(write?.Resource)).toContain(
+      '${ProjectName}/${Environment}/slack/installations/*',
+    );
+  });
+
   it('can read versions only for environment-scoped Lambda functions', async () => {
     const template = await loadTemplate();
     const statement = policyStatements(template).find(
@@ -246,21 +277,27 @@ describe('deployment bootstrap policy', () => {
     const terraform = `${await readFile(
       resolve('infrastructure/terraform/main.tf'),
       'utf8',
-    )}\n${await readFile(resolve('infrastructure/terraform/review.tf'), 'utf8')}`;
+    )}\n${await readFile(
+      resolve('infrastructure/terraform/review.tf'),
+      'utf8',
+    )}\n${await readFile(
+      resolve('infrastructure/terraform/onboarding.tf'),
+      'utf8',
+    )}`;
     const roleBodies = [
       ...terraform.matchAll(
         /resource "aws_iam_role" "[^"]+" \{(?<body>[\s\S]*?)\n\}/gu,
       ),
     ].map((match) => match.groups?.['body'] ?? '');
 
-    expect(roleBodies).toHaveLength(9);
+    expect(roleBodies).toHaveLength(11);
     expect(
       roleBodies.filter((body) =>
         body.includes(
           'permissions_boundary = var.lambda_role_permissions_boundary_arn',
         ),
       ),
-    ).toHaveLength(8);
+    ).toHaveLength(10);
     expect(
       roleBodies.filter((body) =>
         body.includes(

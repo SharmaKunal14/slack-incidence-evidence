@@ -127,7 +127,6 @@ export const consumeSlackOAuthAuthorizationSchema = z
   .object({
     stateSha256: sha256Hex,
     browserBindingSha256: sha256Hex,
-    cognitoSubject,
     consumedAt: z.date(),
   })
   .strict();

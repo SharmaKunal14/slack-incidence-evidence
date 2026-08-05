@@ -10,9 +10,43 @@ import {
   loadIncidentWorkerLambdaEnvironment,
   loadSlackEvidenceCollectorLambdaEnvironment,
   loadSlackIngressLambdaEnvironment,
+  loadSlackOnboardingCallbackLambdaEnvironment,
+  loadSlackOnboardingStartLambdaEnvironment,
 } from '../../src/config/environment.js';
 
 describe('Lambda environment configuration', () => {
+  it('separates public onboarding start configuration from callback secrets', () => {
+    const database = {
+      DATABASE_SECRET_ARN: 'database-secret-arn',
+      DATABASE_HOST: 'pooler.example.test',
+      DATABASE_NAME: 'postgres',
+      SLACK_OAUTH_CLIENT_ID: '123.456',
+      SLACK_OAUTH_REDIRECT_URI:
+        'https://api.example.test/onboarding/slack/callback',
+    };
+    const start = loadSlackOnboardingStartLambdaEnvironment(database);
+    expect(start).not.toHaveProperty('SLACK_OAUTH_APP_SECRET_ARN');
+
+    const callback = loadSlackOnboardingCallbackLambdaEnvironment({
+      ...database,
+      SLACK_OAUTH_APP_ID: 'A001',
+      SLACK_OAUTH_APP_SECRET_ARN: 'slack-oauth-secret-arn',
+      SLACK_INSTALLATION_SECRET_PREFIX:
+        'incident-copilot/development/slack/installations',
+      SLACK_INSTALLATION_KMS_KEY_ARN: 'kms-key-arn',
+      ONBOARDING_SUCCESS_REDIRECT_URL:
+        'https://app.example.test/?slack=connected',
+      ONBOARDING_FAILURE_REDIRECT_URL: 'https://app.example.test/?slack=failed',
+    });
+    expect(callback.SLACK_OAUTH_TIMEOUT_MS).toBe(5_000);
+    expect(() =>
+      loadSlackOnboardingStartLambdaEnvironment({
+        ...database,
+        SLACK_OAUTH_REDIRECT_URI: 'http://api.example.test/callback',
+      }),
+    ).toThrow();
+  });
+
   it('loads an AWS-backed migration target without a connection string', () => {
     const environment = loadDatabaseMigrationEnvironment({
       AWS_REGION: 'ap-southeast-2',

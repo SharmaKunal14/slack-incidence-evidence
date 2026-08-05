@@ -7,8 +7,8 @@ the application's at-least-once and idempotency assumptions.
 
 ## What it creates
 
-- An API Gateway HTTP API with one Slack-HMAC-authenticated public route and
-  five Cognito-JWT-authorized human-review routes.
+- An API Gateway HTTP API with one Slack-HMAC-authenticated public route, one
+  public browser-bound Slack OAuth callback, and six Cognito-JWT routes.
 - A short-lived Slack ingress Lambda behind that route.
 - An encrypted SQS FIFO queue, encrypted FIFO dead-letter queue, redrive policy,
   explicit redrive allow policy, and resource policies denying non-TLS access.
@@ -27,6 +27,8 @@ the application's at-least-once and idempotency assumptions.
   and an authenticated console link and has no model-provider credentials.
 - A bounded human-review API Lambda with a separate IAM role and, in production,
   a required dedicated least-privilege PostgreSQL credential.
+- Separate Slack onboarding start and callback Lambdas. Only the callback can
+  read the Slack OAuth client secret or create installation credentials.
 - An admin-created Cognito reviewer pool using authorization-code + PKCE and
   optional TOTP MFA.
 - A private, encrypted, versioned S3 bucket exposed only through an origin-
@@ -48,7 +50,7 @@ the application's at-least-once and idempotency assumptions.
 - Alarms for failed jobs in the DLQ, excessive source-queue age, failed evidence
   workflows, publication Lambda errors, and exhausted publication retries.
 
-All eight functions use the same immutable ZIP artifact but have separate
+All ten functions use the same immutable ZIP artifact but have separate
 handlers, roles, environment variables, memory, timeouts, and concurrency
 limits.
 
@@ -151,6 +153,20 @@ Slack bot token (worker and Slack collector access only):
 }
 ```
 
+Slack OAuth app secret (onboarding callback access only):
+
+```json
+{
+  "clientSecret": "actual Slack OAuth client secret"
+}
+```
+
+The public client ID and app ID are normal Terraform inputs. The client secret
+is never entered by a customer and never enters Terraform state or Lambda
+environment variables. Each completed installation is written to an
+attempt-scoped Secrets Manager secret encrypted by
+`slack_installation_kms_key_arn`.
+
 Keep these as separate secrets. Request authentication does not require an API
 token, and outbound Slack access does not require the signing secret. The
 outbound adapters validate that every requested workspace matches the workspace
@@ -221,6 +237,17 @@ psql "$ADMIN_DATABASE_URL" \
 The script cannot make an owner credential least-privileged. A real production
 deployment also needs a non-owner pipeline role; otherwise a compromised
 pipeline runtime can bypass the intended table separation.
+
+The onboarding database secret uses the same JSON shape. Production must set
+`onboarding_database_secret_arn` to a separate non-owner login. Apply only the
+tables and columns needed to create OAuth state, establish the first admin, and
+activate or replace a Slack installation:
+
+```bash
+psql "$ADMIN_DATABASE_URL" \
+  --set=onboarding_role=incident_slack_onboarding \
+  --file=db/security/slack_onboarding_grants.sql
+```
 
 The publication database secret uses the same JSON shape. Production must use
 a separate non-owner PostgreSQL login and set

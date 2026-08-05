@@ -67,6 +67,12 @@ Deploy the bootstrap stack:
   --migration-secret-arn "$MIGRATION_SECRET_ARN"
 ```
 
+Rerun this same command after pulling Stage 3 onboarding changes. CloudFormation
+updates the existing Lambda permissions boundary in place so only the callback
+role can create tagged secrets under
+`incident-copilot/<environment>/slack/installations/`. Terraform cannot safely
+update this CloudFormation-owned boundary itself.
+
 The script asks GitHub for the repository's current OIDC `sub_claim_prefix`,
 validates that it belongs to the requested repository, and appends the selected
 environment. This supports both legacy name-based subjects and immutable

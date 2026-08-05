@@ -227,7 +227,7 @@ npm run build:lambda
 npm run build:web
 ```
 
-Terraform deploys the API, eight Lambda entrypoints, workflow, queues,
+Terraform deploys the API, ten Lambda entrypoints, workflow, queues,
 authentication, review console, alarms, and IAM boundaries.
 
 The deployment expects externally provisioned PostgreSQL, Slack configuration,

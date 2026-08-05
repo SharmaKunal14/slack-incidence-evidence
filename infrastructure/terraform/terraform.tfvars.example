@@ -5,18 +5,23 @@ lambda_role_permissions_boundary_arn   = "arn:aws:iam::123456789012:policy/incid
 workflow_role_permissions_boundary_arn = "arn:aws:iam::123456789012:policy/incident-copilot-development-workflow-boundary"
 
 # Produce this ZIP from the application build before running terraform plan.
-# It must contain all eight composition roots documented in README.md, plus all
+# It must contain all ten composition roots documented in README.md, plus all
 # production dependencies.
 lambda_artifact_path = "../../artifacts/incident-copilot-lambda.zip"
 
 # Only ARNs enter Terraform. Do not put secret values in this file.
 slack_signing_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-AbCdEf"
 slack_bot_token_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-bot-IjKlMn"
+slack_oauth_app_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-oauth-OaUtH1"
+slack_oauth_client_id      = "123456789.123456789"
+slack_oauth_app_id         = "A0123456789"
+slack_installation_kms_key_arn = "arn:aws:kms:ap-southeast-2:123456789012:key/11111111-2222-3333-4444-555555555555"
 database_secret_arn      = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/database-GhIjKl"
 # In production this must reference a separate PostgreSQL login with only the
 # grants documented in README.md. Development can omit it and reuse the shared
 # database secret while bootstrapping.
 # review_database_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/review-database-StUvWx"
+# onboarding_database_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/onboarding-database-OnBoAr"
 openai_api_secret_arn    = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/openai-MnOpQr"
 
 # Development publishes to Confluence. Only the selected provider's secret is

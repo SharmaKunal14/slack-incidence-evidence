@@ -42,6 +42,10 @@ const deploymentEnvironmentSchema = z.object({
 const requiredTerraformInputs = [
   'slack_signing_secret_arn',
   'slack_bot_token_secret_arn',
+  'slack_oauth_app_secret_arn',
+  'slack_oauth_client_id',
+  'slack_oauth_app_id',
+  'slack_installation_kms_key_arn',
   'database_secret_arn',
   'openai_api_secret_arn',
   'publication_provider',
@@ -173,8 +177,10 @@ export async function prepareDeploymentConfiguration(
   for (const key of [
     'slack_signing_secret_arn',
     'slack_bot_token_secret_arn',
+    'slack_oauth_app_secret_arn',
     'database_secret_arn',
     'review_database_secret_arn',
+    'onboarding_database_secret_arn',
     'openai_api_secret_arn',
     'notion_api_secret_arn',
     'confluence_api_secret_arn',
@@ -193,6 +199,20 @@ export async function prepareDeploymentConfiguration(
       );
     }
   }
+
+  const slackInstallationKmsKeyArn =
+    terraformInputs['slack_installation_kms_key_arn'];
+  if (typeof slackInstallationKmsKeyArn !== 'string') {
+    throw new Error(
+      'Terraform input slack_installation_kms_key_arn must be a KMS key ARN',
+    );
+  }
+  validateArn(
+    slackInstallationKmsKeyArn,
+    'kms',
+    environment.AWS_REGION,
+    environment.AWS_ACCOUNT_ID,
+  );
 
   const publicationProvider = terraformInputs['publication_provider'];
   if (publicationProvider === 'NOTION') {

@@ -6,6 +6,7 @@ import {
   parseOpenAiApiSecret,
   parseNotionApiSecret,
   parseSlackBotTokenSecret,
+  parseSlackOAuthAppSecret,
   parseSlackSigningSecret,
 } from '../../src/config/runtime-secrets.js';
 
@@ -27,6 +28,11 @@ describe('runtime secret contracts', () => {
         JSON.stringify({ workspaceId: 'T001', botToken: 'xoxb-secret' }),
       ),
     ).toEqual({ workspaceId: 'T001', botToken: 'xoxb-secret' });
+    expect(
+      parseSlackOAuthAppSecret(
+        JSON.stringify({ clientSecret: 'oauth-secret' }),
+      ),
+    ).toEqual({ clientSecret: 'oauth-secret' });
     expect(
       parseDatabaseConnectionSecret(
         JSON.stringify({
@@ -73,6 +79,11 @@ describe('runtime secret contracts', () => {
           botToken: 'xoxb-secret',
           signingSecret: 'wrong-boundary',
         }),
+      ),
+    ).toThrow(InvalidRuntimeSecretError);
+    expect(() =>
+      parseSlackOAuthAppSecret(
+        JSON.stringify({ clientSecret: 'value', botToken: 'wrong-boundary' }),
       ),
     ).toThrow(InvalidRuntimeSecretError);
 

@@ -83,6 +83,24 @@ output "review_api_url" {
   value       = "${aws_apigatewayv2_api.public.api_endpoint}/review"
 }
 
+output "slack_onboarding_start_url" {
+  description = "Authenticated endpoint the review console uses to begin Slack onboarding."
+  value       = "${aws_apigatewayv2_api.public.api_endpoint}/onboarding/slack/start"
+}
+
+output "slack_oauth_redirect_url" {
+  description = "Configure this exact URL in the Slack app OAuth redirect URL allowlist."
+  value       = local.slack_oauth_redirect_uri
+}
+
+output "slack_onboarding_lambda_names" {
+  description = "Slack onboarding Lambda names used for post-deployment checks."
+  value = {
+    start    = aws_lambda_function.slack_onboarding_start.function_name
+    callback = aws_lambda_function.slack_onboarding_callback.function_name
+  }
+}
+
 output "reviewer_user_pool_id" {
   description = "Cognito user pool used to create human reviewer identities."
   value       = aws_cognito_user_pool.reviewers.id
@@ -108,6 +126,8 @@ output "cloudwatch_log_groups" {
     report              = aws_cloudwatch_log_group.incident_report.name
     review_notification = aws_cloudwatch_log_group.incident_review_notification.name
     review_api          = aws_cloudwatch_log_group.incident_review_api.name
+    onboarding_start    = aws_cloudwatch_log_group.slack_onboarding_start.name
+    onboarding_callback = aws_cloudwatch_log_group.slack_onboarding_callback.name
     collector           = aws_cloudwatch_log_group.slack_evidence_collector.name
     worker              = aws_cloudwatch_log_group.worker.name
     workflow            = aws_cloudwatch_log_group.workflow.name

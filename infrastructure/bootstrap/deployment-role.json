@@ -106,9 +106,34 @@
               }
             },
             {
+              "Sid": "CreateTaggedSlackInstallationSecrets",
+              "Effect": "Allow",
+              "Action": [
+                "secretsmanager:CreateSecret",
+                "secretsmanager:TagResource"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/slack/installations/*"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestTag/onrecord:managed-by": "onboarding",
+                  "aws:RequestTag/onrecord:credential-type": "slack-installation"
+                }
+              }
+            },
+            {
+              "Sid": "WriteSlackInstallationSecretVersions",
+              "Effect": "Allow",
+              "Action": "secretsmanager:PutSecretValue",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/slack/installations/*"
+              }
+            },
+            {
               "Sid": "DecryptEnvironmentSecretsOnlyThroughSecretsManager",
               "Effect": "Allow",
-              "Action": "kms:Decrypt",
+              "Action": ["kms:Decrypt", "kms:GenerateDataKey"],
               "Resource": "*",
               "Condition": {
                 "StringEquals": {

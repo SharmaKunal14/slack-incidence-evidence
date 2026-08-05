@@ -110,6 +110,49 @@ const incidentReviewApiLambdaEnvironmentSchema =
       .default(524_288),
   });
 
+const slackOAuthPublicConfigurationSchema = z.object({
+  SLACK_OAUTH_CLIENT_ID: z
+    .string()
+    .trim()
+    .min(1)
+    .max(256)
+    .regex(/^[0-9.]+$/u),
+  SLACK_OAUTH_REDIRECT_URI: z.url().refine((value) => {
+    const url = new URL(value);
+    return (
+      url.protocol === 'https:' && url.username === '' && url.password === ''
+    );
+  }),
+});
+
+const slackOnboardingStartLambdaEnvironmentSchema =
+  lambdaPostgresBaseEnvironmentSchema.merge(
+    slackOAuthPublicConfigurationSchema,
+  );
+
+const slackOnboardingCallbackLambdaEnvironmentSchema =
+  lambdaPostgresBaseEnvironmentSchema
+    .merge(slackOAuthPublicConfigurationSchema)
+    .extend({
+      SLACK_OAUTH_APP_ID: z.string().regex(/^A[A-Z0-9]{1,63}$/u),
+      SLACK_OAUTH_APP_SECRET_ARN: z.string().trim().min(1).max(2_048),
+      SLACK_INSTALLATION_SECRET_PREFIX: z
+        .string()
+        .trim()
+        .min(1)
+        .max(200)
+        .regex(/^[A-Za-z0-9/_+=.@-]+$/u),
+      SLACK_INSTALLATION_KMS_KEY_ARN: z.string().trim().min(1).max(2_048),
+      SLACK_OAUTH_TIMEOUT_MS: z.coerce
+        .number()
+        .int()
+        .min(1_000)
+        .max(15_000)
+        .default(5_000),
+      ONBOARDING_SUCCESS_REDIRECT_URL: z.url(),
+      ONBOARDING_FAILURE_REDIRECT_URL: z.url(),
+    });
+
 const approvedReportPublicationBaseEnvironmentSchema =
   lambdaPostgresEnvironmentSchema.extend({
     PUBLICATION_BATCH_SIZE: z.coerce.number().int().min(1).max(10).default(1),
@@ -410,6 +453,12 @@ export type IncidentReviewNotificationLambdaEnvironment = z.infer<
 export type IncidentReviewApiLambdaEnvironment = z.infer<
   typeof incidentReviewApiLambdaEnvironmentSchema
 >;
+export type SlackOnboardingStartLambdaEnvironment = z.infer<
+  typeof slackOnboardingStartLambdaEnvironmentSchema
+>;
+export type SlackOnboardingCallbackLambdaEnvironment = z.infer<
+  typeof slackOnboardingCallbackLambdaEnvironmentSchema
+>;
 export type ApprovedReportPublicationLambdaEnvironment = z.infer<
   typeof approvedReportPublicationLambdaEnvironmentSchema
 >;
@@ -472,6 +521,18 @@ export function loadIncidentReviewApiLambdaEnvironment(
   source: NodeJS.ProcessEnv = process.env,
 ): IncidentReviewApiLambdaEnvironment {
   return incidentReviewApiLambdaEnvironmentSchema.parse(source);
+}
+
+export function loadSlackOnboardingStartLambdaEnvironment(
+  source: NodeJS.ProcessEnv = process.env,
+): SlackOnboardingStartLambdaEnvironment {
+  return slackOnboardingStartLambdaEnvironmentSchema.parse(source);
+}
+
+export function loadSlackOnboardingCallbackLambdaEnvironment(
+  source: NodeJS.ProcessEnv = process.env,
+): SlackOnboardingCallbackLambdaEnvironment {
+  return slackOnboardingCallbackLambdaEnvironmentSchema.parse(source);
 }
 
 export function loadApprovedReportPublicationLambdaEnvironment(
