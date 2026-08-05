@@ -199,6 +199,30 @@ describe('deployment bootstrap policy', () => {
     }
   });
 
+  it('can remove only an HTTP API CORS child resource', async () => {
+    const template = await loadTemplate();
+    const statements = policyStatements(template);
+    const corsDeletion = statements.find(
+      ({ Sid }) => Sid === 'DeleteRegionalHttpApiCorsConfiguration',
+    );
+    const deleteStatements = statements.filter((statement) =>
+      typeof statement.Action === 'string'
+        ? statement.Action === 'apigateway:DELETE'
+        : statement.Action?.includes('apigateway:DELETE'),
+    );
+
+    expect(deleteStatements).toEqual([corsDeletion]);
+    expect(corsDeletion).toEqual({
+      Sid: 'DeleteRegionalHttpApiCorsConfiguration',
+      Effect: 'Allow',
+      Action: 'apigateway:DELETE',
+      Resource: {
+        'Fn::Sub':
+          'arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis/*/cors',
+      },
+    });
+  });
+
   it('grants the exact delivery APIs required to activate HTTP API access logs', async () => {
     const template = await loadTemplate();
     const statements = policyStatements(template);

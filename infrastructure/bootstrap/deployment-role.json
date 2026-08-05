@@ -869,6 +869,14 @@
               ]
             },
             {
+              "Sid": "DeleteRegionalHttpApiCorsConfiguration",
+              "Effect": "Allow",
+              "Action": "apigateway:DELETE",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis/*/cors"
+              }
+            },
+            {
               "Sid": "CreateTaggedReviewerPool",
               "Effect": "Allow",
               "Action": "cognito-idp:CreateUserPool",

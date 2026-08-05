@@ -187,6 +187,8 @@ resources therefore remain for narrowly enumerated actions, including:
 - CloudFront origin access control and response-header policy creation;
 - CloudFront provider reads and updates for generated IDs, including discovery
   of the AWS-managed cache and origin-request policies referenced by Terraform;
+- deletion of only the API Gateway `/apis/*/cors` child configuration when an
+  environment moves its browser traffic from cross-origin to same-origin;
 - tagged CloudWatch alarm creation because `PutMetricAlarm` does not support a
   pre-existing resource ARN;
 - Cognito user-pool creation and domain discovery;
