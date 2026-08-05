@@ -12,6 +12,14 @@ const terraformOutputSchema = z.record(
     value: z.unknown(),
   }),
 );
+const reviewRuntimeConfigurationSchema = z
+  .object({
+    apiBaseUrl: z.url(),
+    cognitoBaseUrl: z.url(),
+    cognitoClientId: z.string().min(1),
+    redirectUri: z.url(),
+  })
+  .strict();
 
 const lambdaOutputNames = [
   'ingress_lambda_name',
@@ -176,6 +184,37 @@ async function invalidateReviewConsole(distributionId: string): Promise<void> {
   );
 }
 
+export function verifyReviewRuntimeConfiguration(
+  rawBody: Buffer,
+  reviewConsoleUrl: string,
+): void {
+  const prefix = 'window.__INCIDENT_REVIEW_CONFIG__ = ';
+  const body = rawBody.toString('utf8').trim();
+  if (!body.startsWith(prefix) || !body.endsWith(';')) {
+    throw new Error('Review runtime configuration has an invalid wrapper');
+  }
+
+  let rawConfiguration: unknown;
+  try {
+    rawConfiguration = JSON.parse(body.slice(prefix.length, -1));
+  } catch (error) {
+    throw new Error('Review runtime configuration is not valid JSON', {
+      cause: error,
+    });
+  }
+  const configuration =
+    reviewRuntimeConfigurationSchema.parse(rawConfiguration);
+  const expectedBaseUrl = new URL(reviewConsoleUrl).origin;
+  if (
+    configuration.apiBaseUrl !== expectedBaseUrl ||
+    configuration.redirectUri !== `${expectedBaseUrl}/`
+  ) {
+    throw new Error(
+      'Review runtime configuration does not use the CloudFront origin',
+    );
+  }
+}
+
 export async function smokeAwsDeployment(
   rawOutputs: unknown,
   region: string,
@@ -245,5 +284,10 @@ export async function smokeAwsDeployment(
       }
     }),
   );
+  const runtimeConfiguration = await fetchBoundedBody(
+    new URL('/runtime-config.js', reviewConsoleUrl).toString(),
+    200,
+  );
+  verifyReviewRuntimeConfiguration(runtimeConfiguration, reviewConsoleUrl);
   return { reviewConsoleUrl };
 }

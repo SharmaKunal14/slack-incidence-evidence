@@ -17,6 +17,12 @@ locals {
   review_cognito_domain  = "${substr(local.name_prefix, 0, 40)}-${data.aws_caller_identity.current.account_id}"
   review_application_url = "https://${aws_cloudfront_distribution.review.domain_name}"
   review_database_secret = coalesce(var.review_database_secret_arn, var.database_secret_arn)
+  review_runtime_configuration = "window.__INCIDENT_REVIEW_CONFIG__ = ${jsonencode({
+    apiBaseUrl      = local.review_application_url
+    cognitoBaseUrl  = "https://${aws_cognito_user_pool_domain.reviewers.domain}.auth.${var.aws_region}.amazoncognito.com"
+    cognitoClientId = aws_cognito_user_pool_client.review_console.id
+    redirectUri     = "${local.review_application_url}/"
+  })};"
 }
 
 # -----------------------------------------------------------------------------
@@ -348,12 +354,8 @@ resource "aws_s3_object" "review_runtime_configuration" {
   key           = "runtime-config.js"
   content_type  = "application/javascript; charset=utf-8"
   cache_control = "no-store, max-age=0"
-  content = "window.__INCIDENT_REVIEW_CONFIG__ = ${jsonencode({
-    apiBaseUrl      = local.review_application_url
-    cognitoBaseUrl  = "https://${aws_cognito_user_pool_domain.reviewers.domain}.auth.${var.aws_region}.amazoncognito.com"
-    cognitoClientId = aws_cognito_user_pool_client.review_console.id
-    redirectUri     = "${local.review_application_url}/"
-  })};"
+  content       = local.review_runtime_configuration
+  source_hash   = sha256(local.review_runtime_configuration)
 
   depends_on = [aws_s3_bucket_server_side_encryption_configuration.review]
 }
