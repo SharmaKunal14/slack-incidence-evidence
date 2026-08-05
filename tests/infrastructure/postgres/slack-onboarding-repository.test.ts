@@ -66,6 +66,7 @@ describe('PostgresSlackOnboardingRepository', () => {
       .mockResolvedValueOnce(
         result([
           {
+            status: 'CONSUMED',
             id: authorizationId,
             cognito_subject: cognitoSubject,
             redirect_uri: 'https://app.example.com/onboarding/slack/callback',
@@ -73,6 +74,9 @@ describe('PostgresSlackOnboardingRepository', () => {
             created_at: createdAt,
             expires_at: expiresAt,
             consumed_at: consumedAt,
+            completed_installation_id: null,
+            completion_kind: null,
+            completed_team_id: null,
           },
         ]),
       );
@@ -107,6 +111,51 @@ describe('PostgresSlackOnboardingRepository', () => {
       cognitoSubject,
       consumedAt,
     ]);
+  });
+
+  it('returns a bound completed authorization for callback replay', async () => {
+    const consumedAt = new Date('2026-08-05T01:00:30.000Z');
+    const query = vi.fn().mockResolvedValue(
+      result([
+        {
+          status: 'COMPLETED',
+          id: authorizationId,
+          cognito_subject: cognitoSubject,
+          redirect_uri: 'https://app.example.com/onboarding/slack/callback',
+          requested_scopes: [...SLACK_REQUIRED_BOT_SCOPES],
+          created_at: new Date('2026-08-05T01:00:00.000Z'),
+          expires_at: new Date('2026-08-05T01:10:00.000Z'),
+          consumed_at: consumedAt,
+          completed_installation_id: 'installation:T001',
+          completion_kind: 'CREATED',
+          completed_team_id: 'T001',
+        },
+      ]),
+    );
+    const pool = { query } as unknown as Pool;
+    const repository = new PostgresSlackOnboardingRepository(pool);
+
+    await expect(
+      repository.consumeAuthorization({
+        stateSha256,
+        browserBindingSha256,
+        cognitoSubject,
+        consumedAt,
+      }),
+    ).resolves.toEqual({
+      status: 'COMPLETED',
+      id: authorizationId,
+      completion: {
+        installationId: 'installation:T001',
+        tenantId: 'T001',
+        kind: 'CREATED',
+        idempotent: true,
+      },
+    });
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "authorization.status = 'COMPLETED'",
+    );
+    expect(query.mock.calls[0]?.[0]).toContain('browser_binding_sha256 = $2');
   });
 
   it('creates a new tenant, first admin, and secret-referenced installation transactionally', async () => {

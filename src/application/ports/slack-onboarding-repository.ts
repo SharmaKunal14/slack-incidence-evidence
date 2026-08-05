@@ -20,6 +20,7 @@ export type FailSlackOAuthAuthorizationInput = z.input<
 >;
 
 export interface ConsumedSlackOAuthAuthorization {
+  readonly status: 'CONSUMED';
   readonly id: string;
   readonly cognitoSubject: string;
   readonly redirectUri: string;
@@ -29,6 +30,15 @@ export interface ConsumedSlackOAuthAuthorization {
   readonly consumedAt: Date;
 }
 
+export interface CompletedSlackOAuthAuthorization {
+  readonly status: 'COMPLETED';
+  readonly id: string;
+  readonly completion: SlackInstallationCompletion;
+}
+
+export type ClaimedSlackOAuthAuthorization =
+  ConsumedSlackOAuthAuthorization | CompletedSlackOAuthAuthorization;
+
 export interface SlackInstallationCompletion {
   readonly installationId: string;
   readonly tenantId: string;
@@ -36,11 +46,22 @@ export interface SlackInstallationCompletion {
   readonly idempotent: boolean;
 }
 
+export class SlackOnboardingRepositoryError extends Error {
+  public constructor(
+    readonly code:
+      'AUTHORIZATION_NOT_USABLE' | 'ADMIN_REQUIRED' | 'IDENTITY_CONFLICT',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'SlackOnboardingRepositoryError';
+  }
+}
+
 export interface SlackOnboardingRepository {
   createAuthorization(input: CreateSlackOAuthAuthorizationInput): Promise<void>;
   consumeAuthorization(
     input: ConsumeSlackOAuthAuthorizationInput,
-  ): Promise<ConsumedSlackOAuthAuthorization | null>;
+  ): Promise<ClaimedSlackOAuthAuthorization | null>;
   failAuthorization(input: FailSlackOAuthAuthorizationInput): Promise<void>;
   completeInstallation(
     input: CompleteSlackInstallationInput,

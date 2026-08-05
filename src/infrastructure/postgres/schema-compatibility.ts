@@ -19,6 +19,7 @@ export const REQUIRED_SCHEMA_MIGRATIONS = [
   { version: '10', name: '0010_auto_discovered_slack_threads.sql' },
   { version: '11', name: '0011_evidence_linked_review_content.sql' },
   { version: '12', name: '0012_slack_oauth_onboarding.sql' },
+  { version: '13', name: '0013_slack_enterprise_user_ids.sql' },
 ] as const;
 
 interface AppliedMigrationRow extends QueryResultRow {

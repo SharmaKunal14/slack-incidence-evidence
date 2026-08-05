@@ -14,7 +14,7 @@ export const SLACK_OAUTH_AUTHORIZATION_TTL_SECONDS = 10 * 60;
 const sha256Hex = z.string().regex(/^[0-9a-f]{64}$/u);
 const cognitoSubject = z.string().trim().min(1).max(128);
 const safeErrorCode = z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/u);
-const secretsManagerArn = z
+export const slackInstallationSecretArnSchema = z
   .string()
   .regex(
     /^arn:(?:aws|aws-us-gov|aws-cn):secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]{1,512}$/u,
@@ -43,7 +43,7 @@ const printableSecret = z
   .regex(/^[\x21-\x7e]+$/u);
 
 const slackWorkspaceId = z.string().regex(/^T[A-Z0-9]{1,63}$/u);
-const slackUserId = z.string().regex(/^U[A-Z0-9]{1,63}$/u);
+const slackUserId = z.string().regex(/^[UW][A-Z0-9]{1,63}$/u);
 const slackAppId = z.string().regex(/^A[A-Z0-9]{1,63}$/u);
 const slackEnterpriseId = z.string().regex(/^E[A-Z0-9]{1,63}$/u);
 
@@ -143,7 +143,7 @@ export const completeSlackInstallationSchema = z
     appId: slackAppId,
     botUserId: slackUserId,
     authedSlackUserId: slackUserId,
-    credentialSecretArn: secretsManagerArn,
+    credentialSecretArn: slackInstallationSecretArnSchema,
     credentialExpiresAt: z.date().nullable(),
     grantedScopes: requiredScopesSchema,
     completedAt: z.date(),

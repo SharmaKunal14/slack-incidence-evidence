@@ -84,6 +84,7 @@ describe('runMigrations', () => {
         '0010_auto_discovered_slack_threads.sql',
         '0011_evidence_linked_review_content.sql',
         '0012_slack_oauth_onboarding.sql',
+        '0013_slack_enterprise_user_ids.sql',
       ],
       alreadyApplied: 0,
     });

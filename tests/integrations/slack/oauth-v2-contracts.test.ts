@@ -14,6 +14,7 @@ const successfulResponse = {
   authed_user: { id: 'U002' },
   refresh_token: 'xoxe-refresh',
   expires_in: 43_200,
+  is_enterprise_install: false,
 };
 
 describe('Slack OAuth V2 response contract', () => {
@@ -22,6 +23,21 @@ describe('Slack OAuth V2 response contract', () => {
       ok: true,
       team: { id: 'T001' },
       token_type: 'bot',
+    });
+  });
+
+  it('accepts Enterprise Grid W-prefixed users without accepting org installs', () => {
+    expect(
+      parseSlackOAuthV2AccessResponse({
+        ...successfulResponse,
+        bot_user_id: 'W001',
+        authed_user: { id: 'W002' },
+      }),
+    ).toMatchObject({
+      ok: true,
+      bot_user_id: 'W001',
+      authed_user: { id: 'W002' },
+      is_enterprise_install: false,
     });
   });
 

@@ -12,7 +12,7 @@ const successSchema = z
     access_token: providerToken,
     token_type: z.literal('bot'),
     scope: z.string().trim().min(1).max(4_096),
-    bot_user_id: z.string().regex(/^U[A-Z0-9]{1,63}$/u),
+    bot_user_id: z.string().regex(/^[UW][A-Z0-9]{1,63}$/u),
     app_id: z.string().regex(/^A[A-Z0-9]{1,63}$/u),
     team: z
       .object({
@@ -30,11 +30,12 @@ const successSchema = z
       .optional(),
     authed_user: z
       .object({
-        id: z.string().regex(/^U[A-Z0-9]{1,63}$/u),
+        id: z.string().regex(/^[UW][A-Z0-9]{1,63}$/u),
       })
       .passthrough(),
     refresh_token: providerToken.optional(),
     expires_in: z.number().int().positive().max(604_800).optional(),
+    is_enterprise_install: z.boolean().optional(),
   })
   .passthrough()
   .superRefine((response, context) => {

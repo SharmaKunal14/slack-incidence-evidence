@@ -6,9 +6,10 @@ import {
   createSlackOAuthAuthorizationSchema,
   failSlackOAuthAuthorizationSchema,
 } from '../../application/onboarding/slack-installation.js';
+import { SlackOnboardingRepositoryError } from '../../application/ports/slack-onboarding-repository.js';
 import type {
   CompleteSlackInstallationInput,
-  ConsumedSlackOAuthAuthorization,
+  ClaimedSlackOAuthAuthorization,
   ConsumeSlackOAuthAuthorizationInput,
   CreateSlackOAuthAuthorizationInput,
   FailSlackOAuthAuthorizationInput,
@@ -17,6 +18,7 @@ import type {
 } from '../../application/ports/slack-onboarding-repository.js';
 
 interface AuthorizationRow extends QueryResultRow {
+  readonly status: 'CONSUMED' | 'COMPLETED';
   readonly id: string;
   readonly cognito_subject: string;
   readonly redirect_uri: string;
@@ -24,6 +26,9 @@ interface AuthorizationRow extends QueryResultRow {
   readonly created_at: Date | string;
   readonly expires_at: Date | string;
   readonly consumed_at: Date | string;
+  readonly completed_installation_id: string | null;
+  readonly completion_kind: 'CREATED' | 'REINSTALLED' | null;
+  readonly completed_team_id: string | null;
 }
 
 interface CompletionAuthorizationRow extends QueryResultRow {
@@ -49,23 +54,29 @@ interface AdminMembershipRow extends QueryResultRow {
 
 const WORKSPACE_ADVISORY_LOCK_NAMESPACE = 1_249_227_793;
 
-export class SlackOnboardingAuthorizationError extends Error {
+export class SlackOnboardingAuthorizationError extends SlackOnboardingRepositoryError {
   public constructor() {
-    super('Slack onboarding authorization is not usable');
+    super(
+      'AUTHORIZATION_NOT_USABLE',
+      'Slack onboarding authorization is not usable',
+    );
     this.name = 'SlackOnboardingAuthorizationError';
   }
 }
 
-export class SlackOnboardingAdminRequiredError extends Error {
+export class SlackOnboardingAdminRequiredError extends SlackOnboardingRepositoryError {
   public constructor() {
-    super('An active tenant administrator is required');
+    super('ADMIN_REQUIRED', 'An active tenant administrator is required');
     this.name = 'SlackOnboardingAdminRequiredError';
   }
 }
 
-export class SlackOnboardingIdentityConflictError extends Error {
+export class SlackOnboardingIdentityConflictError extends SlackOnboardingRepositoryError {
   public constructor() {
-    super('The Slack user is already bound to another reviewer identity');
+    super(
+      'IDENTITY_CONFLICT',
+      'The Slack user is already bound to another reviewer identity',
+    );
     this.name = 'SlackOnboardingIdentityConflictError';
   }
 }
@@ -108,27 +119,58 @@ export class PostgresSlackOnboardingRepository implements SlackOnboardingReposit
 
   public async consumeAuthorization(
     rawInput: ConsumeSlackOAuthAuthorizationInput,
-  ): Promise<ConsumedSlackOAuthAuthorization | null> {
+  ): Promise<ClaimedSlackOAuthAuthorization | null> {
     const input = consumeSlackOAuthAuthorizationSchema.parse(rawInput);
     const result = await this.pool.query<AuthorizationRow>(
       `
-        UPDATE slack_oauth_authorizations
-        SET status = 'CONSUMED',
-            consumed_at = $4
-        WHERE state_sha256 = $1
-          AND browser_binding_sha256 = $2
-          AND cognito_subject = $3
-          AND status = 'PENDING'
-          AND created_at <= $4
-          AND expires_at > $4
-        RETURNING
-          id,
-          cognito_subject,
-          redirect_uri,
-          requested_scopes,
-          created_at,
-          expires_at,
-          consumed_at
+        WITH consumed AS (
+          UPDATE slack_oauth_authorizations
+          SET status = 'CONSUMED',
+              consumed_at = $4
+          WHERE state_sha256 = $1
+            AND browser_binding_sha256 = $2
+            AND cognito_subject = $3
+            AND status = 'PENDING'
+            AND created_at <= $4
+            AND expires_at > $4
+          RETURNING *
+        )
+        SELECT
+          consumed.status,
+          consumed.id,
+          consumed.cognito_subject,
+          consumed.redirect_uri,
+          consumed.requested_scopes,
+          consumed.created_at,
+          consumed.expires_at,
+          consumed.consumed_at,
+          consumed.completed_installation_id,
+          consumed.completion_kind,
+          NULL::TEXT AS completed_team_id
+        FROM consumed
+        UNION ALL
+        SELECT
+          authorization.status,
+          authorization.id,
+          authorization.cognito_subject,
+          authorization.redirect_uri,
+          authorization.requested_scopes,
+          authorization.created_at,
+          authorization.expires_at,
+          authorization.consumed_at,
+          authorization.completed_installation_id,
+          authorization.completion_kind,
+          installation.team_id AS completed_team_id
+        FROM slack_oauth_authorizations authorization
+        JOIN slack_installations installation
+          ON installation.id = authorization.completed_installation_id
+        WHERE authorization.state_sha256 = $1
+          AND authorization.browser_binding_sha256 = $2
+          AND authorization.cognito_subject = $3
+          AND authorization.status = 'COMPLETED'
+          AND authorization.expires_at > $4
+          AND NOT EXISTS (SELECT 1 FROM consumed)
+        LIMIT 1
       `,
       [
         input.stateSha256,
@@ -138,7 +180,7 @@ export class PostgresSlackOnboardingRepository implements SlackOnboardingReposit
       ],
     );
     const row = result.rows[0];
-    return row === undefined ? null : toConsumedAuthorization(row);
+    return row === undefined ? null : toClaimedAuthorization(row);
   }
 
   public async failAuthorization(
@@ -523,10 +565,30 @@ async function markAuthorizationCompleted(
   }
 }
 
-function toConsumedAuthorization(
+function toClaimedAuthorization(
   row: AuthorizationRow,
-): ConsumedSlackOAuthAuthorization {
+): ClaimedSlackOAuthAuthorization {
+  if (row.status === 'COMPLETED') {
+    if (
+      row.completed_installation_id === null ||
+      row.completion_kind === null ||
+      row.completed_team_id === null
+    ) {
+      throw new SlackOnboardingAuthorizationError();
+    }
+    return {
+      status: 'COMPLETED',
+      id: row.id,
+      completion: {
+        installationId: row.completed_installation_id,
+        tenantId: row.completed_team_id,
+        kind: row.completion_kind,
+        idempotent: true,
+      },
+    };
+  }
   return {
+    status: 'CONSUMED',
     id: row.id,
     cognitoSubject: row.cognito_subject,
     redirectUri: row.redirect_uri,

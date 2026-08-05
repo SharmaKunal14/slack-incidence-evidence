@@ -52,6 +52,16 @@ describe('Slack onboarding contracts', () => {
         },
       }),
     ).toMatchObject({ rotation: { mode: 'ROTATING' } });
+
+    expect(
+      slackInstallationCredentialSchema.parse({
+        schemaVersion: 1,
+        teamId: 'T001',
+        botUserId: 'W001',
+        accessToken: 'xoxb-grid',
+        rotation: { mode: 'LONG_LIVED' },
+      }),
+    ).toMatchObject({ botUserId: 'W001' });
   });
 
   it('rejects malformed, incomplete, or unexpectedly extended credentials', () => {
