@@ -85,6 +85,7 @@ describe('runMigrations', () => {
         '0011_evidence_linked_review_content.sql',
         '0012_slack_oauth_onboarding.sql',
         '0013_slack_enterprise_user_ids.sql',
+        '0014_slack_secret_arn_constraint.sql',
       ],
       alreadyApplied: 0,
     });
