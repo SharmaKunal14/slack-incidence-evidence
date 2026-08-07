@@ -4,13 +4,12 @@ import type {
   APIGatewayProxyStructuredResultV2,
 } from 'aws-lambda';
 import type { Logger } from 'pino';
-import { z } from 'zod';
+import { cognitoSubjectSchema } from '../application/identity/cognito-subject.js';
 import { SlackOnboardingError } from '../application/onboarding/slack-onboarding-service.js';
 import type { SlackOnboardingStartService } from '../application/onboarding/slack-onboarding-service.js';
 
 export const SLACK_ONBOARDING_BROWSER_COOKIE =
   '__Host-onrecord-slack-onboarding';
-const subjectSchema = z.uuid();
 
 export interface SlackOnboardingStartHandlerDependencies {
   readonly onboarding: Pick<SlackOnboardingStartService, 'start'>;
@@ -29,7 +28,7 @@ export function createSlackOnboardingStartHandler(
       return jsonResponse(404, { error: 'not_found' });
     }
     const claims = event.requestContext.authorizer.jwt.claims;
-    const subject = subjectSchema.safeParse(claims['sub']);
+    const subject = cognitoSubjectSchema.safeParse(claims['sub']);
     if (claims['token_use'] !== 'access' || !subject.success) {
       return jsonResponse(401, { error: 'unauthorized' });
     }

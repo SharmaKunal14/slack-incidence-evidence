@@ -4,12 +4,12 @@ import type {
 } from 'aws-lambda';
 import type { Logger } from 'pino';
 import { z } from 'zod';
+import { cognitoSubjectSchema } from '../application/identity/cognito-subject.js';
 import {
   SlackInstallationDisconnectionError,
   type DisconnectSlackInstallation,
 } from '../application/onboarding/disconnect-slack-installation.js';
 
-const subjectSchema = z.uuid();
 const workspaceIdSchema = z.string().regex(/^T[A-Z0-9]{1,63}$/u);
 const bodySchema = z.object({ confirmation: workspaceIdSchema }).strict();
 const MAX_BODY_BYTES = 1_024;
@@ -88,7 +88,7 @@ function authenticatedSubject(
   if (claims['token_use'] !== 'access') {
     return null;
   }
-  const subject = subjectSchema.safeParse(claims['sub']);
+  const subject = cognitoSubjectSchema.safeParse(claims['sub']);
   return subject.success ? subject.data : null;
 }
 

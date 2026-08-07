@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { cognitoSubjectSchema } from '../identity/cognito-subject.js';
 import type { Clock } from '../ports/clock.js';
 import type { IdGenerator } from '../ports/id-generator.js';
 import {
@@ -32,7 +33,6 @@ const secureTokenSchema = z
   .min(43)
   .max(128)
   .regex(/^[A-Za-z0-9_-]+$/u);
-const cognitoSubjectSchema = z.string().trim().min(1).max(128);
 const callbackValueSchema = z
   .string()
   .min(1)

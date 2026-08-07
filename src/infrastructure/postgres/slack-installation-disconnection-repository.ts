@@ -1,5 +1,6 @@
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
 import { z } from 'zod';
+import { cognitoSubjectSchema } from '../../application/identity/cognito-subject.js';
 import { slackInstallationSecretArnSchema } from '../../application/onboarding/slack-installation.js';
 import {
   SlackInstallationDisconnectionRepositoryError,
@@ -8,7 +9,6 @@ import {
 } from '../../application/ports/slack-installation-disconnection-repository.js';
 
 const workspaceIdSchema = z.string().regex(/^T[A-Z0-9]{1,63}$/u);
-const subjectSchema = z.uuid();
 const auditIdSchema = z.uuid();
 const requestIdSchema = z.string().trim().min(1).max(256);
 const safeErrorCodeSchema = z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/u);
@@ -118,7 +118,7 @@ export class PostgresSlackInstallationDisconnectionRepository implements SlackIn
   }): Promise<{ readonly idempotent: boolean }> {
     const parsed = {
       ...parseClaim(input.claim),
-      cognitoSubject: subjectSchema.parse(input.cognitoSubject),
+      cognitoSubject: cognitoSubjectSchema.parse(input.cognitoSubject),
       auditEventId: auditIdSchema.parse(input.auditEventId),
       requestId: requestIdSchema.parse(input.requestId),
       uninstallOutcome: z
@@ -200,7 +200,7 @@ export class PostgresSlackInstallationDisconnectionRepository implements SlackIn
     readonly occurredAt: Date;
   }): Promise<void> {
     const claim = parseClaim(input.claim);
-    const subject = subjectSchema.parse(input.cognitoSubject);
+    const subject = cognitoSubjectSchema.parse(input.cognitoSubject);
     const auditEventId = auditIdSchema.parse(input.auditEventId);
     const requestId = requestIdSchema.parse(input.requestId);
     const failureCode = safeErrorCodeSchema.parse(input.failureCode);
@@ -369,7 +369,7 @@ function parseCommonInput(input: {
 } {
   return {
     workspaceId: workspaceIdSchema.parse(input.workspaceId),
-    cognitoSubject: subjectSchema.parse(input.cognitoSubject),
+    cognitoSubject: cognitoSubjectSchema.parse(input.cognitoSubject),
     auditEventId: auditIdSchema.parse(input.auditEventId),
     requestId: requestIdSchema.parse(input.requestId),
     occurredAt: validDate(input.occurredAt),

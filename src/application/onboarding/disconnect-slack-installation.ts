@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { cognitoSubjectSchema } from '../identity/cognito-subject.js';
 import type { Clock } from '../ports/clock.js';
 import type { IdGenerator } from '../ports/id-generator.js';
 import {
@@ -19,7 +20,7 @@ import {
 const disconnectInputSchema = z
   .object({
     workspaceId: z.string().regex(/^T[A-Z0-9]{1,63}$/u),
-    cognitoSubject: z.uuid(),
+    cognitoSubject: cognitoSubjectSchema,
     requestId: z.string().trim().min(1).max(256),
   })
   .strict();

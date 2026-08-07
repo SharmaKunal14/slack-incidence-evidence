@@ -5,6 +5,7 @@ import type {
 } from 'aws-lambda';
 import type { Logger } from 'pino';
 import { z } from 'zod';
+import { cognitoSubjectSchema } from '../application/identity/cognito-subject.js';
 import type {
   ApproveReportRevision,
   CreateReportRevision,
@@ -28,7 +29,6 @@ import {
   type ReviewerIdentity,
 } from '../application/review/incident-review.js';
 
-const subjectSchema = z.uuid();
 const incidentIdSchema = z.uuid();
 const cursorSchema = z
   .object({
@@ -117,7 +117,7 @@ export function createIncidentReviewApiHandler(
         }
         case 'PATCH /review/workspaces/{workspaceId}/members/{memberSubject}': {
           const workspaceId = parseWorkspaceId(event);
-          const memberSubject = subjectSchema.parse(
+          const memberSubject = cognitoSubjectSchema.parse(
             event.pathParameters?.['memberSubject'],
           );
           const body = parseJsonBody(event, dependencies.maxBodyBytes);
@@ -302,7 +302,7 @@ function authenticatedReviewer(
   if (claims['token_use'] !== 'access') {
     return null;
   }
-  const subject = subjectSchema.safeParse(claims['sub']);
+  const subject = cognitoSubjectSchema.safeParse(claims['sub']);
   return subject.success ? { subject: subject.data } : null;
 }
 

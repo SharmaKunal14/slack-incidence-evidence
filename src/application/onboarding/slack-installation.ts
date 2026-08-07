@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { cognitoSubjectSchema } from '../identity/cognito-subject.js';
 
 export const SLACK_REQUIRED_BOT_SCOPES = [
   'app_mentions:read',
@@ -12,7 +13,7 @@ export const SLACK_REQUIRED_BOT_SCOPES = [
 export const SLACK_OAUTH_AUTHORIZATION_TTL_SECONDS = 10 * 60;
 
 const sha256Hex = z.string().regex(/^[0-9a-f]{64}$/u);
-const cognitoSubject = z.string().trim().min(1).max(128);
+const cognitoSubject = cognitoSubjectSchema;
 const safeErrorCode = z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/u);
 export const slackInstallationSecretArnSchema = z
   .string()

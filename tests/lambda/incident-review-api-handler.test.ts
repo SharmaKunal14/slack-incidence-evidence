@@ -136,9 +136,10 @@ function parsed(response: APIGatewayProxyResultV2): unknown {
 }
 
 describe('incident review API boundary', () => {
-  it('accepts only Cognito access tokens with UUID subjects', async () => {
+  it('accepts bounded opaque Cognito subjects only from access tokens', async () => {
     const deps = dependencies();
     const handler = createIncidentReviewApiHandler(deps);
+    const nonRfcUuidSubject = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
     const idTokenResponse = await handler(
       eventFor({ routeKey: 'GET /review/incidents', tokenUse: 'id' }),
@@ -146,13 +147,25 @@ describe('incident review API boundary', () => {
     const invalidSubjectResponse = await handler(
       eventFor({
         routeKey: 'GET /review/incidents',
-        subject: 'not-a-cognito-uuid',
+        subject: 's'.repeat(129),
+      }),
+    );
+    const opaqueSubjectResponse = await handler(
+      eventFor({
+        routeKey: 'GET /review/incidents',
+        subject: nonRfcUuidSubject,
       }),
     );
 
     expect(structured(idTokenResponse).statusCode).toBe(401);
     expect(structured(invalidSubjectResponse).statusCode).toBe(401);
-    expect(deps.listReviews.execute).not.toHaveBeenCalled();
+    expect(structured(opaqueSubjectResponse).statusCode).toBe(200);
+    expect(deps.listReviews.execute).toHaveBeenCalledOnce();
+    expect(deps.listReviews.execute).toHaveBeenCalledWith({
+      reviewer: { subject: nonRfcUuidSubject },
+      limit: 20,
+      cursor: null,
+    });
   });
 
   it('uses the JWT subject for server-side review authorization', async () => {

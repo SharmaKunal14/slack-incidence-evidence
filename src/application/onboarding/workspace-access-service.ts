@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { cognitoSubjectSchema } from '../identity/cognito-subject.js';
 import type { Clock } from '../ports/clock.js';
 import type { IdGenerator } from '../ports/id-generator.js';
 import type { SecureTokenGenerator } from '../ports/secure-token-generator.js';
@@ -15,7 +16,6 @@ import {
   type WorkspaceMember,
 } from '../ports/workspace-access-repository.js';
 
-const subjectSchema = z.uuid();
 const tenantIdSchema = z.string().regex(/^T[A-Z0-9]{1,63}$/u);
 const slackUserIdSchema = z.string().regex(/^[UW][A-Z0-9]{1,63}$/u);
 const invitationTokenSchema = z
@@ -89,7 +89,7 @@ export class WorkspaceAccessService {
   ): Promise<readonly WorkspaceMember[]> {
     try {
       return await this.repository.listMembers({
-        actorSubject: subjectSchema.parse(subject),
+        actorSubject: cognitoSubjectSchema.parse(subject),
         tenantId: tenantIdSchema.parse(tenantId),
       });
     } catch (error) {
@@ -114,7 +114,7 @@ export class WorkspaceAccessService {
     try {
       const invitation = await this.repository.createInvitation({
         id: this.idGenerator.generate(),
-        actorSubject: subjectSchema.parse(subject),
+        actorSubject: cognitoSubjectSchema.parse(subject),
         ...parsed,
         tokenSha256: sha256(token),
         createdAt,
@@ -163,7 +163,7 @@ export class WorkspaceAccessService {
     const parsed = z
       .object({
         tenantId: tenantIdSchema,
-        memberSubject: subjectSchema,
+        memberSubject: cognitoSubjectSchema,
         role: z.enum(['ADMIN', 'REVIEWER', 'VIEWER']),
         status: z.enum(['ACTIVE', 'REVOKED']),
       })
@@ -172,7 +172,7 @@ export class WorkspaceAccessService {
     try {
       return await this.repository.updateMember({
         ...parsed,
-        actorSubject: subjectSchema.parse(subject),
+        actorSubject: cognitoSubjectSchema.parse(subject),
         updatedAt: this.clock.now(),
       });
     } catch (error) {
@@ -199,7 +199,7 @@ export class WorkspaceAccessService {
       ({ tenantId } = await this.repository.createIdentityAuthorization({
         id: this.idGenerator.generate(),
         tokenSha256: sha256(token),
-        cognitoSubject: subjectSchema.parse(subject),
+        cognitoSubject: cognitoSubjectSchema.parse(subject),
         stateSha256: sha256(state),
         browserBindingSha256: sha256(browserBinding),
         nonceSha256: sha256(nonce),
