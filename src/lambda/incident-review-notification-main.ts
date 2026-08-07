@@ -3,16 +3,15 @@ import type { Context } from 'aws-lambda';
 import { Pool } from 'pg';
 import { NotifyIncidentReviewReady } from '../application/notify-incident-review-ready.js';
 import { NotifyIncidentProcessingFailed } from '../application/notify-incident-processing-failed.js';
+import { systemClock } from '../application/ports/clock.js';
 import { loadIncidentReviewNotificationLambdaEnvironment } from '../config/environment.js';
-import {
-  parseDatabaseConnectionSecret,
-  parseSlackBotTokenSecret,
-} from '../config/runtime-secrets.js';
+import { parseDatabaseConnectionSecret } from '../config/runtime-secrets.js';
 import { PostgresIncidentRepository } from '../infrastructure/postgres/incident-repository.js';
 import { PostgresIncidentReportRepository } from '../infrastructure/postgres/incident-report-repository.js';
 import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
+import { PostgresSecretsSlackInstallationCredentialResolver } from '../infrastructure/postgres-secrets/slack-installation-credential-resolver.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
-import { SlackWebApiIncidentStatusNotifier } from '../integrations/slack/web-api-incident-status-notifier.js';
+import { ResolvingSlackIncidentStatusNotifier } from '../integrations/slack/resolving-slack-adapters.js';
 import { createLogger } from '../observability/logger.js';
 import {
   createIncidentReviewNotificationHandler,
@@ -65,13 +64,10 @@ async function buildHandler(): Promise<IncidentReviewNotificationHandler> {
   let database: Pool | undefined;
   try {
     const secretReader = new SecretsManagerSecretReader(secrets);
-    const [databaseSecretValue, slackSecretValue] = await Promise.all([
-      secretReader.readString(environment.DATABASE_SECRET_ARN),
-      secretReader.readString(environment.SLACK_BOT_TOKEN_SECRET_ARN),
-    ]);
+    const databaseSecretValue = await secretReader.readString(
+      environment.DATABASE_SECRET_ARN,
+    );
     const connectionSecret = parseDatabaseConnectionSecret(databaseSecretValue);
-    const slackSecret = parseSlackBotTokenSecret(slackSecretValue);
-    secrets.destroy();
     database = new Pool({
       host: environment.DATABASE_HOST,
       port: environment.DATABASE_PORT,
@@ -92,11 +88,12 @@ async function buildHandler(): Promise<IncidentReviewNotificationHandler> {
     await assertDatabaseSchemaCompatible(database);
     const reportDrafts = new PostgresIncidentReportRepository(database);
     const incidents = new PostgresIncidentRepository(database);
-    const statusNotifier = new SlackWebApiIncidentStatusNotifier(
-      {
-        workspaceId: slackSecret.workspaceId,
-        botToken: slackSecret.botToken,
-      },
+    const statusNotifier = new ResolvingSlackIncidentStatusNotifier(
+      new PostgresSecretsSlackInstallationCredentialResolver(
+        database,
+        secretReader,
+        systemClock,
+      ),
       {
         reviewAppBaseUrl: environment.REVIEW_APP_BASE_URL,
       },

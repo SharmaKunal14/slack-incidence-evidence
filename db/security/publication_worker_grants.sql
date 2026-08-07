@@ -24,7 +24,8 @@ GRANT SELECT ON TABLE
   report_revision_question_answers,
   analysis_open_questions,
   incident_report_drafts,
-  incidents
+  incidents,
+  slack_installations
 TO :"publication_role";
 
 GRANT UPDATE (

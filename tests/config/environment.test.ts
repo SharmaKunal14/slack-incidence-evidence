@@ -77,22 +77,23 @@ describe('Lambda environment configuration', () => {
 
   it('loads the ingress boundary without requiring a plaintext secret', () => {
     const environment = loadSlackIngressLambdaEnvironment({
+      DATABASE_SECRET_ARN: 'database-secret-arn',
+      DATABASE_HOST: 'pooler.example.test',
+      DATABASE_NAME: 'postgres',
       INCIDENT_QUEUE_URL: 'https://sqs.example.test/queue.fifo',
       SLACK_SIGNING_SECRET_ARN:
         'arn:aws:secretsmanager:region:account:secret:slack',
-      SLACK_BOT_TOKEN_SECRET_ARN:
-        'arn:aws:secretsmanager:region:account:secret:slack-bot',
     });
 
     expect(environment).toMatchObject({
       AWS_REGION: 'ap-southeast-2',
+      DATABASE_SECRET_ARN: 'database-secret-arn',
       INCIDENT_QUEUE_URL: 'https://sqs.example.test/queue.fifo',
       SLACK_SIGNING_SECRET_ARN:
         'arn:aws:secretsmanager:region:account:secret:slack',
-      SLACK_BOT_TOKEN_SECRET_ARN:
-        'arn:aws:secretsmanager:region:account:secret:slack-bot',
     });
     expect(environment).not.toHaveProperty('SLACK_SIGNING_SECRET');
+    expect(environment).not.toHaveProperty('SLACK_BOT_TOKEN_SECRET_ARN');
   });
 
   it('loads bounded evidence retention configuration', () => {
@@ -100,7 +101,6 @@ describe('Lambda environment configuration', () => {
       DATABASE_SECRET_ARN: 'database-secret-arn',
       DATABASE_HOST: 'pooler.example.test',
       DATABASE_NAME: 'postgres',
-      SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
       EVIDENCE_RETENTION_DAYS: '45',
       SLACK_AUTO_THREAD_MAX_COUNT: '40',
       SLACK_THREAD_MAX_PAGES: '25',
@@ -114,7 +114,6 @@ describe('Lambda environment configuration', () => {
         DATABASE_SECRET_ARN: 'database-secret-arn',
         DATABASE_HOST: 'pooler.example.test',
         DATABASE_NAME: 'postgres',
-        SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
         EVIDENCE_RETENTION_DAYS: '366',
       }),
     ).toThrow();
@@ -123,7 +122,6 @@ describe('Lambda environment configuration', () => {
         DATABASE_SECRET_ARN: 'database-secret-arn',
         DATABASE_HOST: 'pooler.example.test',
         DATABASE_NAME: 'postgres',
-        SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
         SLACK_AUTO_THREAD_MAX_COUNT: '501',
       }),
     ).toThrow();
@@ -132,7 +130,6 @@ describe('Lambda environment configuration', () => {
         DATABASE_SECRET_ARN: 'database-secret-arn',
         DATABASE_HOST: 'pooler.example.test',
         DATABASE_NAME: 'postgres',
-        SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
         SLACK_THREAD_MAX_PAGES: '1001',
       }),
     ).toThrow();
@@ -147,7 +144,6 @@ describe('Lambda environment configuration', () => {
       DATABASE_SSL: 'false',
       DATABASE_POOL_MAX: '3',
       INCIDENT_WORKFLOW_STATE_MACHINE_ARN: 'state-machine-arn',
-      SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
     });
 
     expect(environment).toMatchObject({
@@ -164,7 +160,6 @@ describe('Lambda environment configuration', () => {
       DATABASE_HOST: 'proxy.internal.example',
       DATABASE_NAME: 'incident_copilot',
       INCIDENT_WORKFLOW_STATE_MACHINE_ARN: 'state-machine-arn',
-      SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
     };
 
     expect(loadIncidentWorkerLambdaEnvironment(source).DATABASE_SSL).toBe(true);
@@ -182,7 +177,6 @@ describe('Lambda environment configuration', () => {
       DATABASE_HOST: 'pooler.example.test',
       DATABASE_NAME: 'postgres',
       OPENAI_API_SECRET_ARN: 'openai-secret-arn',
-      SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
       OPENAI_MODEL: 'approved-model-snapshot',
       ANALYSIS_MAX_ARTIFACTS: '75',
       ANALYSIS_MAX_INPUT_CHARACTERS: '90000',
@@ -273,14 +267,12 @@ describe('Lambda environment configuration', () => {
     expect(
       loadIncidentReviewNotificationLambdaEnvironment({
         ...database,
-        SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
         REVIEW_APP_BASE_URL: 'https://review.example.test',
       }).REVIEW_APP_BASE_URL,
     ).toBe('https://review.example.test');
     expect(() =>
       loadIncidentReviewNotificationLambdaEnvironment({
         ...database,
-        SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
         REVIEW_APP_BASE_URL: 'https://user@review.example.test?secret=value',
       }),
     ).toThrow();
@@ -291,7 +283,6 @@ describe('Lambda environment configuration', () => {
       DATABASE_SECRET_ARN: 'database-secret-arn',
       DATABASE_HOST: 'pooler.example.test',
       DATABASE_NAME: 'postgres',
-      SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
       NOTION_API_SECRET_ARN: 'notion-secret-arn',
       NOTION_DATA_SOURCE_ID: '0123456789abcdef0123456789abcdef',
       NOTION_TITLE_PROPERTY: 'Name',
@@ -335,7 +326,6 @@ describe('Lambda environment configuration', () => {
       DATABASE_SECRET_ARN: 'database-secret-arn',
       DATABASE_HOST: 'pooler.example.test',
       DATABASE_NAME: 'postgres',
-      SLACK_BOT_TOKEN_SECRET_ARN: 'slack-bot-secret-arn',
       CONFLUENCE_API_SECRET_ARN: 'confluence-secret-arn',
       CONFLUENCE_BASE_URL: 'https://incident-copilot.atlassian.net',
       CONFLUENCE_CLOUD_ID: '11111111-2222-3333-4444-555555555555',

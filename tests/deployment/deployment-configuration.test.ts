@@ -116,6 +116,21 @@ describe('deployment configuration', () => {
     });
   });
 
+  it('does not require the deprecated deployment-global Slack bot secret', async () => {
+    const root = await projectFixture();
+    const source = validEnvironment();
+    const inputs = JSON.parse(source.TF_INPUTS_JSON ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    delete inputs['slack_bot_token_secret_arn'];
+    source.TF_INPUTS_JSON = JSON.stringify(inputs);
+
+    await expect(
+      prepareDeploymentConfiguration(root, source),
+    ).resolves.toBeDefined();
+  });
+
   it('rejects environment attempts to override pipeline-controlled inputs', async () => {
     const root = await projectFixture();
     const source = validEnvironment();

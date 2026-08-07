@@ -6,16 +6,16 @@ import { CollectSlackSourcePage } from '../application/collect-slack-source-page
 import { systemClock } from '../application/ports/clock.js';
 import { uuidGenerator } from '../application/ports/id-generator.js';
 import { loadSlackEvidenceCollectorLambdaEnvironment } from '../config/environment.js';
-import {
-  parseDatabaseConnectionSecret,
-  parseSlackBotTokenSecret,
-} from '../config/runtime-secrets.js';
+import { parseDatabaseConnectionSecret } from '../config/runtime-secrets.js';
 import { PostgresSlackThreadCollectionRepository } from '../infrastructure/postgres/slack-thread-collection-repository.js';
 import { PostgresIncidentSourceCollectionRepository } from '../infrastructure/postgres/incident-source-collection-repository.js';
 import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
+import { PostgresSecretsSlackInstallationCredentialResolver } from '../infrastructure/postgres-secrets/slack-installation-credential-resolver.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
-import { SlackThreadWebApiSource } from '../integrations/slack/web-api-slack-thread-source.js';
-import { SlackChannelWebApiSource } from '../integrations/slack/web-api-slack-channel-source.js';
+import {
+  ResolvingSlackChannelSource,
+  ResolvingSlackThreadSource,
+} from '../integrations/slack/resolving-slack-adapters.js';
 import { createLogger } from '../observability/logger.js';
 import {
   createSlackEvidenceCollectorHandler,
@@ -70,13 +70,10 @@ async function buildHandler(): Promise<SlackEvidenceCollectorHandler> {
 
   try {
     const secretReader = new SecretsManagerSecretReader(secrets);
-    const [databaseSecretValue, slackBotSecretValue] = await Promise.all([
-      secretReader.readString(environment.DATABASE_SECRET_ARN),
-      secretReader.readString(environment.SLACK_BOT_TOKEN_SECRET_ARN),
-    ]);
+    const databaseSecretValue = await secretReader.readString(
+      environment.DATABASE_SECRET_ARN,
+    );
     const connectionSecret = parseDatabaseConnectionSecret(databaseSecretValue);
-    const slackBotSecret = parseSlackBotTokenSecret(slackBotSecretValue);
-    secrets.destroy();
 
     database = new Pool({
       host: environment.DATABASE_HOST,
@@ -99,10 +96,16 @@ async function buildHandler(): Promise<SlackEvidenceCollectorHandler> {
       logger.error({ err: error }, 'idle PostgreSQL client failed');
     });
     await assertDatabaseSchemaCompatible(database);
+    const credentialResolver =
+      new PostgresSecretsSlackInstallationCredentialResolver(
+        database,
+        secretReader,
+        systemClock,
+      );
 
     const collector = new CollectSlackThreadPage(
       new PostgresSlackThreadCollectionRepository(database),
-      new SlackThreadWebApiSource(slackBotSecret),
+      new ResolvingSlackThreadSource(credentialResolver),
       systemClock,
       uuidGenerator,
       environment.EVIDENCE_RETENTION_DAYS,
@@ -110,7 +113,7 @@ async function buildHandler(): Promise<SlackEvidenceCollectorHandler> {
     );
     const sourceCollector = new CollectSlackSourcePage(
       new PostgresIncidentSourceCollectionRepository(database),
-      new SlackChannelWebApiSource(slackBotSecret),
+      new ResolvingSlackChannelSource(credentialResolver),
       systemClock,
       uuidGenerator,
       environment.SLACK_THREAD_MAX_PAGES,

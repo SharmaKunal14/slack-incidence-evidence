@@ -9,14 +9,14 @@ import {
   parseDatabaseConnectionSecret,
   parseConfluenceApiSecret,
   parseNotionApiSecret,
-  parseSlackBotTokenSecret,
 } from '../config/runtime-secrets.js';
 import { PostgresApprovedReportPublicationRepository } from '../infrastructure/postgres/approved-report-publication-repository.js';
 import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
+import { PostgresSecretsSlackInstallationCredentialResolver } from '../infrastructure/postgres-secrets/slack-installation-credential-resolver.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { ConfluenceApprovedReportPublisher } from '../integrations/confluence/confluence-approved-report-publisher.js';
 import { NotionApprovedReportPublisher } from '../integrations/notion/notion-approved-report-publisher.js';
-import { SlackWebApiIncidentStatusNotifier } from '../integrations/slack/web-api-incident-status-notifier.js';
+import { ResolvingSlackIncidentStatusNotifier } from '../integrations/slack/resolving-slack-adapters.js';
 import { createLogger } from '../observability/logger.js';
 import {
   createApprovedReportPublicationHandler,
@@ -62,13 +62,11 @@ async function buildHandler(): Promise<ApprovedReportPublicationHandler> {
       environment.REPORT_PUBLICATION_PROVIDER === 'NOTION'
         ? environment.NOTION_API_SECRET_ARN
         : environment.CONFLUENCE_API_SECRET_ARN;
-    const [databaseValue, slackValue, publisherValue] = await Promise.all([
+    const [databaseValue, publisherValue] = await Promise.all([
       secretReader.readString(environment.DATABASE_SECRET_ARN),
-      secretReader.readString(environment.SLACK_BOT_TOKEN_SECRET_ARN),
       secretReader.readString(publisherSecretArn),
     ]);
     const databaseSecret = parseDatabaseConnectionSecret(databaseValue);
-    const slackSecret = parseSlackBotTokenSecret(slackValue);
     let publisher: ApprovedReportPublisher;
     if (environment.REPORT_PUBLICATION_PROVIDER === 'NOTION') {
       const notionSecret = parseNotionApiSecret(publisherValue);
@@ -95,8 +93,6 @@ async function buildHandler(): Promise<ApprovedReportPublicationHandler> {
         timeoutMs: environment.CONFLUENCE_TIMEOUT_MS,
       });
     }
-    secrets.destroy();
-
     database = new Pool({
       host: environment.DATABASE_HOST,
       port: environment.DATABASE_PORT,
@@ -122,10 +118,13 @@ async function buildHandler(): Promise<ApprovedReportPublicationHandler> {
     const publications = new PublishApprovedReports(
       new PostgresApprovedReportPublicationRepository(database),
       publisher,
-      new SlackWebApiIncidentStatusNotifier({
-        workspaceId: slackSecret.workspaceId,
-        botToken: slackSecret.botToken,
-      }),
+      new ResolvingSlackIncidentStatusNotifier(
+        new PostgresSecretsSlackInstallationCredentialResolver(
+          database,
+          secretReader,
+          systemClock,
+        ),
+      ),
       systemClock,
     );
     return createApprovedReportPublicationHandler({

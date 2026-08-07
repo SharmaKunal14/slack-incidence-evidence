@@ -6,15 +6,13 @@ import { systemClock } from '../application/ports/clock.js';
 import { uuidGenerator } from '../application/ports/id-generator.js';
 import { ProcessIncidentReview } from '../application/process-incident-review.js';
 import { loadIncidentWorkerLambdaEnvironment } from '../config/environment.js';
-import {
-  parseDatabaseConnectionSecret,
-  parseSlackBotTokenSecret,
-} from '../config/runtime-secrets.js';
+import { parseDatabaseConnectionSecret } from '../config/runtime-secrets.js';
 import { PostgresIncidentRepository } from '../infrastructure/postgres/incident-repository.js';
 import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
+import { PostgresSecretsSlackInstallationCredentialResolver } from '../infrastructure/postgres-secrets/slack-installation-credential-resolver.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { SfnIncidentWorkflowStarter } from '../infrastructure/workflow/sfn-incident-workflow-starter.js';
-import { SlackWebApiIncidentStatusNotifier } from '../integrations/slack/web-api-incident-status-notifier.js';
+import { ResolvingSlackIncidentStatusNotifier } from '../integrations/slack/resolving-slack-adapters.js';
 import { createLogger } from '../observability/logger.js';
 import {
   createIncidentWorkerHandler,
@@ -66,13 +64,10 @@ async function buildHandler(): Promise<IncidentWorkerHandler> {
 
   try {
     const secretReader = new SecretsManagerSecretReader(secrets);
-    const [databaseSecretValue, slackBotSecretValue] = await Promise.all([
-      secretReader.readString(environment.DATABASE_SECRET_ARN),
-      secretReader.readString(environment.SLACK_BOT_TOKEN_SECRET_ARN),
-    ]);
+    const databaseSecretValue = await secretReader.readString(
+      environment.DATABASE_SECRET_ARN,
+    );
     const connectionSecret = parseDatabaseConnectionSecret(databaseSecretValue);
-    const slackBotSecret = parseSlackBotTokenSecret(slackBotSecretValue);
-    secrets.destroy();
     database = new Pool({
       host: environment.DATABASE_HOST,
       port: environment.DATABASE_PORT,
@@ -106,8 +101,12 @@ async function buildHandler(): Promise<IncidentWorkerHandler> {
       stateMachines,
       environment.INCIDENT_WORKFLOW_STATE_MACHINE_ARN,
     );
-    const statusNotifier = new SlackWebApiIncidentStatusNotifier(
-      slackBotSecret,
+    const statusNotifier = new ResolvingSlackIncidentStatusNotifier(
+      new PostgresSecretsSlackInstallationCredentialResolver(
+        database,
+        secretReader,
+        systemClock,
+      ),
     );
 
     return createIncidentWorkerHandler({

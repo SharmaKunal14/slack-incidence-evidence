@@ -49,6 +49,8 @@ describe('database schema compatibility', () => {
     const grantScripts = await Promise.all([
       readFile('db/security/review_api_grants.sql', 'utf8'),
       readFile('db/security/publication_worker_grants.sql', 'utf8'),
+      readFile('db/security/slack_onboarding_grants.sql', 'utf8'),
+      readFile('db/security/slack_runtime_credential_grants.sql', 'utf8'),
     ]);
 
     for (const script of grantScripts) {

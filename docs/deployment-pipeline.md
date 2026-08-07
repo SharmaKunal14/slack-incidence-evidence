@@ -75,7 +75,6 @@ Minimal Confluence example:
 ```json
 {
   "slack_signing_secret_arn": "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/development/slack-signing-AbCdEf",
-  "slack_bot_token_secret_arn": "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/development/slack-bot-AbCdEf",
   "slack_oauth_app_secret_arn": "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/development/slack-oauth-AbCdEf",
   "slack_oauth_client_id": "123456789.123456789",
   "slack_oauth_app_id": "A0123456789",
@@ -224,8 +223,10 @@ still required before enabling unattended staging-to-production promotion.
 ## Environment activation order
 
 1. Bootstrap development state, KMS, OIDC role, and GitHub Environment variables.
-2. Reapply the checked-in review and publication database grant scripts so
-   least-privilege roles can read `public.schema_migrations` during startup.
+2. Reapply the checked-in review, onboarding, Slack runtime, and publication
+   database grant scripts so least-privilege roles have their current table
+   contracts. Production must also configure their dedicated database-secret
+   ARN inputs.
 3. Migrate any existing development Terraform state.
 4. Merge a no-op change and verify the automatic development deployment.
 5. Create isolated staging dependencies and protection rules.

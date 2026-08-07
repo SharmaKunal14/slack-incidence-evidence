@@ -29,6 +29,9 @@ the application's at-least-once and idempotency assumptions.
   a required dedicated least-privilege PostgreSQL credential.
 - Separate Slack onboarding start and callback Lambdas. Only the callback can
   read the Slack OAuth client secret or create installation credentials.
+- Workspace-aware Slack runtime adapters which resolve only the active OAuth
+  installation for the operation's Slack team. Runtime IAM can read only the
+  environment's installation-secret prefix; there is no global-token fallback.
 - An admin-created Cognito reviewer pool using authorization-code + PKCE and
   optional TOTP MFA.
 - A private, encrypted, versioned S3 bucket exposed only through an origin-
@@ -255,6 +258,20 @@ psql "$ADMIN_DATABASE_URL" \
   --set=onboarding_role=incident_slack_onboarding \
   --file=db/security/slack_onboarding_grants.sql
 ```
+
+Slack ingress also resolves installation metadata before opening a modal. In
+production, set `slack_runtime_database_secret_arn` to a dedicated non-owner
+login and apply its read-only grants:
+
+```bash
+psql "$ADMIN_DATABASE_URL" \
+  --set=slack_runtime_role=incident_slack_runtime \
+  --file=db/security/slack_runtime_credential_grants.sql
+```
+
+Development may omit this input and reuse `database_secret_arn`. That fallback
+is rejected in production. The role reads installation metadata only; the bot
+token remains in the referenced Secrets Manager secret.
 
 The publication database secret uses the same JSON shape. Production must use
 a separate non-owner PostgreSQL login and set

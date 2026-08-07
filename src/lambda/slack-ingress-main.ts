@@ -1,9 +1,11 @@
 import type {
   APIGatewayProxyEventV2,
   APIGatewayProxyResultV2,
+  Context,
 } from 'aws-lambda';
 import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { SQSClient } from '@aws-sdk/client-sqs';
+import { Pool } from 'pg';
 import { systemClock } from '../application/ports/clock.js';
 import { uuidGenerator } from '../application/ports/id-generator.js';
 import {
@@ -12,13 +14,14 @@ import {
 } from '../application/request-incident-review.js';
 import { loadSlackIngressLambdaEnvironment } from '../config/environment.js';
 import {
-  parseSlackBotTokenSecret,
+  parseDatabaseConnectionSecret,
   parseSlackSigningSecret,
 } from '../config/runtime-secrets.js';
+import { PostgresSecretsSlackInstallationCredentialResolver } from '../infrastructure/postgres-secrets/slack-installation-credential-resolver.js';
 import { SqsIncidentJobPublisher } from '../infrastructure/queue/sqs-incident-job-publisher.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
+import { ResolvingSlackIncidentScopeModal } from '../integrations/slack/resolving-slack-adapters.js';
 import { SlackSignatureVerifier } from '../integrations/slack/signature-verifier.js';
-import { SlackWebApiIncidentScopeModal } from '../integrations/slack/web-api-incident-scope-modal.js';
 import { createLogger } from '../observability/logger.js';
 import {
   createSlackIngressHandler,
@@ -32,7 +35,9 @@ let handlerPromise: Promise<SlackIngressHandler> | undefined;
 /** AWS Lambda composition root for API Gateway HTTP API ingress. */
 export async function handler(
   event: APIGatewayProxyEventV2,
+  context: Context,
 ): Promise<APIGatewayProxyResultV2> {
+  context.callbackWaitsForEmptyEventLoop = false;
   let runtimeHandler: SlackIngressHandler;
   try {
     runtimeHandler = await getHandler();
@@ -63,16 +68,33 @@ async function buildHandler(): Promise<SlackIngressHandler> {
   };
   const secrets = new SecretsManagerClient(clientConfiguration);
   const sqs = new SQSClient(clientConfiguration);
+  let database: Pool | undefined;
 
   try {
     const secretReader = new SecretsManagerSecretReader(secrets);
-    const [signingSecretValue, botTokenValue] = await Promise.all([
+    const [signingSecretValue, databaseSecretValue] = await Promise.all([
       secretReader.readString(environment.SLACK_SIGNING_SECRET_ARN),
-      secretReader.readString(environment.SLACK_BOT_TOKEN_SECRET_ARN),
+      secretReader.readString(environment.DATABASE_SECRET_ARN),
     ]);
     const signingSecret = parseSlackSigningSecret(signingSecretValue);
-    const botToken = parseSlackBotTokenSecret(botTokenValue);
-    secrets.destroy();
+    const databaseSecret = parseDatabaseConnectionSecret(databaseSecretValue);
+    database = new Pool({
+      host: environment.DATABASE_HOST,
+      port: environment.DATABASE_PORT,
+      database: environment.DATABASE_NAME,
+      user: databaseSecret.username,
+      password: databaseSecret.password,
+      ssl: environment.DATABASE_SSL
+        ? { ca: databaseSecret.caCertificate, rejectUnauthorized: true }
+        : false,
+      application_name: 'incident-evidence-copilot-slack-ingress',
+      connectionTimeoutMillis: 2_000,
+      idleTimeoutMillis: 30_000,
+      max: environment.DATABASE_POOL_MAX,
+    });
+    database.on('error', (error) => {
+      logger.error({ err: error }, 'idle PostgreSQL client failed');
+    });
     const publisher = new SqsIncidentJobPublisher(
       sqs,
       environment.INCIDENT_QUEUE_URL,
@@ -95,10 +117,19 @@ async function buildHandler(): Promise<SlackIngressHandler> {
         systemClock,
         uuidGenerator,
       ),
-      incidentScopeModal: new SlackWebApiIncidentScopeModal(botToken),
+      incidentScopeModal: new ResolvingSlackIncidentScopeModal(
+        new PostgresSecretsSlackInstallationCredentialResolver(
+          database,
+          secretReader,
+          systemClock,
+        ),
+      ),
       evidenceRetentionDays: environment.EVIDENCE_RETENTION_DAYS,
     });
   } catch (error) {
+    if (database !== undefined) {
+      await database.end();
+    }
     secrets.destroy();
     sqs.destroy();
     throw error;

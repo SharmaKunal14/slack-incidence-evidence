@@ -53,12 +53,6 @@ const databaseMigrationEnvironmentSchema = commonEnvironmentSchema.extend({
     .transform((value) => value === 'true'),
 });
 
-const slackIngressLambdaEnvironmentSchema = queueEnvironmentSchema.extend({
-  SLACK_SIGNING_SECRET_ARN: z.string().trim().min(1),
-  SLACK_BOT_TOKEN_SECRET_ARN: z.string().trim().min(1),
-  EVIDENCE_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
-});
-
 const lambdaPostgresBaseEnvironmentSchema = commonEnvironmentSchema.extend({
   DATABASE_SECRET_ARN: z.string().trim().min(1),
   DATABASE_HOST: z.string().trim().min(1),
@@ -71,18 +65,25 @@ const lambdaPostgresBaseEnvironmentSchema = commonEnvironmentSchema.extend({
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(10).default(2),
 });
 
-const lambdaPostgresEnvironmentSchema =
+const slackIngressLambdaEnvironmentSchema =
   lambdaPostgresBaseEnvironmentSchema.extend({
-    SLACK_BOT_TOKEN_SECRET_ARN: z.string().trim().min(1),
+    INCIDENT_QUEUE_URL: z.url(),
+    SLACK_SIGNING_SECRET_ARN: z.string().trim().min(1),
+    EVIDENCE_RETENTION_DAYS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(365)
+      .default(30),
   });
 
 const incidentWorkerLambdaEnvironmentSchema =
-  lambdaPostgresEnvironmentSchema.extend({
+  lambdaPostgresBaseEnvironmentSchema.extend({
     INCIDENT_WORKFLOW_STATE_MACHINE_ARN: z.string().trim().min(1),
   });
 
 const incidentReviewNotificationLambdaEnvironmentSchema =
-  lambdaPostgresEnvironmentSchema.extend({
+  lambdaPostgresBaseEnvironmentSchema.extend({
     REVIEW_APP_BASE_URL: z.url().superRefine((value, context) => {
       const url = new URL(value);
       if (
@@ -154,7 +155,7 @@ const slackOnboardingCallbackLambdaEnvironmentSchema =
     });
 
 const approvedReportPublicationBaseEnvironmentSchema =
-  lambdaPostgresEnvironmentSchema.extend({
+  lambdaPostgresBaseEnvironmentSchema.extend({
     PUBLICATION_BATCH_SIZE: z.coerce.number().int().min(1).max(10).default(1),
     PUBLICATION_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(8),
     PUBLICATION_LEASE_SECONDS: z.coerce
@@ -252,7 +253,7 @@ const approvedReportPublicationLambdaEnvironmentSchema = z.discriminatedUnion(
 );
 
 const slackEvidenceCollectorLambdaEnvironmentSchema =
-  lambdaPostgresEnvironmentSchema.extend({
+  lambdaPostgresBaseEnvironmentSchema.extend({
     EVIDENCE_RETENTION_DAYS: z.coerce
       .number()
       .int()
@@ -277,7 +278,6 @@ const incidentAnalysisLambdaEnvironmentSchema =
   lambdaPostgresBaseEnvironmentSchema
     .extend({
       OPENAI_API_SECRET_ARN: z.string().trim().min(1),
-      SLACK_BOT_TOKEN_SECRET_ARN: z.string().trim().min(1),
       OPENAI_MODEL: z
         .string()
         .trim()

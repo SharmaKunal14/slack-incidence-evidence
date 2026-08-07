@@ -148,12 +148,17 @@ variable "slack_signing_secret_arn" {
 }
 
 variable "slack_bot_token_secret_arn" {
-  description = "ARN of an existing Secrets Manager secret containing JSON {\"workspaceId\":\"T...\",\"botToken\":\"...\"}. Terraform never reads the value."
+  description = "Deprecated Stage 3 compatibility input. Runtime Lambdas resolve workspace-scoped credentials created by OAuth and do not read this secret."
   type        = string
+  default     = null
+  nullable    = true
 
   validation {
-    condition     = can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.slack_bot_token_secret_arn))
-    error_message = "slack_bot_token_secret_arn must be a Secrets Manager secret ARN."
+    condition = (
+      var.slack_bot_token_secret_arn == null ||
+      can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.slack_bot_token_secret_arn))
+    )
+    error_message = "slack_bot_token_secret_arn must be null or a Secrets Manager secret ARN."
   }
 }
 
@@ -194,6 +199,21 @@ variable "onboarding_database_secret_arn" {
       can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.onboarding_database_secret_arn))
     )
     error_message = "onboarding_database_secret_arn must be null or a Secrets Manager secret ARN."
+  }
+}
+
+variable "slack_runtime_database_secret_arn" {
+  description = "Optional development override and required production ARN for a dedicated read-only Slack installation resolver PostgreSQL user. Terraform never reads its value."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = (
+      var.slack_runtime_database_secret_arn == null ||
+      can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:", var.slack_runtime_database_secret_arn))
+    )
+    error_message = "slack_runtime_database_secret_arn must be null or a Secrets Manager secret ARN."
   }
 }
 

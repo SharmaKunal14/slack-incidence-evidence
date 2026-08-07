@@ -5,6 +5,7 @@ locals {
   publication_database_secret      = coalesce(var.publication_database_secret_arn, var.database_secret_arn)
   publication_provider_secret      = var.publication_provider == "NOTION" ? var.notion_api_secret_arn : var.confluence_api_secret_arn
   onboarding_database_secret       = coalesce(var.onboarding_database_secret_arn, var.database_secret_arn)
+  slack_runtime_database_secret    = coalesce(var.slack_runtime_database_secret_arn, var.database_secret_arn)
   slack_installation_secret_prefix = "${var.project_name}/${var.environment}/slack/installations"
 }
 
@@ -657,9 +658,44 @@ data "aws_iam_policy_document" "ingress" {
   }
 
   statement {
-    sid       = "ReadSlackBotTokenForModals"
+    sid       = "ReadSlackRuntimeDatabaseCredentials"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [var.slack_bot_token_secret_arn]
+    resources = [local.slack_runtime_database_secret]
+  }
+
+  statement {
+    sid       = "ReadWorkspaceSlackCredentials"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [local.slack_installation_secret_arn_pattern]
+  }
+
+  dynamic "statement" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      # Lambda ENI management APIs do not support useful resource-level
+      # permissions. This is present only when ingress needs database VPC access.
+      sid = "ManageIngressVpcNetworkInterfaces"
+      actions = [
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:CreateNetworkInterface",
+        "ec2:DeleteNetworkInterface",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeSubnets",
+        "ec2:UnassignPrivateIpAddresses",
+      ]
+      resources = ["*"]
+    }
+  }
+
+  statement {
+    sid       = "DecryptWorkspaceSlackCredentials"
+    actions   = ["kms:Decrypt"]
+    resources = [var.slack_installation_kms_key_arn]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+    }
   }
 
   dynamic "statement" {
@@ -732,9 +768,20 @@ data "aws_iam_policy_document" "worker" {
   }
 
   statement {
-    sid       = "ReadSlackBotToken"
+    sid       = "ReadWorkspaceSlackCredentials"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [var.slack_bot_token_secret_arn]
+    resources = [local.slack_installation_secret_arn_pattern]
+  }
+
+  statement {
+    sid       = "DecryptWorkspaceSlackCredentials"
+    actions   = ["kms:Decrypt"]
+    resources = [var.slack_installation_kms_key_arn]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+    }
   }
 
   statement {
@@ -802,9 +849,20 @@ data "aws_iam_policy_document" "slack_evidence_collector" {
   }
 
   statement {
-    sid       = "ReadSlackBotToken"
+    sid       = "ReadWorkspaceSlackCredentials"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [var.slack_bot_token_secret_arn]
+    resources = [local.slack_installation_secret_arn_pattern]
+  }
+
+  statement {
+    sid       = "DecryptWorkspaceSlackCredentials"
+    actions   = ["kms:Decrypt"]
+    resources = [var.slack_installation_kms_key_arn]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+    }
   }
 
   dynamic "statement" {
@@ -879,9 +937,20 @@ data "aws_iam_policy_document" "incident_analysis" {
   }
 
   statement {
-    sid       = "ReadSlackBotToken"
+    sid       = "ReadWorkspaceSlackCredentials"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [var.slack_bot_token_secret_arn]
+    resources = [local.slack_installation_secret_arn_pattern]
+  }
+
+  statement {
+    sid       = "DecryptWorkspaceSlackCredentials"
+    actions   = ["kms:Decrypt"]
+    resources = [var.slack_installation_kms_key_arn]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+    }
   }
 
   dynamic "statement" {
@@ -1014,9 +1083,20 @@ data "aws_iam_policy_document" "incident_review_notification" {
   }
 
   statement {
-    sid       = "ReadSlackBotToken"
+    sid       = "ReadWorkspaceSlackCredentials"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [var.slack_bot_token_secret_arn]
+    resources = [local.slack_installation_secret_arn_pattern]
+  }
+
+  statement {
+    sid       = "DecryptWorkspaceSlackCredentials"
+    actions   = ["kms:Decrypt"]
+    resources = [var.slack_installation_kms_key_arn]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+    }
   }
 
   dynamic "statement" {
@@ -1078,9 +1158,20 @@ data "aws_iam_policy_document" "approved_report_publication" {
   }
 
   statement {
-    sid       = "ReadSlackBotToken"
+    sid       = "ReadWorkspaceSlackCredentials"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [var.slack_bot_token_secret_arn]
+    resources = [local.slack_installation_secret_arn_pattern]
+  }
+
+  statement {
+    sid       = "DecryptWorkspaceSlackCredentials"
+    actions   = ["kms:Decrypt"]
+    resources = [var.slack_installation_kms_key_arn]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+    }
   }
 
   dynamic "statement" {
@@ -1136,17 +1227,45 @@ resource "aws_lambda_function" "ingress" {
   environment {
     variables = {
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
+      DATABASE_HOST                       = var.database_host
+      DATABASE_NAME                       = var.database_name
+      DATABASE_POOL_MAX                   = tostring(var.database_pool_max)
+      DATABASE_PORT                       = tostring(var.database_port)
+      DATABASE_SECRET_ARN                 = local.slack_runtime_database_secret
+      DATABASE_SSL                        = "true"
       INCIDENT_QUEUE_URL                  = aws_sqs_queue.incident_jobs.id
       EVIDENCE_RETENTION_DAYS             = tostring(var.evidence_retention_days)
       LOG_LEVEL                           = var.log_level
       NODE_ENV                            = local.node_env
-      SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
       SLACK_SIGNING_SECRET_ARN            = var.slack_signing_secret_arn
     }
   }
 
   tracing_config {
     mode = "PassThrough"
+  }
+
+  dynamic "vpc_config" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      subnet_ids         = var.worker_subnet_ids
+      security_group_ids = var.worker_security_group_ids
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition = (
+        length(var.worker_subnet_ids) == 0 && length(var.worker_security_group_ids) == 0
+        ) || (
+        length(var.worker_subnet_ids) > 0 && length(var.worker_security_group_ids) > 0
+      )
+      error_message = "worker_subnet_ids and worker_security_group_ids must either both be empty or both be populated."
+    }
+    precondition {
+      condition     = var.environment != "production" || var.slack_runtime_database_secret_arn != null
+      error_message = "production requires slack_runtime_database_secret_arn for a dedicated read-only Slack credential resolver database user."
+    }
   }
 
   depends_on = [
@@ -1182,7 +1301,6 @@ resource "aws_lambda_function" "worker" {
       INCIDENT_WORKFLOW_STATE_MACHINE_ARN = aws_sfn_state_machine.incident_workflow.arn
       LOG_LEVEL                           = var.log_level
       NODE_ENV                            = local.node_env
-      SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
     }
   }
 
@@ -1243,7 +1361,6 @@ resource "aws_lambda_function" "slack_evidence_collector" {
       EVIDENCE_RETENTION_DAYS             = tostring(var.evidence_retention_days)
       LOG_LEVEL                           = var.log_level
       NODE_ENV                            = local.node_env
-      SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
       SLACK_AUTO_THREAD_MAX_COUNT         = tostring(var.slack_auto_thread_max_count)
       SLACK_THREAD_MAX_PAGES              = tostring(var.slack_thread_max_pages)
     }
@@ -1316,7 +1433,6 @@ resource "aws_lambda_function" "incident_analysis" {
       PII_DETECTION_TIMEOUT_MS            = tostring(var.pii_detection_timeout_milliseconds)
       PII_LANGUAGE_CODE                   = var.pii_language_code
       PII_MIN_CONFIDENCE                  = tostring(var.pii_min_confidence)
-      SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
     }
   }
 
@@ -1462,7 +1578,6 @@ resource "aws_lambda_function" "incident_review_notification" {
       LOG_LEVEL                           = var.log_level
       NODE_ENV                            = local.node_env
       REVIEW_APP_BASE_URL                 = "https://${aws_cloudfront_distribution.review.domain_name}"
-      SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
     }
   }
 
@@ -1526,7 +1641,6 @@ resource "aws_lambda_function" "approved_report_publication" {
       PUBLICATION_MAX_ATTEMPTS            = tostring(var.publication_max_attempts)
       REPORT_PUBLICATION_PROVIDER         = var.publication_provider
       PUBLICATION_RETRY_BASE_SECONDS      = tostring(var.publication_retry_base_seconds)
-      SLACK_BOT_TOKEN_SECRET_ARN          = var.slack_bot_token_secret_arn
       }, var.publication_provider == "NOTION" ? {
       NOTION_API_SECRET_ARN       = var.notion_api_secret_arn == null ? "" : var.notion_api_secret_arn
       NOTION_DATA_SOURCE_ID       = var.notion_data_source_id == null ? "" : var.notion_data_source_id

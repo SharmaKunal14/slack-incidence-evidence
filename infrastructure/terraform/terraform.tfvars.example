@@ -11,7 +11,8 @@ lambda_artifact_path = "../../artifacts/incident-copilot-lambda.zip"
 
 # Only ARNs enter Terraform. Do not put secret values in this file.
 slack_signing_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-AbCdEf"
-slack_bot_token_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-bot-IjKlMn"
+# Deprecated: Stage 4 resolves workspace-scoped bot credentials created by OAuth.
+# slack_bot_token_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-bot-IjKlMn"
 slack_oauth_app_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-oauth-OaUtH1"
 slack_oauth_client_id      = "123456789.123456789"
 slack_oauth_app_id         = "A0123456789"
@@ -22,6 +23,7 @@ database_secret_arn      = "arn:aws:secretsmanager:ap-southeast-2:123456789012:s
 # database secret while bootstrapping.
 # review_database_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/review-database-StUvWx"
 # onboarding_database_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/onboarding-database-OnBoAr"
+# slack_runtime_database_secret_arn = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/slack-runtime-database-RuNtIm"
 openai_api_secret_arn    = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:incident-copilot/dev/openai-MnOpQr"
 
 # Development publishes to Confluence. Only the selected provider's secret is

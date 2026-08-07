@@ -41,7 +41,6 @@ const deploymentEnvironmentSchema = z.object({
 
 const requiredTerraformInputs = [
   'slack_signing_secret_arn',
-  'slack_bot_token_secret_arn',
   'slack_oauth_app_secret_arn',
   'slack_oauth_client_id',
   'slack_oauth_app_id',
@@ -181,6 +180,7 @@ export async function prepareDeploymentConfiguration(
     'database_secret_arn',
     'review_database_secret_arn',
     'onboarding_database_secret_arn',
+    'slack_runtime_database_secret_arn',
     'openai_api_secret_arn',
     'notion_api_secret_arn',
     'confluence_api_secret_arn',
