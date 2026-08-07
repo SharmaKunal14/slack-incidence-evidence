@@ -124,6 +124,86 @@ describe('Slack onboarding console', () => {
     ).toBeNull();
   });
 
+  it('shows connection progress only on the workspace action that was selected', async () => {
+    const apiClient = vi.fn().mockResolvedValue({
+      canStartInstallation: true,
+      workspaces: [
+        {
+          workspaceId: 'T001',
+          displayName: 'Connected workspace',
+          role: 'ADMIN',
+          connectionStatus: 'CONNECTED',
+          canManage: true,
+          installedAt: '2026-08-05T01:00:00.000Z',
+          updatedAt: '2026-08-05T01:05:00.000Z',
+          credentialExpiresAt: null,
+        },
+        {
+          workspaceId: 'T002',
+          displayName: 'Disconnected workspace',
+          role: 'ADMIN',
+          connectionStatus: 'DISCONNECTED',
+          canManage: true,
+          installedAt: '2026-08-05T01:00:00.000Z',
+          updatedAt: '2026-08-05T01:05:00.000Z',
+          credentialExpiresAt: null,
+        },
+      ],
+    });
+    const request = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal('fetch', request);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(SlackConnectionPage, {
+          apiClient,
+          configuration,
+          token: 'access-token',
+        }),
+      ),
+    );
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Reconnect Slack' }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole('button', { name: 'Opening Slack…' })
+          .hasAttribute('disabled'),
+      ).toBe(true),
+    );
+    expect(
+      screen
+        .getByRole('button', { name: 'Add workspace' })
+        .hasAttribute('disabled'),
+    ).toBe(false);
+    expect(request).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add workspace' }));
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole('button', { name: 'Opening Slack…' })
+          .hasAttribute('disabled'),
+      ).toBe(true),
+    );
+    expect(
+      screen
+        .getByRole('button', { name: 'Reconnect Slack' })
+        .hasAttribute('disabled'),
+    ).toBe(false);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it('requires confirmation and sends only the workspace identifier', async () => {
     const statusResponse = {
       canStartInstallation: true,

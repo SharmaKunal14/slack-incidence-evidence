@@ -86,6 +86,9 @@ type InboxFilter = 'ALL' | 'NEEDS_REVIEW' | 'APPROVED';
 type EvidenceTab = 'questions' | 'claims' | 'timeline' | 'evidence';
 type ReviewDecision = 'KEEP' | 'EDIT' | 'EXCLUDE';
 type Experience = 'production' | 'demo';
+type SlackConnectionTarget =
+  | { readonly kind: 'ADD_WORKSPACE' }
+  | { readonly kind: 'RECONNECT_WORKSPACE'; readonly workspaceId: string };
 
 export type ReviewApiClient = (
   configuration: Configuration,
@@ -208,6 +211,8 @@ export function SlackConnectionPage({
   readonly token: string;
 }): ReactNode {
   const queryClient = useQueryClient();
+  const [connectionTarget, setConnectionTarget] =
+    useState<SlackConnectionTarget | null>(null);
   const [disconnectWorkspace, setDisconnectWorkspace] = useState<{
     readonly workspaceId: string;
     readonly displayName: string;
@@ -227,6 +232,7 @@ export function SlackConnectionPage({
   const connect = useMutation({
     mutationFn: () => requestSlackAuthorization(configuration, token),
     onSuccess: (authorizationUrl) => location.assign(authorizationUrl),
+    onSettled: () => setConnectionTarget(null),
   });
   const disconnect = useMutation({
     mutationFn: async (workspaceId: string) =>
@@ -245,6 +251,20 @@ export function SlackConnectionPage({
     onSettled: async () =>
       queryClient.invalidateQueries({ queryKey: ['slack-onboarding-status'] }),
   });
+
+  const startConnection = (target: SlackConnectionTarget): void => {
+    setConnectionTarget(target);
+    if (!connect.isPending) {
+      connect.mutate();
+    }
+  };
+
+  const addingWorkspace =
+    connect.isPending && connectionTarget?.kind === 'ADD_WORKSPACE';
+  const reconnectingWorkspaceId =
+    connect.isPending && connectionTarget?.kind === 'RECONNECT_WORKSPACE'
+      ? connectionTarget.workspaceId
+      : null;
 
   useEffect(() => {
     if (disconnectWorkspace === null || disconnect.isPending) {
@@ -354,23 +374,23 @@ export function SlackConnectionPage({
                   </div>
                   <button
                     className="button button-primary"
-                    disabled={connect.isPending}
-                    onClick={() => connect.mutate()}
+                    disabled={addingWorkspace}
+                    onClick={() => startConnection({ kind: 'ADD_WORKSPACE' })}
                   >
-                    {connect.isPending ? (
+                    {addingWorkspace ? (
                       <LoaderCircle className="spin" size={18} />
                     ) : (
                       <Plus size={18} />
                     )}
-                    {connect.isPending ? 'Opening Slack…' : 'Add workspace'}
+                    {addingWorkspace ? 'Opening Slack…' : 'Add workspace'}
                   </button>
                 </div>
               )}
             {status.data.workspaces.length === 0 ? (
               <DisconnectedSlackCard
                 canConnect={status.data.canStartInstallation}
-                connecting={connect.isPending}
-                onConnect={() => connect.mutate()}
+                connecting={addingWorkspace}
+                onConnect={() => startConnection({ kind: 'ADD_WORKSPACE' })}
               />
             ) : (
               status.data.workspaces.map((workspace) => (
@@ -423,15 +443,22 @@ export function SlackConnectionPage({
                       workspace.canManage && (
                         <button
                           className="button button-primary"
-                          disabled={connect.isPending}
-                          onClick={() => connect.mutate()}
+                          disabled={
+                            reconnectingWorkspaceId === workspace.workspaceId
+                          }
+                          onClick={() =>
+                            startConnection({
+                              kind: 'RECONNECT_WORKSPACE',
+                              workspaceId: workspace.workspaceId,
+                            })
+                          }
                         >
-                          {connect.isPending ? (
+                          {reconnectingWorkspaceId === workspace.workspaceId ? (
                             <LoaderCircle className="spin" size={18} />
                           ) : (
                             <RotateCcw size={18} />
                           )}
-                          {connect.isPending
+                          {reconnectingWorkspaceId === workspace.workspaceId
                             ? 'Opening Slack…'
                             : 'Reconnect Slack'}
                         </button>
@@ -440,7 +467,10 @@ export function SlackConnectionPage({
                       workspace.canManage && (
                         <button
                           className="button button-danger-secondary"
-                          disabled={disconnect.isPending}
+                          disabled={
+                            disconnect.isPending &&
+                            disconnect.variables === workspace.workspaceId
+                          }
                           onClick={() => {
                             disconnect.reset();
                             setDisconnectWorkspace({
@@ -457,7 +487,10 @@ export function SlackConnectionPage({
                       workspace.canManage && (
                         <button
                           className="button button-danger-secondary"
-                          disabled={disconnect.isPending}
+                          disabled={
+                            disconnect.isPending &&
+                            disconnect.variables === workspace.workspaceId
+                          }
                           onClick={() => {
                             disconnect.reset();
                             setDisconnectWorkspace({
