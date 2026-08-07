@@ -111,8 +111,8 @@ export class PostgresSlackInstallationDisconnectionRepository implements SlackIn
     readonly cognitoSubject: string;
     readonly auditEventId: string;
     readonly requestId: string;
-    readonly slackRevocationOutcome:
-      'REVOKED' | 'ALREADY_REVOKED' | 'CREDENTIAL_UNAVAILABLE';
+    readonly slackUninstallOutcome:
+      'UNINSTALLED' | 'ALREADY_UNINSTALLED' | 'CREDENTIAL_UNAVAILABLE';
     readonly secretDeletionScheduled: boolean;
     readonly occurredAt: Date;
   }): Promise<{ readonly idempotent: boolean }> {
@@ -121,9 +121,9 @@ export class PostgresSlackInstallationDisconnectionRepository implements SlackIn
       cognitoSubject: subjectSchema.parse(input.cognitoSubject),
       auditEventId: auditIdSchema.parse(input.auditEventId),
       requestId: requestIdSchema.parse(input.requestId),
-      revocationOutcome: z
-        .enum(['REVOKED', 'ALREADY_REVOKED', 'CREDENTIAL_UNAVAILABLE'])
-        .parse(input.slackRevocationOutcome),
+      uninstallOutcome: z
+        .enum(['UNINSTALLED', 'ALREADY_UNINSTALLED', 'CREDENTIAL_UNAVAILABLE'])
+        .parse(input.slackUninstallOutcome),
       secretDeletionScheduled: z.boolean().parse(input.secretDeletionScheduled),
       occurredAt: validDate(input.occurredAt),
     };
@@ -175,7 +175,7 @@ export class PostgresSlackInstallationDisconnectionRepository implements SlackIn
         requestId: parsed.requestId,
         metadata: {
           workspaceId: parsed.workspaceId,
-          slackRevocationOutcome: parsed.revocationOutcome,
+          slackUninstallOutcome: parsed.uninstallOutcome,
           secretDeletionScheduled: parsed.secretDeletionScheduled,
         },
         occurredAt: parsed.occurredAt,

@@ -174,7 +174,7 @@ describe('Slack onboarding console', () => {
     });
     expect(dialog).toBeTruthy();
     expect(
-      screen.getByText(/Historical incidents and reports will not be deleted/u),
+      screen.getByText(/Slack will remove the OnRecord app/u),
     ).toBeTruthy();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('alertdialog')).toBeNull();

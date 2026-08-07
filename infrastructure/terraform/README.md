@@ -29,10 +29,13 @@ the application's at-least-once and idempotency assumptions.
   a required dedicated least-privilege PostgreSQL credential.
 - An authenticated integrations screen which shows membership-scoped Slack
   connection status and starts browser-bound OAuth without exposing credentials.
-- Separate Slack onboarding start, callback, and disconnect Lambdas. Only the
-  callback can read the Slack OAuth client secret or create installation
-  credentials. The disconnect Lambda can read and schedule recoverable deletion
-  only for installation credentials under the environment-scoped prefix.
+- Separate Slack onboarding start, callback, and disconnect Lambdas. The
+  callback and disconnect functions can read the Slack OAuth client secret; the
+  callback uses it to exchange an authorization code, while the disconnect
+  function uses it to uninstall exactly the selected app installation. Only the
+  callback can create installation credentials. The disconnect Lambda can read
+  and schedule recoverable deletion only for installation credentials under the
+  environment-scoped prefix.
 - Workspace-aware Slack runtime adapters which resolve only the active OAuth
   installation for the operation's Slack team. Runtime IAM can read only the
   environment's installation-secret prefix; there is no global-token fallback.

@@ -1,13 +1,13 @@
 import { z } from 'zod';
 import {
-  SlackTokenRevocationError,
-  type SlackTokenRevocationOutcome,
-  type SlackTokenRevoker,
-} from '../../application/ports/slack-token-revoker.js';
+  SlackAppUninstallError,
+  type SlackAppUninstallOutcome,
+  type SlackAppUninstaller,
+} from '../../application/ports/slack-app-uninstaller.js';
 
-const AUTH_REVOKE_URL = 'https://slack.com/api/auth.revoke';
+const APPS_UNINSTALL_URL = 'https://slack.com/api/apps.uninstall';
 const MAX_RESPONSE_BYTES = 64 * 1024;
-const accessTokenSchema = z
+const providerValueSchema = z
   .string()
   .min(1)
   .max(4_096)
@@ -22,67 +22,76 @@ const responseSchema = z.union([
     .passthrough(),
 ]);
 
-/** Bounded adapter for Slack's token revocation endpoint. */
-export class WebApiSlackTokenRevoker implements SlackTokenRevoker {
+/** Bounded adapter for removing one complete Slack app installation. */
+export class WebApiSlackAppUninstaller implements SlackAppUninstaller {
+  private readonly clientId: string;
+  private readonly clientSecret: string;
   private readonly request: typeof fetch;
   private readonly timeoutMs: number;
 
   public constructor(
+    configuration: {
+      readonly clientId: string;
+      readonly clientSecret: string;
+    },
     options: {
       readonly request?: typeof fetch;
       readonly timeoutMs?: number;
     } = {},
   ) {
+    this.clientId = providerValueSchema.max(256).parse(configuration.clientId);
+    this.clientSecret = providerValueSchema
+      .max(256)
+      .parse(configuration.clientSecret);
     this.request = options.request ?? globalThis.fetch;
     this.timeoutMs = options.timeoutMs ?? 5_000;
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 1) {
-      throw new Error('Slack revocation timeout must be a positive integer');
+      throw new Error('Slack app uninstall timeout must be a positive integer');
     }
   }
 
-  public async revoke(
+  public async uninstall(
     rawAccessToken: string,
-  ): Promise<SlackTokenRevocationOutcome> {
-    const accessToken = accessTokenSchema.parse(rawAccessToken);
+  ): Promise<SlackAppUninstallOutcome> {
+    const accessToken = providerValueSchema.parse(rawAccessToken);
     let response: Response;
     try {
-      response = await this.request(AUTH_REVOKE_URL, {
+      response = await this.request(APPS_UNINSTALL_URL, {
         method: 'POST',
         headers: {
           accept: 'application/json',
           authorization: `Bearer ${accessToken}`,
           'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
         },
-        body: new URLSearchParams(),
+        body: new URLSearchParams({
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+        }),
         redirect: 'error',
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch {
-      throw new SlackTokenRevocationError(true);
+      throw new SlackAppUninstallError(true);
     }
     if (response.status === 429) {
       await response.body?.cancel();
-      throw new SlackTokenRevocationError(true);
+      throw new SlackAppUninstallError(true);
     }
     if (!response.ok) {
       await response.body?.cancel();
-      throw new SlackTokenRevocationError(response.status >= 500);
+      throw new SlackAppUninstallError(response.status >= 500);
     }
     const parsed = responseSchema.safeParse(await readBoundedJson(response));
     if (!parsed.success) {
-      throw new SlackTokenRevocationError(false);
+      throw new SlackAppUninstallError(false);
     }
     if (parsed.data.ok) {
-      return 'REVOKED';
+      return 'UNINSTALLED';
     }
-    if (
-      ['account_inactive', 'invalid_auth', 'token_revoked'].includes(
-        parsed.data.error,
-      )
-    ) {
-      return 'ALREADY_REVOKED';
+    if (['account_inactive', 'token_revoked'].includes(parsed.data.error)) {
+      return 'ALREADY_UNINSTALLED';
     }
-    throw new SlackTokenRevocationError(
+    throw new SlackAppUninstallError(
       [
         'fatal_error',
         'internal_error',
@@ -101,10 +110,10 @@ async function readBoundedJson(response: Response): Promise<unknown> {
     Number(declaredLength) > MAX_RESPONSE_BYTES
   ) {
     await response.body?.cancel();
-    throw new SlackTokenRevocationError(false);
+    throw new SlackAppUninstallError(false);
   }
   if (response.body === null) {
-    throw new SlackTokenRevocationError(false);
+    throw new SlackAppUninstallError(false);
   }
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -118,7 +127,7 @@ async function readBoundedJson(response: Response): Promise<unknown> {
       bytesRead += chunk.value.byteLength;
       if (bytesRead > MAX_RESPONSE_BYTES) {
         await reader.cancel();
-        throw new SlackTokenRevocationError(false);
+        throw new SlackAppUninstallError(false);
       }
       chunks.push(chunk.value);
     }
@@ -130,6 +139,6 @@ async function readBoundedJson(response: Response): Promise<unknown> {
       Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf8'),
     ) as unknown;
   } catch {
-    throw new SlackTokenRevocationError(false);
+    throw new SlackAppUninstallError(false);
   }
 }

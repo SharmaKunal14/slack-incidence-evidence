@@ -312,9 +312,9 @@ export function SlackConnectionPage({
           <div className="connection-notice" role="status">
             <CheckCircle2 size={19} />
             <span>
-              <strong>Slack disconnected</strong> OnRecord can no longer use
-              that workspace credential. Historical incident records were
-              preserved.
+              <strong>OnRecord removed from Slack</strong> The workspace
+              installation and its credentials were removed. Historical incident
+              records were preserved.
             </span>
           </div>
         )}
@@ -508,9 +508,9 @@ export function SlackConnectionPage({
                   : 'Disconnect this workspace?'}
               </h2>
               <p id="disconnect-dialog-description">
-                OnRecord will stop collecting Slack evidence and sending Slack
-                notifications for{' '}
-                <strong>{disconnectWorkspace.displayName}</strong>. Historical
+                Slack will remove the OnRecord app from{' '}
+                <strong>{disconnectWorkspace.displayName}</strong>. Evidence
+                collection and Slack notifications will stop. Historical
                 incidents and reports will not be deleted.
               </p>
               <p className="confirmation-workspace-id">

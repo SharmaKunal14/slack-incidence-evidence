@@ -11,10 +11,10 @@ import {
   type SlackInstallationDisconnectionRepository,
 } from '../ports/slack-installation-disconnection-repository.js';
 import {
-  SlackTokenRevocationError,
-  type SlackTokenRevocationOutcome,
-  type SlackTokenRevoker,
-} from '../ports/slack-token-revoker.js';
+  SlackAppUninstallError,
+  type SlackAppUninstaller,
+  type SlackAppUninstallOutcome,
+} from '../ports/slack-app-uninstaller.js';
 
 const disconnectInputSchema = z
   .object({
@@ -30,7 +30,7 @@ export type SlackInstallationDisconnectionErrorCode =
   | 'SLACK_INSTALLATION_DISCONNECT_PERSISTENCE_FAILED'
   | 'SLACK_INSTALLATION_CREDENTIAL_INVALID'
   | 'SLACK_INSTALLATION_CREDENTIAL_ACCESS_FAILED'
-  | 'SLACK_TOKEN_REVOCATION_FAILED'
+  | 'SLACK_APP_UNINSTALL_FAILED'
   | 'SLACK_CREDENTIAL_DELETION_FAILED';
 
 export class SlackInstallationDisconnectionError extends Error {
@@ -54,7 +54,7 @@ export class DisconnectSlackInstallation {
   public constructor(
     private readonly repository: SlackInstallationDisconnectionRepository,
     private readonly credentials: SlackInstallationCredentialLifecycle,
-    private readonly tokenRevoker: SlackTokenRevoker,
+    private readonly appUninstaller: SlackAppUninstaller,
     private readonly clock: Clock,
     private readonly idGenerator: IdGenerator,
   ) {}
@@ -87,13 +87,13 @@ export class DisconnectSlackInstallation {
     }
 
     try {
-      const cleanup = await this.revokeAndScheduleCredentialDeletion(claim);
+      const cleanup = await this.uninstallAndScheduleCredentialDeletion(claim);
       const completed = await this.repository.complete({
         claim,
         cognitoSubject: input.cognitoSubject,
         auditEventId: z.uuid().parse(this.idGenerator.generate()),
         requestId: input.requestId,
-        slackRevocationOutcome: cleanup.revocationOutcome,
+        slackUninstallOutcome: cleanup.uninstallOutcome,
         secretDeletionScheduled: cleanup.secretDeletionScheduled,
         occurredAt: validDate(this.clock.now()),
       });
@@ -124,16 +124,16 @@ export class DisconnectSlackInstallation {
     }
   }
 
-  private async revokeAndScheduleCredentialDeletion(
+  private async uninstallAndScheduleCredentialDeletion(
     claim: SlackInstallationDisconnectClaim,
   ): Promise<{
-    readonly revocationOutcome:
-      SlackTokenRevocationOutcome | 'CREDENTIAL_UNAVAILABLE';
+    readonly uninstallOutcome:
+      SlackAppUninstallOutcome | 'CREDENTIAL_UNAVAILABLE';
     readonly secretDeletionScheduled: boolean;
   }> {
     if (claim.credentialSecretArn === null) {
       return {
-        revocationOutcome: 'CREDENTIAL_UNAVAILABLE',
+        uninstallOutcome: 'CREDENTIAL_UNAVAILABLE',
         secretDeletionScheduled: false,
       };
     }
@@ -150,7 +150,7 @@ export class DisconnectSlackInstallation {
     }
     if (credential === null) {
       return {
-        revocationOutcome: 'CREDENTIAL_UNAVAILABLE',
+        uninstallOutcome: 'CREDENTIAL_UNAVAILABLE',
         secretDeletionScheduled: false,
       };
     }
@@ -160,7 +160,7 @@ export class DisconnectSlackInstallation {
         false,
       );
     }
-    const revocationOutcome = await this.tokenRevoker.revoke(
+    const uninstallOutcome = await this.appUninstaller.uninstall(
       credential.accessToken,
     );
     try {
@@ -173,7 +173,7 @@ export class DisconnectSlackInstallation {
           : true,
       );
     }
-    return { revocationOutcome, secretDeletionScheduled: true };
+    return { uninstallOutcome, secretDeletionScheduled: true };
   }
 }
 
@@ -200,9 +200,9 @@ function normalizeExternalError(
   if (error instanceof SlackInstallationDisconnectionError) {
     return error;
   }
-  if (error instanceof SlackTokenRevocationError) {
+  if (error instanceof SlackAppUninstallError) {
     return new SlackInstallationDisconnectionError(
-      'SLACK_TOKEN_REVOCATION_FAILED',
+      'SLACK_APP_UNINSTALL_FAILED',
       error.retryable,
     );
   }

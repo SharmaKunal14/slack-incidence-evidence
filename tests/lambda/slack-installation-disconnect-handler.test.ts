@@ -81,7 +81,7 @@ describe('Slack installation disconnect HTTP handler', () => {
       .fn()
       .mockRejectedValue(
         new SlackInstallationDisconnectionError(
-          'SLACK_TOKEN_REVOCATION_FAILED',
+          'SLACK_APP_UNINSTALL_FAILED',
           true,
         ),
       );

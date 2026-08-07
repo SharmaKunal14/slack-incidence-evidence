@@ -9,12 +9,15 @@ import { DisconnectSlackInstallation } from '../application/onboarding/disconnec
 import { systemClock } from '../application/ports/clock.js';
 import { uuidGenerator } from '../application/ports/id-generator.js';
 import { loadSlackInstallationDisconnectLambdaEnvironment } from '../config/environment.js';
-import { parseDatabaseConnectionSecret } from '../config/runtime-secrets.js';
+import {
+  parseDatabaseConnectionSecret,
+  parseSlackOAuthAppSecret,
+} from '../config/runtime-secrets.js';
 import { PostgresSlackInstallationDisconnectionRepository } from '../infrastructure/postgres/slack-installation-disconnection-repository.js';
 import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { SecretsManagerSlackInstallationCredentialLifecycle } from '../infrastructure/secrets/secrets-manager-slack-installation-credential-lifecycle.js';
-import { WebApiSlackTokenRevoker } from '../integrations/slack/web-api-slack-token-revoker.js';
+import { WebApiSlackAppUninstaller } from '../integrations/slack/web-api-slack-app-uninstaller.js';
 import { createLogger } from '../observability/logger.js';
 import {
   createSlackInstallationDisconnectHandler,
@@ -50,11 +53,13 @@ async function buildHandler(): Promise<SlackInstallationDisconnectHandler> {
   const secrets = new SecretsManagerClient({ region: environment.AWS_REGION });
   let database: Pool | undefined;
   try {
-    const connection = parseDatabaseConnectionSecret(
-      await new SecretsManagerSecretReader(secrets).readString(
-        environment.DATABASE_SECRET_ARN,
-      ),
-    );
+    const reader = new SecretsManagerSecretReader(secrets);
+    const [databaseSecret, oauthSecret] = await Promise.all([
+      reader.readString(environment.DATABASE_SECRET_ARN),
+      reader.readString(environment.SLACK_OAUTH_APP_SECRET_ARN),
+    ]);
+    const connection = parseDatabaseConnectionSecret(databaseSecret);
+    const oauth = parseSlackOAuthAppSecret(oauthSecret);
     database = createDatabasePool(connection);
     await assertDatabaseSchemaCompatible(database);
     const disconnect = new DisconnectSlackInstallation(
@@ -62,9 +67,13 @@ async function buildHandler(): Promise<SlackInstallationDisconnectHandler> {
       new SecretsManagerSlackInstallationCredentialLifecycle(secrets, {
         recoveryWindowDays: environment.SLACK_CREDENTIAL_RECOVERY_WINDOW_DAYS,
       }),
-      new WebApiSlackTokenRevoker({
-        timeoutMs: environment.SLACK_TOKEN_REVOCATION_TIMEOUT_MS,
-      }),
+      new WebApiSlackAppUninstaller(
+        {
+          clientId: environment.SLACK_OAUTH_CLIENT_ID,
+          clientSecret: oauth.clientSecret,
+        },
+        { timeoutMs: environment.SLACK_APP_UNINSTALL_TIMEOUT_MS },
+      ),
       systemClock,
       uuidGenerator,
     );

@@ -27,8 +27,8 @@ export interface SlackInstallationDisconnectionRepository {
     readonly cognitoSubject: string;
     readonly auditEventId: string;
     readonly requestId: string;
-    readonly slackRevocationOutcome:
-      'REVOKED' | 'ALREADY_REVOKED' | 'CREDENTIAL_UNAVAILABLE';
+    readonly slackUninstallOutcome:
+      'UNINSTALLED' | 'ALREADY_UNINSTALLED' | 'CREDENTIAL_UNAVAILABLE';
     readonly secretDeletionScheduled: boolean;
     readonly occurredAt: Date;
   }): Promise<{ readonly idempotent: boolean }>;

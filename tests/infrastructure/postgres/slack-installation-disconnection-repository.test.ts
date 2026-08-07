@@ -122,7 +122,7 @@ describe('PostgresSlackInstallationDisconnectionRepository', () => {
         cognitoSubject: common.cognitoSubject,
         auditEventId: common.auditEventId,
         requestId: common.requestId,
-        slackRevocationOutcome: 'REVOKED',
+        slackUninstallOutcome: 'UNINSTALLED',
         secretDeletionScheduled: true,
         occurredAt: common.occurredAt,
       }),

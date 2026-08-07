@@ -175,9 +175,9 @@ data "aws_iam_policy_document" "slack_installation_disconnect" {
   }
 
   statement {
-    sid       = "ReadOnboardingDatabaseCredentials"
+    sid       = "ReadDisconnectRuntimeSecrets"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [local.onboarding_database_secret]
+    resources = [local.onboarding_database_secret, var.slack_oauth_app_secret_arn]
   }
 
   statement {
@@ -355,7 +355,7 @@ resource "aws_lambda_function" "slack_onboarding_callback" {
 
 resource "aws_lambda_function" "slack_installation_disconnect" {
   function_name = "${local.name_prefix}-slack-installation-disconnect"
-  description   = "Revokes one admin-authorized Slack installation and retires its credential."
+  description   = "Uninstalls one admin-authorized Slack app installation and retires its credential."
   role          = aws_iam_role.slack_installation_disconnect.arn
   runtime       = "nodejs22.x"
   architectures = [var.lambda_architecture]
@@ -379,8 +379,10 @@ resource "aws_lambda_function" "slack_installation_disconnect" {
       DATABASE_SSL                          = "true"
       LOG_LEVEL                             = var.log_level
       NODE_ENV                              = local.node_env
+      SLACK_APP_UNINSTALL_TIMEOUT_MS        = "5000"
       SLACK_CREDENTIAL_RECOVERY_WINDOW_DAYS = "7"
-      SLACK_TOKEN_REVOCATION_TIMEOUT_MS     = "5000"
+      SLACK_OAUTH_APP_SECRET_ARN            = var.slack_oauth_app_secret_arn
+      SLACK_OAUTH_CLIENT_ID                 = var.slack_oauth_client_id
     }
   }
 

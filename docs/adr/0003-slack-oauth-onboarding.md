@@ -120,12 +120,14 @@ errors.
 
 ### Installation lifecycle
 
-Installation status has five values:
+Installation status has six values:
 
 - `PENDING`: an explicit installation or reinstall is being completed;
 - `ACTIVE`: runtime Slack operations may resolve the credential;
 - `RECONNECT_REQUIRED`: the credential is expired, invalid, or cannot be safely
   refreshed; runtime Slack operations fail closed;
+- `DISCONNECTING`: runtime authority is disabled while Slack uninstall and
+  credential cleanup are being completed;
 - `REVOKED`: Slack or an OnRecord administrator removed the installation; and
 - `FAILED`: setup did not create a usable installation.
 
@@ -133,9 +135,10 @@ Legal state transitions are:
 
 ```text
 PENDING -> ACTIVE | FAILED
-ACTIVE -> RECONNECT_REQUIRED | REVOKED
-RECONNECT_REQUIRED -> ACTIVE | REVOKED
-FAILED -> PENDING | REVOKED
+ACTIVE -> RECONNECT_REQUIRED | DISCONNECTING | REVOKED
+RECONNECT_REQUIRED -> ACTIVE | DISCONNECTING | REVOKED
+DISCONNECTING -> REVOKED
+FAILED -> PENDING | DISCONNECTING | REVOKED
 REVOKED -> PENDING
 ```
 
@@ -168,8 +171,11 @@ authority.
 **OnRecord disconnect:** require a tenant `ADMIN` and explicit confirmation.
 Atomically move the installation to `DISCONNECTING` before any external call;
 runtime credential resolution accepts only `ACTIVE`, so authority fails closed
-immediately. Revoke the Slack token, schedule seven-day recoverable secret
-deletion, then finalize `REVOKED`. A partial external failure remains
+immediately. Uninstall the Slack app, schedule seven-day recoverable secret
+deletion, then finalize `REVOKED`. The disconnect implementation uses Slack's
+`apps.uninstall` operation rather than revoking only one token, so every token
+associated with that app installation is revoked and the app is removed from
+the workspace. The OAuth client secret remains backend-only. A partial external failure remains
 `DISCONNECTING` with a safe error code and can resume idempotently. Historical
 tenant, membership, incident, report, and audit records remain intact.
 

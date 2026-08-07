@@ -156,7 +156,14 @@ const slackOnboardingCallbackLambdaEnvironmentSchema =
 
 const slackInstallationDisconnectLambdaEnvironmentSchema =
   lambdaPostgresBaseEnvironmentSchema.extend({
-    SLACK_TOKEN_REVOCATION_TIMEOUT_MS: z.coerce
+    SLACK_OAUTH_APP_SECRET_ARN: z.string().trim().min(1).max(2_048),
+    SLACK_OAUTH_CLIENT_ID: z
+      .string()
+      .trim()
+      .min(1)
+      .max(256)
+      .regex(/^[0-9.]+$/u),
+    SLACK_APP_UNINSTALL_TIMEOUT_MS: z.coerce
       .number()
       .int()
       .min(1_000)

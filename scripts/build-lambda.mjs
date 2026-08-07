@@ -129,7 +129,7 @@ await executeFile(
       SLACK_INSTALLATION_SECRET_PREFIX:
         'incident-copilot/test/slack/installations',
       SLACK_CREDENTIAL_RECOVERY_WINDOW_DAYS: '7',
-      SLACK_TOKEN_REVOCATION_TIMEOUT_MS: '5000',
+      SLACK_APP_UNINSTALL_TIMEOUT_MS: '5000',
       ONBOARDING_SUCCESS_REDIRECT_URL:
         'https://app.example.test/?slack=connected',
       ONBOARDING_FAILURE_REDIRECT_URL: 'https://app.example.test/?slack=failed',

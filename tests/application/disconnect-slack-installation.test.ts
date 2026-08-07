@@ -3,8 +3,8 @@ import {
   DisconnectSlackInstallation,
   type SlackInstallationDisconnectionError,
 } from '../../src/application/onboarding/disconnect-slack-installation.js';
+import { SlackAppUninstallError } from '../../src/application/ports/slack-app-uninstaller.js';
 import { SlackInstallationDisconnectionRepositoryError } from '../../src/application/ports/slack-installation-disconnection-repository.js';
-import { SlackTokenRevocationError } from '../../src/application/ports/slack-token-revoker.js';
 
 const now = new Date('2026-08-07T01:00:00.000Z');
 const secretArn =
@@ -21,7 +21,7 @@ function dependencies(
   overrides: {
     readonly begin?: ReturnType<typeof vi.fn>;
     readonly load?: ReturnType<typeof vi.fn>;
-    readonly revoke?: ReturnType<typeof vi.fn>;
+    readonly uninstall?: ReturnType<typeof vi.fn>;
     readonly scheduleDeletion?: ReturnType<typeof vi.fn>;
   } = {},
 ): {
@@ -30,7 +30,7 @@ function dependencies(
   readonly complete: ReturnType<typeof vi.fn>;
   readonly recordFailure: ReturnType<typeof vi.fn>;
   readonly load: ReturnType<typeof vi.fn>;
-  readonly revoke: ReturnType<typeof vi.fn>;
+  readonly uninstall: ReturnType<typeof vi.fn>;
   readonly scheduleDeletion: ReturnType<typeof vi.fn>;
 } {
   const begin = overrides.begin ?? vi.fn().mockResolvedValue(claim);
@@ -45,7 +45,8 @@ function dependencies(
       accessToken: 'xoxb-secret',
       rotation: { mode: 'LONG_LIVED' },
     });
-  const revoke = overrides.revoke ?? vi.fn().mockResolvedValue('REVOKED');
+  const uninstall =
+    overrides.uninstall ?? vi.fn().mockResolvedValue('UNINSTALLED');
   const scheduleDeletion =
     overrides.scheduleDeletion ?? vi.fn().mockResolvedValue(undefined);
   const ids = [
@@ -57,7 +58,7 @@ function dependencies(
     service: new DisconnectSlackInstallation(
       { begin, complete, recordFailure },
       { load, scheduleDeletion },
-      { revoke },
+      { uninstall },
       { now: () => now },
       { generate: () => ids.shift() ?? ids[0]! },
     ),
@@ -65,7 +66,7 @@ function dependencies(
     complete,
     recordFailure,
     load,
-    revoke,
+    uninstall,
     scheduleDeletion,
   };
 }
@@ -77,7 +78,7 @@ const input = {
 };
 
 describe('DisconnectSlackInstallation', () => {
-  it('revokes Slack, schedules recoverable deletion, and finalizes the database', async () => {
+  it('uninstalls Slack, schedules recoverable deletion, and finalizes the database', async () => {
     const deps = dependencies();
 
     await expect(deps.service.execute(input)).resolves.toEqual({
@@ -86,11 +87,11 @@ describe('DisconnectSlackInstallation', () => {
       idempotent: false,
     });
 
-    expect(deps.revoke).toHaveBeenCalledWith('xoxb-secret');
+    expect(deps.uninstall).toHaveBeenCalledWith('xoxb-secret');
     expect(deps.scheduleDeletion).toHaveBeenCalledWith(secretArn);
     expect(deps.complete).toHaveBeenCalledWith(
       expect.objectContaining({
-        slackRevocationOutcome: 'REVOKED',
+        slackUninstallOutcome: 'UNINSTALLED',
         secretDeletionScheduled: true,
       }),
     );
@@ -115,16 +116,16 @@ describe('DisconnectSlackInstallation', () => {
 
   it('records a retryable provider failure while leaving cleanup resumable', async () => {
     const deps = dependencies({
-      revoke: vi.fn().mockRejectedValue(new SlackTokenRevocationError(true)),
+      uninstall: vi.fn().mockRejectedValue(new SlackAppUninstallError(true)),
     });
 
     await expect(deps.service.execute(input)).rejects.toMatchObject({
-      code: 'SLACK_TOKEN_REVOCATION_FAILED',
+      code: 'SLACK_APP_UNINSTALL_FAILED',
       retryable: true,
     });
     expect(deps.recordFailure).toHaveBeenCalledWith(
       expect.objectContaining({
-        failureCode: 'SLACK_TOKEN_REVOCATION_FAILED',
+        failureCode: 'SLACK_APP_UNINSTALL_FAILED',
         retryable: true,
       }),
     );
@@ -137,16 +138,16 @@ describe('DisconnectSlackInstallation', () => {
     await expect(deps.service.execute(input)).resolves.toMatchObject({
       status: 'DISCONNECTED',
     });
-    expect(deps.revoke).not.toHaveBeenCalled();
+    expect(deps.uninstall).not.toHaveBeenCalled();
     expect(deps.complete).toHaveBeenCalledWith(
       expect.objectContaining({
-        slackRevocationOutcome: 'CREDENTIAL_UNAVAILABLE',
+        slackUninstallOutcome: 'CREDENTIAL_UNAVAILABLE',
         secretDeletionScheduled: false,
       }),
     );
   });
 
-  it('never revokes a credential belonging to another workspace', async () => {
+  it('never uninstalls with a credential belonging to another workspace', async () => {
     const deps = dependencies({
       load: vi.fn().mockResolvedValue({
         schemaVersion: 1,
@@ -161,7 +162,7 @@ describe('DisconnectSlackInstallation', () => {
       code: 'SLACK_INSTALLATION_CREDENTIAL_INVALID',
       retryable: false,
     });
-    expect(deps.revoke).not.toHaveBeenCalled();
+    expect(deps.uninstall).not.toHaveBeenCalled();
     expect(deps.scheduleDeletion).not.toHaveBeenCalled();
   });
 
