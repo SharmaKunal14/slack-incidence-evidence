@@ -102,6 +102,7 @@ describe('Slack onboarding contracts', () => {
       'PENDING',
       'ACTIVE',
       'RECONNECT_REQUIRED',
+      'DISCONNECTING',
       'REVOKED',
       'FAILED',
     ]);
@@ -110,6 +111,15 @@ describe('Slack onboarding contracts', () => {
     );
     expect(
       isSlackInstallationTransitionAllowed('ACTIVE', 'RECONNECT_REQUIRED'),
+    ).toBe(true);
+    expect(
+      isSlackInstallationTransitionAllowed('ACTIVE', 'DISCONNECTING'),
+    ).toBe(true);
+    expect(
+      isSlackInstallationTransitionAllowed('DISCONNECTING', 'REVOKED'),
+    ).toBe(true);
+    expect(
+      isSlackInstallationTransitionAllowed('FAILED', 'DISCONNECTING'),
     ).toBe(true);
     expect(isSlackInstallationTransitionAllowed('REVOKED', 'PENDING')).toBe(
       true,
@@ -207,6 +217,7 @@ describe('Slack onboarding contracts', () => {
         'arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:onrecord/slack/T001-AbCd12',
       credentialExpiresAt: new Date('2026-08-05T13:00:00.000Z'),
       grantedScopes: [...SLACK_REQUIRED_BOT_SCOPES],
+      authorizationCreatedAt: new Date('2026-08-05T01:00:00.000Z'),
       completedAt: new Date('2026-08-05T01:01:00.000Z'),
     };
     expect(

@@ -29,6 +29,9 @@ describe('CloudFront browser API routing', () => {
     expect(onboarding).toContain(
       'slack_oauth_redirect_uri = "${local.review_application_url}/onboarding/slack/callback"',
     );
+    expect(onboarding).toContain(
+      'route_key          = "POST /onboarding/slack/{workspaceId}/disconnect"',
+    );
     expect(outputs).toContain(
       'value       = "${local.review_application_url}/onboarding/slack/start"',
     );

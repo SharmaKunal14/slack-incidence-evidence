@@ -227,6 +227,7 @@ export const slackOnboardingStatusSchema = z
               'CONNECTING',
               'CONNECTED',
               'RECONNECT_REQUIRED',
+              'DISCONNECTING',
               'DISCONNECTED',
               'FAILED',
             ]),
@@ -238,6 +239,14 @@ export const slackOnboardingStatusSchema = z
           .strict(),
       )
       .max(50),
+  })
+  .strict();
+
+export const slackDisconnectionResponseSchema = z
+  .object({
+    workspaceId: z.string().regex(/^T[A-Z0-9]{1,63}$/),
+    status: z.literal('DISCONNECTED'),
+    idempotent: z.boolean(),
   })
   .strict();
 

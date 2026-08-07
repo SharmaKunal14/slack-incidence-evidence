@@ -55,6 +55,7 @@ import {
   inboxSchema,
   revisionDetailResponseSchema,
   revisionResponseSchema,
+  slackDisconnectionResponseSchema,
   slackOnboardingStatusSchema,
   type Bundle,
   type Classification,
@@ -206,6 +207,12 @@ export function SlackConnectionPage({
   readonly configuration: Configuration;
   readonly token: string;
 }): ReactNode {
+  const queryClient = useQueryClient();
+  const [disconnectWorkspace, setDisconnectWorkspace] = useState<{
+    readonly workspaceId: string;
+    readonly displayName: string;
+    readonly retrying: boolean;
+  } | null>(null);
   const status = useQuery({
     queryKey: ['slack-onboarding-status'],
     queryFn: async () =>
@@ -221,6 +228,36 @@ export function SlackConnectionPage({
     mutationFn: () => requestSlackAuthorization(configuration, token),
     onSuccess: (authorizationUrl) => location.assign(authorizationUrl),
   });
+  const disconnect = useMutation({
+    mutationFn: async (workspaceId: string) =>
+      slackDisconnectionResponseSchema.parse(
+        await apiClient(
+          configuration,
+          token,
+          `/onboarding/slack/${encodeURIComponent(workspaceId)}/disconnect`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ confirmation: workspaceId }),
+          },
+        ),
+      ),
+    onSuccess: () => setDisconnectWorkspace(null),
+    onSettled: async () =>
+      queryClient.invalidateQueries({ queryKey: ['slack-onboarding-status'] }),
+  });
+
+  useEffect(() => {
+    if (disconnectWorkspace === null || disconnect.isPending) {
+      return;
+    }
+    const dismissOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setDisconnectWorkspace(null);
+      }
+    };
+    document.addEventListener('keydown', dismissOnEscape);
+    return () => document.removeEventListener('keydown', dismissOnEscape);
+  }, [disconnect.isPending, disconnectWorkspace]);
 
   return (
     <AppFrame configuration={configuration}>
@@ -267,6 +304,17 @@ export function SlackConnectionPage({
               {callbackResult === 'connected'
                 ? ' The workspace is ready for incident collection.'
                 : ' Review the status below and try again, or contact an administrator.'}
+            </span>
+          </div>
+        )}
+
+        {disconnect.isSuccess && (
+          <div className="connection-notice" role="status">
+            <CheckCircle2 size={19} />
+            <span>
+              <strong>Slack disconnected</strong> OnRecord can no longer use
+              that workspace credential. Historical incident records were
+              preserved.
             </span>
           </div>
         )}
@@ -371,6 +419,7 @@ export function SlackConnectionPage({
                           ).toLocaleDateString()}`}
                     </p>
                     {workspace.connectionStatus !== 'CONNECTED' &&
+                      workspace.connectionStatus !== 'DISCONNECTING' &&
                       workspace.canManage && (
                         <button
                           className="button button-primary"
@@ -385,6 +434,40 @@ export function SlackConnectionPage({
                           {connect.isPending
                             ? 'Opening Slack…'
                             : 'Reconnect Slack'}
+                        </button>
+                      )}
+                    {workspace.connectionStatus === 'CONNECTED' &&
+                      workspace.canManage && (
+                        <button
+                          className="button button-danger-secondary"
+                          disabled={disconnect.isPending}
+                          onClick={() => {
+                            disconnect.reset();
+                            setDisconnectWorkspace({
+                              workspaceId: workspace.workspaceId,
+                              displayName: workspace.displayName,
+                              retrying: false,
+                            });
+                          }}
+                        >
+                          <Unplug size={18} /> Disconnect workspace
+                        </button>
+                      )}
+                    {workspace.connectionStatus === 'DISCONNECTING' &&
+                      workspace.canManage && (
+                        <button
+                          className="button button-danger-secondary"
+                          disabled={disconnect.isPending}
+                          onClick={() => {
+                            disconnect.reset();
+                            setDisconnectWorkspace({
+                              workspaceId: workspace.workspaceId,
+                              displayName: workspace.displayName,
+                              retrying: true,
+                            });
+                          }}
+                        >
+                          <RotateCcw size={18} /> Retry disconnect
                         </button>
                       )}
                     {!workspace.canManage &&
@@ -405,6 +488,72 @@ export function SlackConnectionPage({
           </section>
         )}
       </main>
+      {disconnectWorkspace !== null && (
+        <div className="confirmation-scrim">
+          <section
+            className="confirmation-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="disconnect-dialog-title"
+            aria-describedby="disconnect-dialog-description"
+          >
+            <span className="confirmation-dialog-icon" aria-hidden="true">
+              <TriangleAlert size={24} />
+            </span>
+            <div>
+              <p className="eyebrow">Workspace access</p>
+              <h2 id="disconnect-dialog-title">
+                {disconnectWorkspace.retrying
+                  ? 'Finish disconnecting Slack?'
+                  : 'Disconnect this workspace?'}
+              </h2>
+              <p id="disconnect-dialog-description">
+                OnRecord will stop collecting Slack evidence and sending Slack
+                notifications for{' '}
+                <strong>{disconnectWorkspace.displayName}</strong>. Historical
+                incidents and reports will not be deleted.
+              </p>
+              <p className="confirmation-workspace-id">
+                Workspace ID {disconnectWorkspace.workspaceId}
+              </p>
+              {disconnect.isError && (
+                <p className="form-notice" data-error="true" role="alert">
+                  <AlertCircle size={16} />{' '}
+                  {disconnectFacingError(disconnect.error)}
+                </p>
+              )}
+              <div className="confirmation-dialog-actions">
+                <button
+                  className="button button-secondary"
+                  autoFocus
+                  disabled={disconnect.isPending}
+                  onClick={() => setDisconnectWorkspace(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="button button-danger"
+                  disabled={disconnect.isPending}
+                  onClick={() =>
+                    disconnect.mutate(disconnectWorkspace.workspaceId)
+                  }
+                >
+                  {disconnect.isPending ? (
+                    <LoaderCircle className="spin" size={18} />
+                  ) : (
+                    <Unplug size={18} />
+                  )}
+                  {disconnect.isPending
+                    ? 'Disconnecting…'
+                    : disconnectWorkspace.retrying
+                      ? 'Retry disconnect'
+                      : 'Disconnect workspace'}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
     </AppFrame>
   );
 }
@@ -462,6 +611,7 @@ function ConnectionStatusPill({
     | 'CONNECTING'
     | 'CONNECTED'
     | 'RECONNECT_REQUIRED'
+    | 'DISCONNECTING'
     | 'DISCONNECTED'
     | 'FAILED';
 }): ReactNode {
@@ -470,6 +620,7 @@ function ConnectionStatusPill({
     CONNECTING: 'Connecting',
     CONNECTED: 'Connected',
     RECONNECT_REQUIRED: 'Reconnect required',
+    DISCONNECTING: 'Disconnecting',
     DISCONNECTED: 'Disconnected',
     FAILED: 'Setup failed',
   };
@@ -478,6 +629,21 @@ function ConnectionStatusPill({
       {label[status]}
     </span>
   );
+}
+
+function disconnectFacingError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 403) {
+      return 'Only an active workspace administrator can disconnect Slack.';
+    }
+    if (error.status === 409) {
+      return 'The workspace connection changed during this request. Refresh and try again.';
+    }
+    if (error.status === 503) {
+      return 'Slack or credential cleanup is temporarily unavailable. Retry this disconnect.';
+    }
+  }
+  return userFacingError(error);
 }
 
 export function DemoReviewApplication({

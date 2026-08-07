@@ -154,6 +154,22 @@ const slackOnboardingCallbackLambdaEnvironmentSchema =
       ONBOARDING_FAILURE_REDIRECT_URL: z.url(),
     });
 
+const slackInstallationDisconnectLambdaEnvironmentSchema =
+  lambdaPostgresBaseEnvironmentSchema.extend({
+    SLACK_TOKEN_REVOCATION_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(15_000)
+      .default(5_000),
+    SLACK_CREDENTIAL_RECOVERY_WINDOW_DAYS: z.coerce
+      .number()
+      .int()
+      .min(7)
+      .max(30)
+      .default(7),
+  });
+
 const approvedReportPublicationBaseEnvironmentSchema =
   lambdaPostgresBaseEnvironmentSchema.extend({
     PUBLICATION_BATCH_SIZE: z.coerce.number().int().min(1).max(10).default(1),
@@ -459,6 +475,9 @@ export type SlackOnboardingStartLambdaEnvironment = z.infer<
 export type SlackOnboardingCallbackLambdaEnvironment = z.infer<
   typeof slackOnboardingCallbackLambdaEnvironmentSchema
 >;
+export type SlackInstallationDisconnectLambdaEnvironment = z.infer<
+  typeof slackInstallationDisconnectLambdaEnvironmentSchema
+>;
 export type ApprovedReportPublicationLambdaEnvironment = z.infer<
   typeof approvedReportPublicationLambdaEnvironmentSchema
 >;
@@ -533,6 +552,12 @@ export function loadSlackOnboardingCallbackLambdaEnvironment(
   source: NodeJS.ProcessEnv = process.env,
 ): SlackOnboardingCallbackLambdaEnvironment {
   return slackOnboardingCallbackLambdaEnvironmentSchema.parse(source);
+}
+
+export function loadSlackInstallationDisconnectLambdaEnvironment(
+  source: NodeJS.ProcessEnv = process.env,
+): SlackInstallationDisconnectLambdaEnvironment {
+  return slackInstallationDisconnectLambdaEnvironmentSchema.parse(source);
 }
 
 export function loadApprovedReportPublicationLambdaEnvironment(

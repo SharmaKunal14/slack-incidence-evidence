@@ -511,7 +511,7 @@ async function replaceInstallation(
   input: z.output<typeof completeSlackInstallationSchema>,
   installationId: string,
 ): Promise<void> {
-  await client.query(
+  const result = await client.query(
     `
       UPDATE slack_installations
       SET enterprise_id = $1,
@@ -531,6 +531,11 @@ async function replaceInstallation(
           version = version + 1
       WHERE id = $10
         AND team_id = $11
+        AND status <> 'DISCONNECTING'
+        AND (
+          status <> 'REVOKED'
+          OR updated_at < $12
+        )
     `,
     [
       input.enterpriseId,
@@ -544,8 +549,12 @@ async function replaceInstallation(
       input.cognitoSubject,
       installationId,
       input.teamId,
+      input.authorizationCreatedAt,
     ],
   );
+  if (result.rowCount !== 1) {
+    throw new SlackOnboardingAuthorizationError();
+  }
 }
 
 async function markAuthorizationCompleted(

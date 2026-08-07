@@ -165,10 +165,13 @@ and handle existing evidence under the configured retention policy. Credential
 deletion is a separate, retryable cleanup operation and cannot restore runtime
 authority.
 
-**OnRecord disconnect:** require a tenant `ADMIN`, explicit confirmation, and an
-idempotency key. Mark the installation revoked before attempting any external
-token revocation so an ambiguous Slack response cannot leave local authority
-enabled.
+**OnRecord disconnect:** require a tenant `ADMIN` and explicit confirmation.
+Atomically move the installation to `DISCONNECTING` before any external call;
+runtime credential resolution accepts only `ACTIVE`, so authority fails closed
+immediately. Revoke the Slack token, schedule seven-day recoverable secret
+deletion, then finalize `REVOKED`. A partial external failure remains
+`DISCONNECTING` with a safe error code and can resume idempotently. Historical
+tenant, membership, incident, report, and audit records remain intact.
 
 ### Reviewer identity
 

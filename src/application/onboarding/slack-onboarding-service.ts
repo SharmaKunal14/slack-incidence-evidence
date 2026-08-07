@@ -348,6 +348,7 @@ export class SlackOnboardingService {
         credentialSecretArn: secretArn,
         credentialExpiresAt,
         grantedScopes: [...SLACK_REQUIRED_BOT_SCOPES],
+        authorizationCreatedAt: authorization.createdAt,
         completedAt,
       });
     } catch (error) {

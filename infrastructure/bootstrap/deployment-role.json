@@ -131,6 +131,17 @@
               }
             },
             {
+              "Sid": "RetireSlackInstallationSecrets",
+              "Effect": "Allow",
+              "Action": [
+                "secretsmanager:DeleteSecret",
+                "secretsmanager:DescribeSecret"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}/${Environment}/slack/installations/*"
+              }
+            },
+            {
               "Sid": "DecryptEnvironmentSecretsOnlyThroughSecretsManager",
               "Effect": "Allow",
               "Action": ["kms:Decrypt", "kms:GenerateDataKey"],
@@ -667,6 +678,9 @@
                 },
                 {
                   "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-callback-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-installation-disconnect-role"
                 }
               ],
               "Condition": {
@@ -700,6 +714,9 @@
                 },
                 {
                   "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-callback-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-installation-disconnect-role"
                 }
               ]
             },
@@ -713,6 +730,9 @@
                 },
                 {
                   "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-callback-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-installation-disconnect-role"
                 }
               ],
               "Condition": {
@@ -733,6 +753,9 @@
                 },
                 {
                   "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-callback-role"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-installation-disconnect-role"
                 }
               ],
               "Condition": {

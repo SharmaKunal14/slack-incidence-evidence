@@ -3,6 +3,7 @@ export const slackConnectionStatuses = [
   'CONNECTING',
   'CONNECTED',
   'RECONNECT_REQUIRED',
+  'DISCONNECTING',
   'DISCONNECTED',
   'FAILED',
 ] as const;

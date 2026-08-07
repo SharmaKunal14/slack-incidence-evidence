@@ -114,6 +114,12 @@ variable "slack_onboarding_callback_lambda_handler" {
   default     = "slack-onboarding-callback-main.handler"
 }
 
+variable "slack_installation_disconnect_lambda_handler" {
+  description = "Authenticated Slack installation disconnect handler exported at the root of the shared Lambda artifact."
+  type        = string
+  default     = "slack-installation-disconnect-main.handler"
+}
+
 variable "approved_report_publication_lambda_handler" {
   description = "Scheduled approved-report publication handler exported at the root of the shared Lambda artifact."
   type        = string

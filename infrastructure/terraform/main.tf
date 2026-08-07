@@ -1823,6 +1823,7 @@ resource "aws_apigatewayv2_stage" "default" {
   # dependency from attribute references alone.
   depends_on = [
     aws_apigatewayv2_route.incident_review,
+    aws_apigatewayv2_route.slack_installation_disconnect,
     aws_apigatewayv2_route.slack_onboarding_callback,
     aws_apigatewayv2_route.slack_onboarding_start,
   ]

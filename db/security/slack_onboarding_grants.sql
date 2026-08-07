@@ -25,7 +25,8 @@ GRANT INSERT ON TABLE
   tenants,
   reviewer_memberships,
   slack_installations,
-  slack_oauth_authorizations
+  slack_oauth_authorizations,
+  audit_events
 TO :"onboarding_role";
 
 GRANT UPDATE (

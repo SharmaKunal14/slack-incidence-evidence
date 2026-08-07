@@ -16,7 +16,13 @@ interface StatusRow extends QueryResultRow {
   readonly membership_status: 'ACTIVE' | 'REVOKED';
   readonly team_id: string | null;
   readonly installation_status:
-    'PENDING' | 'ACTIVE' | 'RECONNECT_REQUIRED' | 'REVOKED' | 'FAILED' | null;
+    | 'PENDING'
+    | 'ACTIVE'
+    | 'RECONNECT_REQUIRED'
+    | 'DISCONNECTING'
+    | 'REVOKED'
+    | 'FAILED'
+    | null;
   readonly installed_at: Date | string | null;
   readonly connection_updated_at: Date | string;
   readonly credential_expires_at: Date | string | null;
@@ -108,6 +114,8 @@ function connectionStatus(
       return 'CONNECTED';
     case 'RECONNECT_REQUIRED':
       return 'RECONNECT_REQUIRED';
+    case 'DISCONNECTING':
+      return 'DISCONNECTING';
     case 'REVOKED':
       return 'DISCONNECTED';
     case 'FAILED':

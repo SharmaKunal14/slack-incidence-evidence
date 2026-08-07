@@ -138,7 +138,7 @@ describe('deployment bootstrap policy', () => {
     );
   });
 
-  it('allows managing and passing only the two exact onboarding roles', async () => {
+  it('allows managing and passing only the three exact onboarding roles', async () => {
     const template = await loadTemplate();
     const policy =
       template.Resources?.['OnboardingRoleManagementPolicy']?.Properties
@@ -152,6 +152,10 @@ describe('deployment bootstrap policy', () => {
       {
         'Fn::Sub':
           'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-onboarding-callback-role',
+      },
+      {
+        'Fn::Sub':
+          'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${Environment}-slack-installation-disconnect-role',
       },
     ];
 
@@ -394,14 +398,14 @@ describe('deployment bootstrap policy', () => {
       ),
     ].map((match) => match.groups?.['body'] ?? '');
 
-    expect(roleBodies).toHaveLength(11);
+    expect(roleBodies).toHaveLength(12);
     expect(
       roleBodies.filter((body) =>
         body.includes(
           'permissions_boundary = var.lambda_role_permissions_boundary_arn',
         ),
       ),
-    ).toHaveLength(10);
+    ).toHaveLength(11);
     expect(
       roleBodies.filter((body) =>
         body.includes(

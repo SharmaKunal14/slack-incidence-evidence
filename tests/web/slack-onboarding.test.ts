@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SlackConnectionPage } from '../../web/src/app.js';
@@ -65,6 +72,9 @@ describe('Slack onboarding console', () => {
     ).toBeTruthy();
     expect(screen.getByText('Connected')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Add workspace' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Disconnect workspace' }),
+    ).toBeTruthy();
     expect(document.body.textContent).not.toContain('access-token');
     expect(document.body.textContent).not.toContain('credential_secret_arn');
     expect(apiClient).toHaveBeenCalledWith(
@@ -109,6 +119,87 @@ describe('Slack onboarding console', () => {
       await screen.findByRole('heading', { name: 'Acme Engineering' }),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Add workspace' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Disconnect workspace' }),
+    ).toBeNull();
+  });
+
+  it('requires confirmation and sends only the workspace identifier', async () => {
+    const statusResponse = {
+      canStartInstallation: true,
+      workspaces: [
+        {
+          workspaceId: 'T001',
+          displayName: 'Acme Engineering',
+          role: 'ADMIN',
+          connectionStatus: 'CONNECTED',
+          canManage: true,
+          installedAt: '2026-08-05T01:00:00.000Z',
+          updatedAt: '2026-08-05T01:05:00.000Z',
+          credentialExpiresAt: null,
+        },
+      ],
+    };
+    const apiClient = vi
+      .fn()
+      .mockImplementation((_configuration, _token, path: string) =>
+        path.endsWith('/disconnect')
+          ? Promise.resolve({
+              workspaceId: 'T001',
+              status: 'DISCONNECTED',
+              idempotent: false,
+            })
+          : Promise.resolve(statusResponse),
+      );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(SlackConnectionPage, {
+          apiClient,
+          configuration,
+          token: 'access-token',
+        }),
+      ),
+    );
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Disconnect workspace' }),
+    );
+    let dialog = screen.getByRole('alertdialog', {
+      name: 'Disconnect this workspace?',
+    });
+    expect(dialog).toBeTruthy();
+    expect(
+      screen.getByText(/Historical incidents and reports will not be deleted/u),
+    ).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Disconnect workspace' }),
+    );
+    dialog = screen.getByRole('alertdialog', {
+      name: 'Disconnect this workspace?',
+    });
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Disconnect workspace' }),
+    );
+
+    await waitFor(() =>
+      expect(apiClient).toHaveBeenCalledWith(
+        configuration,
+        'access-token',
+        '/onboarding/slack/T001/disconnect',
+        {
+          method: 'POST',
+          body: JSON.stringify({ confirmation: 'T001' }),
+        },
+      ),
+    );
   });
 
   it('requests onboarding same-origin and accepts only Slack authorization URLs', async () => {

@@ -2,6 +2,7 @@ locals {
   slack_oauth_redirect_uri = "${local.review_application_url}/onboarding/slack/callback"
   slack_onboarding_routes = toset([
     "GET /onboarding/slack/callback",
+    "POST /onboarding/slack/{workspaceId}/disconnect",
     "POST /onboarding/slack/start",
   ])
   slack_installation_secret_arn_pattern = "arn:${data.aws_partition.current.partition}:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${local.slack_installation_secret_prefix}/*"
@@ -16,6 +17,11 @@ resource "aws_cloudwatch_log_group" "slack_onboarding_start" {
 
 resource "aws_cloudwatch_log_group" "slack_onboarding_callback" {
   name              = "/aws/lambda/${local.name_prefix}-slack-onboarding-callback"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_cloudwatch_log_group" "slack_installation_disconnect" {
+  name              = "/aws/lambda/${local.name_prefix}-slack-installation-disconnect"
   retention_in_days = var.log_retention_days
 }
 
@@ -155,6 +161,83 @@ resource "aws_iam_role_policy" "slack_onboarding_callback" {
   policy = data.aws_iam_policy_document.slack_onboarding_callback.json
 }
 
+resource "aws_iam_role" "slack_installation_disconnect" {
+  name                 = "${local.name_prefix}-slack-installation-disconnect-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume_role.json
+  permissions_boundary = var.lambda_role_permissions_boundary_arn
+}
+
+data "aws_iam_policy_document" "slack_installation_disconnect" {
+  statement {
+    sid       = "WriteFunctionLogs"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.slack_installation_disconnect.arn}:*"]
+  }
+
+  statement {
+    sid       = "ReadOnboardingDatabaseCredentials"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [local.onboarding_database_secret]
+  }
+
+  statement {
+    sid = "RetireSlackInstallationCredential"
+    actions = [
+      "secretsmanager:DeleteSecret",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetSecretValue",
+    ]
+    resources = [local.slack_installation_secret_arn_pattern]
+  }
+
+  statement {
+    sid       = "DecryptSlackInstallationCredential"
+    actions   = ["kms:Decrypt"]
+    resources = [var.slack_installation_kms_key_arn]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      sid = "ManageDisconnectVpcNetworkInterfaces"
+      actions = [
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:CreateNetworkInterface",
+        "ec2:DeleteNetworkInterface",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeSubnets",
+        "ec2:UnassignPrivateIpAddresses",
+      ]
+      resources = ["*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = length(var.secrets_kms_key_arns) == 0 ? [] : [1]
+    content {
+      sid       = "DecryptCustomerManagedDatabaseSecretKey"
+      actions   = ["kms:Decrypt"]
+      resources = var.secrets_kms_key_arns
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["secretsmanager.${var.aws_region}.amazonaws.com"]
+      }
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "slack_installation_disconnect" {
+  name   = "slack-installation-disconnect"
+  role   = aws_iam_role.slack_installation_disconnect.id
+  policy = data.aws_iam_policy_document.slack_installation_disconnect.json
+}
+
 resource "aws_lambda_function" "slack_onboarding_start" {
   function_name = "${local.name_prefix}-slack-onboarding-start"
   description   = "Creates an authenticated, browser-bound Slack OAuth authorization."
@@ -270,6 +353,60 @@ resource "aws_lambda_function" "slack_onboarding_callback" {
   ]
 }
 
+resource "aws_lambda_function" "slack_installation_disconnect" {
+  function_name = "${local.name_prefix}-slack-installation-disconnect"
+  description   = "Revokes one admin-authorized Slack installation and retires its credential."
+  role          = aws_iam_role.slack_installation_disconnect.arn
+  runtime       = "nodejs22.x"
+  architectures = [var.lambda_architecture]
+  handler       = var.slack_installation_disconnect_lambda_handler
+
+  filename         = var.lambda_artifact_path
+  source_code_hash = filebase64sha256(var.lambda_artifact_path)
+
+  memory_size                    = var.slack_onboarding_memory_mb
+  timeout                        = var.slack_onboarding_timeout_seconds
+  reserved_concurrent_executions = var.slack_onboarding_reserved_concurrency
+
+  environment {
+    variables = {
+      AWS_NODEJS_CONNECTION_REUSE_ENABLED   = "1"
+      DATABASE_HOST                         = var.database_host
+      DATABASE_NAME                         = var.database_name
+      DATABASE_POOL_MAX                     = tostring(var.database_pool_max)
+      DATABASE_PORT                         = tostring(var.database_port)
+      DATABASE_SECRET_ARN                   = local.onboarding_database_secret
+      DATABASE_SSL                          = "true"
+      LOG_LEVEL                             = var.log_level
+      NODE_ENV                              = local.node_env
+      SLACK_CREDENTIAL_RECOVERY_WINDOW_DAYS = "7"
+      SLACK_TOKEN_REVOCATION_TIMEOUT_MS     = "5000"
+    }
+  }
+
+  tracing_config { mode = "PassThrough" }
+
+  dynamic "vpc_config" {
+    for_each = local.worker_vpc_enabled ? [1] : []
+    content {
+      subnet_ids         = var.worker_subnet_ids
+      security_group_ids = var.worker_security_group_ids
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = var.environment != "production" || var.onboarding_database_secret_arn != null
+      error_message = "Production requires onboarding_database_secret_arn for a dedicated least-privilege PostgreSQL onboarding role."
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.slack_installation_disconnect,
+    aws_iam_role_policy.slack_installation_disconnect,
+  ]
+}
+
 resource "aws_apigatewayv2_integration" "slack_onboarding_start" {
   api_id                 = aws_apigatewayv2_api.public.id
   integration_type       = "AWS_PROXY"
@@ -284,6 +421,15 @@ resource "aws_apigatewayv2_integration" "slack_onboarding_callback" {
   integration_type       = "AWS_PROXY"
   integration_method     = "POST"
   integration_uri        = aws_lambda_function.slack_onboarding_callback.invoke_arn
+  payload_format_version = "2.0"
+  timeout_milliseconds   = var.slack_onboarding_timeout_seconds * 1000
+}
+
+resource "aws_apigatewayv2_integration" "slack_installation_disconnect" {
+  api_id                 = aws_apigatewayv2_api.public.id
+  integration_type       = "AWS_PROXY"
+  integration_method     = "POST"
+  integration_uri        = aws_lambda_function.slack_installation_disconnect.invoke_arn
   payload_format_version = "2.0"
   timeout_milliseconds   = var.slack_onboarding_timeout_seconds * 1000
 }
@@ -303,6 +449,14 @@ resource "aws_apigatewayv2_route" "slack_onboarding_callback" {
   authorization_type = "NONE"
 }
 
+resource "aws_apigatewayv2_route" "slack_installation_disconnect" {
+  api_id             = aws_apigatewayv2_api.public.id
+  route_key          = "POST /onboarding/slack/{workspaceId}/disconnect"
+  target             = "integrations/${aws_apigatewayv2_integration.slack_installation_disconnect.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.reviewers.id
+}
+
 resource "aws_lambda_permission" "api_gateway_slack_onboarding_start" {
   statement_id  = "AllowApiGatewaySlackOnboardingStart"
   action        = "lambda:InvokeFunction"
@@ -317,6 +471,14 @@ resource "aws_lambda_permission" "api_gateway_slack_onboarding_callback" {
   function_name = aws_lambda_function.slack_onboarding_callback.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.public.execution_arn}/*/GET/onboarding/slack/callback"
+}
+
+resource "aws_lambda_permission" "api_gateway_slack_installation_disconnect" {
+  statement_id  = "AllowApiGatewaySlackInstallationDisconnect"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.slack_installation_disconnect.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.public.execution_arn}/*/POST/onboarding/slack/*/disconnect"
 }
 
 resource "aws_cloudwatch_metric_alarm" "slack_onboarding_start_errors" {
@@ -349,4 +511,20 @@ resource "aws_cloudwatch_metric_alarm" "slack_onboarding_callback_errors" {
   alarm_actions       = var.alarm_action_arns
   ok_actions          = var.alarm_action_arns
   dimensions          = { FunctionName = aws_lambda_function.slack_onboarding_callback.function_name }
+}
+
+resource "aws_cloudwatch_metric_alarm" "slack_installation_disconnect_errors" {
+  alarm_name          = "${local.name_prefix}-slack-installation-disconnect-errors"
+  alarm_description   = "The authenticated Slack installation disconnect Lambda returned an unhandled error."
+  namespace           = "AWS/Lambda"
+  metric_name         = "Errors"
+  statistic           = "Sum"
+  period              = 60
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = var.alarm_action_arns
+  ok_actions          = var.alarm_action_arns
+  dimensions          = { FunctionName = aws_lambda_function.slack_installation_disconnect.function_name }
 }

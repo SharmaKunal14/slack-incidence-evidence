@@ -63,6 +63,24 @@ describe('PostgresSlackOnboardingStatusRepository', () => {
     ).resolves.toEqual({ canStartInstallation: true, workspaces: [] });
   });
 
+  it('exposes a retryable disconnecting state without credential metadata', async () => {
+    const repository = new PostgresSlackOnboardingStatusRepository({
+      query: vi
+        .fn()
+        .mockResolvedValue(
+          result([{ ...baseRow, installation_status: 'DISCONNECTING' }]),
+        ),
+    });
+
+    const status = await repository.findByCognitoSubject(
+      '9f218e92-36a8-455d-869c-a76e27b399df',
+    );
+    expect(status.workspaces[0]).toMatchObject({
+      connectionStatus: 'DISCONNECTING',
+      canManage: true,
+    });
+  });
+
   it('hides revoked memberships and prevents them from starting again', async () => {
     const repository = new PostgresSlackOnboardingStatusRepository({
       query: vi.fn().mockResolvedValue(

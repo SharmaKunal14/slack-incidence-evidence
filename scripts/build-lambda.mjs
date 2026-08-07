@@ -37,6 +37,8 @@ await build({
     'slack-evidence-collector-main':
       'src/lambda/slack-evidence-collector-main.ts',
     'slack-ingress-main': 'src/lambda/slack-ingress-main.ts',
+    'slack-installation-disconnect-main':
+      'src/lambda/slack-installation-disconnect-main.ts',
     'slack-onboarding-callback-main':
       'src/lambda/slack-onboarding-callback-main.ts',
     'slack-onboarding-start-main': 'src/lambda/slack-onboarding-start-main.ts',
@@ -71,6 +73,7 @@ const expectedBundleFiles = [
   'package.json',
   'slack-evidence-collector-main.js',
   'slack-ingress-main.js',
+  'slack-installation-disconnect-main.js',
   'slack-onboarding-callback-main.js',
   'slack-onboarding-start-main.js',
 ];
@@ -86,7 +89,7 @@ await executeFile(
   process.execPath,
   [
     '-e',
-    "const publication = require('./approved-report-publication-main.js'); const ingress = require('./slack-ingress-main.js'); const worker = require('./incident-worker-main.js'); const collector = require('./slack-evidence-collector-main.js'); const analysis = require('./incident-analysis-main.js'); const report = require('./incident-report-main.js'); const reviewApi = require('./incident-review-api-main.js'); const notification = require('./incident-review-notification-main.js'); const onboardingStart = require('./slack-onboarding-start-main.js'); const onboardingCallback = require('./slack-onboarding-callback-main.js'); if (typeof publication.handler !== 'function' || typeof ingress.handler !== 'function' || typeof worker.handler !== 'function' || typeof collector.handler !== 'function' || typeof analysis.handler !== 'function' || typeof report.handler !== 'function' || typeof reviewApi.handler !== 'function' || typeof notification.handler !== 'function' || typeof onboardingStart.handler !== 'function' || typeof onboardingCallback.handler !== 'function') throw new Error('Lambda handler export missing');",
+    "const publication = require('./approved-report-publication-main.js'); const ingress = require('./slack-ingress-main.js'); const worker = require('./incident-worker-main.js'); const collector = require('./slack-evidence-collector-main.js'); const analysis = require('./incident-analysis-main.js'); const report = require('./incident-report-main.js'); const reviewApi = require('./incident-review-api-main.js'); const notification = require('./incident-review-notification-main.js'); const onboardingStart = require('./slack-onboarding-start-main.js'); const onboardingCallback = require('./slack-onboarding-callback-main.js'); const disconnect = require('./slack-installation-disconnect-main.js'); if (typeof publication.handler !== 'function' || typeof ingress.handler !== 'function' || typeof worker.handler !== 'function' || typeof collector.handler !== 'function' || typeof analysis.handler !== 'function' || typeof report.handler !== 'function' || typeof reviewApi.handler !== 'function' || typeof notification.handler !== 'function' || typeof onboardingStart.handler !== 'function' || typeof onboardingCallback.handler !== 'function' || typeof disconnect.handler !== 'function') throw new Error('Lambda handler export missing');",
   ],
   {
     cwd: stagingDirectory,
@@ -125,6 +128,8 @@ await executeFile(
       SLACK_INSTALLATION_KMS_KEY_ARN: 'test-kms-key',
       SLACK_INSTALLATION_SECRET_PREFIX:
         'incident-copilot/test/slack/installations',
+      SLACK_CREDENTIAL_RECOVERY_WINDOW_DAYS: '7',
+      SLACK_TOKEN_REVOCATION_TIMEOUT_MS: '5000',
       ONBOARDING_SUCCESS_REDIRECT_URL:
         'https://app.example.test/?slack=connected',
       ONBOARDING_FAILURE_REDIRECT_URL: 'https://app.example.test/?slack=failed',

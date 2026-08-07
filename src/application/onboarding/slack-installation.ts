@@ -24,6 +24,7 @@ export const SLACK_INSTALLATION_STATUSES = [
   'PENDING',
   'ACTIVE',
   'RECONNECT_REQUIRED',
+  'DISCONNECTING',
   'REVOKED',
   'FAILED',
 ] as const;
@@ -145,9 +146,18 @@ export const completeSlackInstallationSchema = z
     credentialSecretArn: slackInstallationSecretArnSchema,
     credentialExpiresAt: z.date().nullable(),
     grantedScopes: requiredScopesSchema,
+    authorizationCreatedAt: z.date(),
     completedAt: z.date(),
   })
   .strict()
+  .refine(
+    (value) =>
+      value.completedAt.getTime() >= value.authorizationCreatedAt.getTime(),
+    {
+      path: ['completedAt'],
+      message: 'Slack installation cannot complete before authorization',
+    },
+  )
   .refine(
     (value) =>
       value.credentialExpiresAt === null ||
@@ -171,10 +181,11 @@ const ALLOWED_STATUS_TRANSITIONS: Readonly<
   Record<SlackInstallationStatus, ReadonlySet<SlackInstallationStatus>>
 > = {
   PENDING: new Set(['ACTIVE', 'FAILED']),
-  ACTIVE: new Set(['RECONNECT_REQUIRED', 'REVOKED']),
-  RECONNECT_REQUIRED: new Set(['ACTIVE', 'REVOKED']),
+  ACTIVE: new Set(['RECONNECT_REQUIRED', 'DISCONNECTING', 'REVOKED']),
+  RECONNECT_REQUIRED: new Set(['ACTIVE', 'DISCONNECTING', 'REVOKED']),
+  DISCONNECTING: new Set(['REVOKED']),
   REVOKED: new Set(['PENDING']),
-  FAILED: new Set(['PENDING', 'REVOKED']),
+  FAILED: new Set(['PENDING', 'DISCONNECTING', 'REVOKED']),
 };
 
 export function isSlackInstallationTransitionAllowed(

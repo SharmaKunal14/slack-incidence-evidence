@@ -67,11 +67,13 @@ Deploy the bootstrap stack:
   --migration-secret-arn "$MIGRATION_SECRET_ARN"
 ```
 
-Rerun this same command after pulling Stage 3 onboarding changes. CloudFormation
-updates the existing Lambda permissions boundary in place so only the callback
-role can create tagged secrets under
-`incident-copilot/<environment>/slack/installations/`. Terraform cannot safely
-update this CloudFormation-owned boundary itself. The update also grants the
+Rerun this same command after pulling onboarding lifecycle changes.
+CloudFormation updates the existing Lambda permissions boundary in place so
+only the callback role can create tagged secrets under
+`incident-copilot/<environment>/slack/installations/`, while the dedicated
+disconnect role may describe and schedule deletion only under that same prefix.
+Terraform cannot safely update this CloudFormation-owned boundary itself. The
+update also grants the
 GitHub deployment role the CloudWatch Logs delivery APIs AWS requires whenever
 API Gateway creates or updates HTTP API access-log settings. Those delivery APIs
 do not support resource-level IAM permissions; log-group creation and log reads

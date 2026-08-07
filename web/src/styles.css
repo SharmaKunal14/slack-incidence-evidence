@@ -704,7 +704,8 @@ a {
 }
 
 .connection-status-pill[data-status='RECONNECT_REQUIRED'],
-.connection-status-pill[data-status='CONNECTING'] {
+.connection-status-pill[data-status='CONNECTING'],
+.connection-status-pill[data-status='DISCONNECTING'] {
   color: var(--amber);
   background: var(--amber-soft);
 }
@@ -719,6 +720,88 @@ a {
   border-left: 3px solid var(--amber);
   padding-left: 0.75rem;
   color: #8a5d0b !important;
+}
+
+.button-danger-secondary {
+  border-color: #e8aab2;
+  color: var(--red);
+  background: var(--surface);
+}
+
+.button-danger-secondary:hover:not(:disabled) {
+  border-color: var(--red);
+  background: var(--red-soft);
+}
+
+.button-danger {
+  border-color: var(--red);
+  color: #fff;
+  background: var(--red);
+}
+
+.button-danger:hover:not(:disabled) {
+  background: #a51d31;
+}
+
+.confirmation-scrim {
+  position: fixed;
+  z-index: 100;
+  display: grid;
+  inset: 0;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(18 22 33 / 62%);
+  backdrop-filter: blur(4px);
+}
+
+.confirmation-dialog {
+  display: grid;
+  width: min(100%, 34rem);
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1.1rem;
+  padding: 1.5rem;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.confirmation-dialog-icon {
+  display: inline-grid;
+  width: 3rem;
+  height: 3rem;
+  place-items: center;
+  border-radius: 0.9rem;
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.confirmation-dialog h2,
+.confirmation-dialog p {
+  margin: 0;
+}
+
+.confirmation-dialog h2 {
+  margin-top: 0.2rem;
+  font-size: 1.45rem;
+}
+
+.confirmation-dialog > div > p:not(.eyebrow, .form-notice) {
+  margin-top: 0.75rem;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.confirmation-workspace-id {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.confirmation-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  margin-top: 1.25rem;
 }
 
 .inbox-hero {

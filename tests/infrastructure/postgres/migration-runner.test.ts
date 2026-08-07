@@ -86,6 +86,7 @@ describe('runMigrations', () => {
         '0012_slack_oauth_onboarding.sql',
         '0013_slack_enterprise_user_ids.sql',
         '0014_slack_secret_arn_constraint.sql',
+        '0015_slack_installation_disconnection.sql',
       ],
       alreadyApplied: 0,
     });

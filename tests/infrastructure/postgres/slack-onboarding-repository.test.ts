@@ -37,6 +37,7 @@ const completionInput: CompleteSlackInstallationInput = {
   credentialSecretArn,
   credentialExpiresAt: new Date('2026-08-05T13:00:00.000Z'),
   grantedScopes: [...SLACK_REQUIRED_BOT_SCOPES],
+  authorizationCreatedAt: new Date('2026-08-05T01:00:00.000Z'),
   completedAt,
 };
 
@@ -321,6 +322,41 @@ describe('PostgresSlackOnboardingRepository', () => {
     await expect(
       repository.completeInstallation(completionInput),
     ).rejects.toBeInstanceOf(SlackOnboardingIdentityConflictError);
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('rejects a stale OAuth callback while disconnection owns the installation', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce(result([]))
+      .mockResolvedValueOnce(
+        result([
+          {
+            status: 'CONSUMED',
+            completed_installation_id: null,
+            completion_kind: null,
+            completed_team_id: null,
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(result([]))
+      .mockResolvedValueOnce(
+        result([{ id: 'installation:T001', tenant_id: 'T001' }]),
+      )
+      .mockResolvedValueOnce(result([{ id: 'T001', status: 'ACTIVE' }]))
+      .mockResolvedValueOnce(result([{ slack_user_id: 'U002' }]))
+      .mockResolvedValueOnce(result([{ cognito_subject: cognitoSubject }]))
+      .mockResolvedValueOnce(result([], 1))
+      .mockResolvedValueOnce(result([], 1))
+      .mockResolvedValueOnce(result([], 0))
+      .mockResolvedValueOnce(result([]));
+    const { repository } = connectedRepository(query);
+
+    await expect(
+      repository.completeInstallation(completionInput),
+    ).rejects.toBeInstanceOf(SlackOnboardingAuthorizationError);
+    expect(query.mock.calls[9]?.[0]).toContain("status <> 'DISCONNECTING'");
+    expect(query.mock.calls[9]?.[0]).toContain('updated_at < $12');
     expect(query).toHaveBeenCalledWith('ROLLBACK');
   });
 

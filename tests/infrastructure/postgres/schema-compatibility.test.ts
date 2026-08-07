@@ -68,6 +68,17 @@ describe('database schema compatibility', () => {
     );
   });
 
+  it('allows onboarding lifecycle code to audit disconnections', async () => {
+    const grants = await readFile(
+      'db/security/slack_onboarding_grants.sql',
+      'utf8',
+    );
+
+    expect(grants).toMatch(
+      /GRANT INSERT ON TABLE[\s\S]*?slack_oauth_authorizations,[\s\S]*?audit_events/u,
+    );
+  });
+
   it('accepts every required migration and allows later additive migrations', async () => {
     const query = vi.fn().mockResolvedValue(
       diagnosticResult(

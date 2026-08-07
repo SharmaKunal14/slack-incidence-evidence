@@ -10,6 +10,7 @@ import {
   loadIncidentWorkerLambdaEnvironment,
   loadSlackEvidenceCollectorLambdaEnvironment,
   loadSlackIngressLambdaEnvironment,
+  loadSlackInstallationDisconnectLambdaEnvironment,
   loadSlackOnboardingCallbackLambdaEnvironment,
   loadSlackOnboardingStartLambdaEnvironment,
 } from '../../src/config/environment.js';
@@ -43,6 +44,28 @@ describe('Lambda environment configuration', () => {
       loadSlackOnboardingStartLambdaEnvironment({
         ...database,
         SLACK_OAUTH_REDIRECT_URI: 'http://api.example.test/callback',
+      }),
+    ).toThrow();
+  });
+
+  it('loads bounded Slack disconnection cleanup configuration without an OAuth app secret', () => {
+    const environment = loadSlackInstallationDisconnectLambdaEnvironment({
+      DATABASE_SECRET_ARN: 'database-secret-arn',
+      DATABASE_HOST: 'pooler.example.test',
+      DATABASE_NAME: 'postgres',
+      SLACK_CREDENTIAL_RECOVERY_WINDOW_DAYS: '7',
+      SLACK_TOKEN_REVOCATION_TIMEOUT_MS: '5000',
+    });
+
+    expect(environment.SLACK_CREDENTIAL_RECOVERY_WINDOW_DAYS).toBe(7);
+    expect(environment.SLACK_TOKEN_REVOCATION_TIMEOUT_MS).toBe(5_000);
+    expect(environment).not.toHaveProperty('SLACK_OAUTH_APP_SECRET_ARN');
+    expect(() =>
+      loadSlackInstallationDisconnectLambdaEnvironment({
+        DATABASE_SECRET_ARN: 'database-secret-arn',
+        DATABASE_HOST: 'pooler.example.test',
+        DATABASE_NAME: 'postgres',
+        SLACK_CREDENTIAL_RECOVERY_WINDOW_DAYS: '0',
       }),
     ).toThrow();
   });

@@ -8,7 +8,7 @@ the application's at-least-once and idempotency assumptions.
 ## What it creates
 
 - An API Gateway HTTP API with one Slack-HMAC-authenticated public route, one
-  public browser-bound Slack OAuth callback, and seven Cognito-JWT routes.
+  public browser-bound Slack OAuth callback, and eight Cognito-JWT routes.
 - A short-lived Slack ingress Lambda behind that route.
 - An encrypted SQS FIFO queue, encrypted FIFO dead-letter queue, redrive policy,
   explicit redrive allow policy, and resource policies denying non-TLS access.
@@ -29,8 +29,10 @@ the application's at-least-once and idempotency assumptions.
   a required dedicated least-privilege PostgreSQL credential.
 - An authenticated integrations screen which shows membership-scoped Slack
   connection status and starts browser-bound OAuth without exposing credentials.
-- Separate Slack onboarding start and callback Lambdas. Only the callback can
-  read the Slack OAuth client secret or create installation credentials.
+- Separate Slack onboarding start, callback, and disconnect Lambdas. Only the
+  callback can read the Slack OAuth client secret or create installation
+  credentials. The disconnect Lambda can read and schedule recoverable deletion
+  only for installation credentials under the environment-scoped prefix.
 - Workspace-aware Slack runtime adapters which resolve only the active OAuth
   installation for the operation's Slack team. Runtime IAM can read only the
   environment's installation-secret prefix; there is no global-token fallback.
@@ -257,8 +259,8 @@ pipeline runtime can bypass the intended table separation.
 
 The onboarding database secret uses the same JSON shape. Production must set
 `onboarding_database_secret_arn` to a separate non-owner login. Apply only the
-tables and columns needed to create OAuth state, establish the first admin, and
-activate or replace a Slack installation:
+tables and columns needed to create OAuth state, establish the first admin,
+activate or disconnect a Slack installation, and write lifecycle audit events:
 
 ```bash
 psql "$ADMIN_DATABASE_URL" \
