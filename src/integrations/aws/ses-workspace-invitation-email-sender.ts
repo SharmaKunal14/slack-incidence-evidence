@@ -6,6 +6,7 @@ import {
 import { z } from 'zod';
 import {
   WorkspaceInvitationEmailError,
+  type WorkspaceInvitationEmailFailureDiagnostic,
   type WorkspaceInvitationEmailSender,
 } from '../../application/ports/workspace-invitation-email-sender.js';
 
@@ -32,20 +33,19 @@ export class SesWorkspaceInvitationEmailSender implements WorkspaceInvitationEma
   public async send(
     input: Parameters<WorkspaceInvitationEmailSender['send']>[0],
   ): Promise<{ readonly providerMessageId: string }> {
-    const recipient = emailSchema.parse(input.recipientEmail);
-    const role = roleSchema.parse(input.role);
-    const invitationUrl = requireOnRecordHttpsUrl(
-      input.invitationUrl,
-      this.applicationOrigin,
-    );
-    const workspaceName = z
-      .string()
-      .trim()
-      .min(1)
-      .max(200)
-      .refine((value) => !/[\r\n]/u.test(value))
-      .parse(input.workspaceDisplayName);
-    const expiresAt = z.date().parse(input.expiresAt);
+    let validated: ReturnType<typeof validateInput>;
+    try {
+      validated = validateInput(input, this.applicationOrigin);
+    } catch (error) {
+      if (error instanceof WorkspaceInvitationEmailError) throw error;
+      throw new WorkspaceInvitationEmailError({
+        stage: 'VALIDATION',
+        code: 'INVALID_INPUT',
+        retryable: false,
+      });
+    }
+    const { recipient, role, invitationUrl, workspaceName, expiresAt } =
+      validated;
     const subject = `You are invited to ${workspaceName} on OnRecord`;
     const text = [
       `You have been invited to join ${workspaceName} on OnRecord as ${humanRole(role)}.`,
@@ -77,14 +77,47 @@ export class SesWorkspaceInvitationEmailSender implements WorkspaceInvitationEma
         { abortSignal: AbortSignal.timeout(5_000) },
       );
       if (output.MessageId === undefined || output.MessageId.length === 0) {
-        throw new WorkspaceInvitationEmailError(false);
+        throw new WorkspaceInvitationEmailError({
+          stage: 'RESPONSE',
+          code: 'INVALID_PROVIDER_RESPONSE',
+          retryable: false,
+          ...safeMetadata(output.$metadata),
+        });
       }
       return { providerMessageId: output.MessageId };
     } catch (error) {
       if (error instanceof WorkspaceInvitationEmailError) throw error;
-      throw new WorkspaceInvitationEmailError(isRetryable(error));
+      throw new WorkspaceInvitationEmailError(diagnosticFor(error));
     }
   }
+}
+
+function validateInput(
+  input: Parameters<WorkspaceInvitationEmailSender['send']>[0],
+  applicationOrigin: string,
+): {
+  readonly recipient: string;
+  readonly role: 'ADMIN' | 'REVIEWER' | 'VIEWER';
+  readonly invitationUrl: string;
+  readonly workspaceName: string;
+  readonly expiresAt: Date;
+} {
+  return {
+    recipient: emailSchema.parse(input.recipientEmail),
+    role: roleSchema.parse(input.role),
+    invitationUrl: requireOnRecordHttpsUrl(
+      input.invitationUrl,
+      applicationOrigin,
+    ),
+    workspaceName: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .refine((value) => !/[\r\n]/u.test(value))
+      .parse(input.workspaceDisplayName),
+    expiresAt: z.date().parse(input.expiresAt),
+  };
 }
 
 function renderHtml(input: {
@@ -110,7 +143,11 @@ function requireOnRecordHttpsUrl(
     url.origin !== expectedOrigin ||
     !url.hash.startsWith('#/invitations/')
   ) {
-    throw new WorkspaceInvitationEmailError(false);
+    throw new WorkspaceInvitationEmailError({
+      stage: 'VALIDATION',
+      code: 'INVALID_INPUT',
+      retryable: false,
+    });
   }
   return url.toString();
 }
@@ -139,4 +176,72 @@ function isRetryable(error: unknown): boolean {
       error.$metadata.httpStatusCode === 429 ||
       (error.$metadata.httpStatusCode ?? 0) >= 500)
   );
+}
+
+function diagnosticFor(
+  error: unknown,
+): WorkspaceInvitationEmailFailureDiagnostic {
+  if (isAbortError(error)) {
+    return {
+      stage: 'REQUEST',
+      code: 'REQUEST_ABORTED',
+      retryable: true,
+      providerCode: 'AbortError',
+    };
+  }
+  if (error instanceof SESv2ServiceException) {
+    return {
+      stage: 'REQUEST',
+      code: 'PROVIDER_REJECTED',
+      retryable: isRetryable(error),
+      ...safeProviderCode(error.name),
+      ...safeMetadata(error.$metadata),
+    };
+  }
+  return {
+    stage: 'REQUEST',
+    code: 'REQUEST_FAILED',
+    retryable: false,
+    ...safeProviderCode(errorName(error)),
+  };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function errorName(error: unknown): string | undefined {
+  return error instanceof Error ? error.name : undefined;
+}
+
+function safeProviderCode(value: string | undefined): {
+  readonly providerCode?: string;
+} {
+  return value !== undefined && /^[A-Za-z0-9_.-]{1,80}$/u.test(value)
+    ? { providerCode: value }
+    : {};
+}
+
+function safeMetadata(metadata: {
+  readonly httpStatusCode?: number;
+  readonly requestId?: string;
+}): {
+  readonly httpStatusCode?: number;
+  readonly providerRequestId?: string;
+} {
+  const httpStatusCode =
+    Number.isInteger(metadata.httpStatusCode) &&
+    (metadata.httpStatusCode ?? 0) >= 100 &&
+    (metadata.httpStatusCode ?? 0) <= 599
+      ? metadata.httpStatusCode
+      : undefined;
+  const providerRequestId =
+    metadata.requestId !== undefined &&
+    /^[A-Za-z0-9-]{1,128}$/u.test(metadata.requestId)
+      ? metadata.requestId
+      : undefined;
+  return {
+    ...(httpStatusCode === undefined ? {} : { httpStatusCode }),
+    ...(providerRequestId === undefined ? {} : { providerRequestId }),
+  };
 }

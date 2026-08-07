@@ -1,5 +1,5 @@
 import type { SESv2Client } from '@aws-sdk/client-sesv2';
-import { SendEmailCommand } from '@aws-sdk/client-sesv2';
+import { SendEmailCommand, SESv2ServiceException } from '@aws-sdk/client-sesv2';
 import { describe, expect, it, vi } from 'vitest';
 import { WorkspaceInvitationEmailError } from '../../../src/application/ports/workspace-invitation-email-sender.js';
 import { SesWorkspaceInvitationEmailSender } from '../../../src/integrations/aws/ses-workspace-invitation-email-sender.js';
@@ -41,10 +41,17 @@ describe('SesWorkspaceInvitationEmailSender', () => {
     expect(html).toContain('OnRecord will never ask for your Slack password');
   });
 
-  it('returns a safe delivery error without exposing provider details', async () => {
-    const send = vi
-      .fn<Send>()
-      .mockRejectedValue(new Error('provider response containing recipient'));
+  it('returns bounded SES diagnostics without exposing provider messages', async () => {
+    const send = vi.fn<Send>().mockRejectedValue(
+      new SESv2ServiceException({
+        name: 'MessageRejected',
+        $fault: 'client',
+        $metadata: {
+          httpStatusCode: 400,
+          requestId: 'safe-request-id',
+        },
+      }),
+    );
     const sender = new SesWorkspaceInvitationEmailSender(createClient(send), {
       fromAddress: 'invites@onrecord.example.test',
       applicationBaseUrl: 'https://review.example.test/',
@@ -59,6 +66,41 @@ describe('SesWorkspaceInvitationEmailSender', () => {
         role: 'VIEWER',
         expiresAt: new Date('2026-08-14T01:00:00.000Z'),
       }),
-    ).rejects.toEqual(new WorkspaceInvitationEmailError(false));
+    ).rejects.toEqual(
+      new WorkspaceInvitationEmailError({
+        stage: 'REQUEST',
+        code: 'PROVIDER_REJECTED',
+        retryable: false,
+        providerCode: 'MessageRejected',
+        providerRequestId: 'safe-request-id',
+        httpStatusCode: 400,
+      }),
+    );
+  });
+
+  it('classifies invalid inputs before calling SES', async () => {
+    const send = vi.fn<Send>();
+    const sender = new SesWorkspaceInvitationEmailSender(createClient(send), {
+      fromAddress: 'invites@onrecord.example.test',
+      applicationBaseUrl: 'https://review.example.test/',
+    });
+
+    await expect(
+      sender.send({
+        recipientEmail: 'reviewer@example.test',
+        invitationUrl:
+          'https://attacker.example.test/#/invitations/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ',
+        workspaceDisplayName: 'Engineering',
+        role: 'VIEWER',
+        expiresAt: new Date('2026-08-14T01:00:00.000Z'),
+      }),
+    ).rejects.toEqual(
+      new WorkspaceInvitationEmailError({
+        stage: 'VALIDATION',
+        code: 'INVALID_INPUT',
+        retryable: false,
+      }),
+    );
+    expect(send).not.toHaveBeenCalled();
   });
 });

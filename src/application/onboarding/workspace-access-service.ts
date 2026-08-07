@@ -4,7 +4,11 @@ import type { Clock } from '../ports/clock.js';
 import type { IdGenerator } from '../ports/id-generator.js';
 import type { SecureTokenGenerator } from '../ports/secure-token-generator.js';
 import type { SlackIdentityProvider } from '../ports/slack-identity-provider.js';
-import type { WorkspaceInvitationEmailSender } from '../ports/workspace-invitation-email-sender.js';
+import {
+  WorkspaceInvitationEmailError,
+  type WorkspaceInvitationEmailFailureDiagnostic,
+  type WorkspaceInvitationEmailSender,
+} from '../ports/workspace-invitation-email-sender.js';
 import {
   WorkspaceAccessRepositoryError,
   type WorkspaceAccessRepository,
@@ -101,6 +105,7 @@ export class WorkspaceAccessService {
     readonly invitationUrl: string;
     readonly expiresAt: Date;
     readonly emailDeliveryStatus: 'SENT' | 'FAILED';
+    readonly emailDeliveryFailure?: WorkspaceInvitationEmailFailureDiagnostic;
   }> {
     const parsed = invitationInputSchema.parse(input);
     const token = this.tokenGenerator.generate();
@@ -118,6 +123,8 @@ export class WorkspaceAccessService {
       const invitationUrl = new URL(this.applicationBaseUrl);
       invitationUrl.hash = `/invitations/${token}`;
       let emailDeliveryStatus: 'SENT' | 'FAILED' = 'SENT';
+      let emailDeliveryFailure:
+        WorkspaceInvitationEmailFailureDiagnostic | undefined;
       try {
         await this.invitationEmailSender.send({
           recipientEmail: invitation.deliveryEmail,
@@ -126,14 +133,23 @@ export class WorkspaceAccessService {
           role: invitation.role,
           expiresAt,
         });
-      } catch {
+      } catch (error) {
         emailDeliveryStatus = 'FAILED';
+        emailDeliveryFailure =
+          error instanceof WorkspaceInvitationEmailError
+            ? error.diagnostic
+            : {
+                stage: 'REQUEST',
+                code: 'REQUEST_FAILED',
+                retryable: false,
+              };
       }
       return {
         invitationId: invitation.id,
         invitationUrl: invitationUrl.toString(),
         expiresAt,
         emailDeliveryStatus,
+        ...(emailDeliveryFailure === undefined ? {} : { emailDeliveryFailure }),
       };
     } catch (error) {
       throw normalizeRepositoryError(error);

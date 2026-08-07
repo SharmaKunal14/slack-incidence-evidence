@@ -4,6 +4,7 @@ import type {
   APIGatewayProxyStructuredResultV2,
 } from 'aws-lambda';
 import pino from 'pino';
+import type { Logger } from 'pino';
 import { describe, expect, it, vi } from 'vitest';
 import { ReviewConflictError } from '../../src/application/review/incident-review.js';
 import { WorkspaceAccessError } from '../../src/application/onboarding/workspace-access-service.js';
@@ -252,6 +253,66 @@ describe('incident review API boundary', () => {
       deliveryEmail: 'person@example.test',
       role: 'REVIEWER',
     });
+  });
+
+  it('logs only bounded email diagnostics and keeps them out of the response', async () => {
+    const warn = vi.fn();
+    const invitationToken =
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ-secret-token';
+    const invite = vi.fn().mockResolvedValue({
+      invitationId: '617b5728-8404-4934-a616-1a319ba72b7f',
+      invitationUrl: `https://app.example.test/#/invitations/${invitationToken}`,
+      expiresAt: new Date('2026-08-14T01:00:00.000Z'),
+      emailDeliveryStatus: 'FAILED',
+      emailDeliveryFailure: {
+        stage: 'REQUEST',
+        code: 'PROVIDER_REJECTED',
+        retryable: false,
+        providerCode: 'AccessDeniedException',
+        providerRequestId: 'safe-request-id',
+        httpStatusCode: 403,
+      },
+    });
+    const handler = createIncidentReviewApiHandler(
+      dependencies({
+        workspaceAccess: { ...dependencies().workspaceAccess, invite },
+        logger: { warn } as unknown as Logger,
+      }),
+    );
+
+    const response = await handler(
+      eventFor({
+        routeKey: 'POST /review/workspaces/{workspaceId}/invitations',
+        pathParameters: { workspaceId: 'T001' },
+        body: JSON.stringify({
+          invitedSlackUserId: 'U001',
+          deliveryEmail: 'person@example.test',
+          role: 'REVIEWER',
+        }),
+      }),
+    );
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryFailureStage: 'REQUEST',
+        deliveryFailureCode: 'PROVIDER_REJECTED',
+        deliveryRetryable: false,
+        providerCode: 'AccessDeniedException',
+        providerRequestId: 'safe-request-id',
+        providerHttpStatusCode: 403,
+      }),
+      'Workspace invitation created but email delivery failed',
+    );
+    expect(parsed(response)).toEqual({
+      invitationId: '617b5728-8404-4934-a616-1a319ba72b7f',
+      invitationUrl: `https://app.example.test/#/invitations/${invitationToken}`,
+      expiresAt: '2026-08-14T01:00:00.000Z',
+      emailDeliveryStatus: 'FAILED',
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(
+      'person@example.test',
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(invitationToken);
   });
 
   it('does not expose workspace membership operations to non-managers', async () => {

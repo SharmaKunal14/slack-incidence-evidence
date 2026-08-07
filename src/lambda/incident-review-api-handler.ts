@@ -93,13 +93,26 @@ export function createIncidentReviewApiHandler(
                 requestId: event.requestContext.requestId,
                 invitationId: invitation.invitationId,
                 workspaceId,
+                deliveryFailureStage:
+                  invitation.emailDeliveryFailure?.stage ?? 'REQUEST',
+                deliveryFailureCode:
+                  invitation.emailDeliveryFailure?.code ?? 'REQUEST_FAILED',
+                deliveryRetryable:
+                  invitation.emailDeliveryFailure?.retryable ?? false,
+                providerCode: invitation.emailDeliveryFailure?.providerCode,
+                providerRequestId:
+                  invitation.emailDeliveryFailure?.providerRequestId,
+                providerHttpStatusCode:
+                  invitation.emailDeliveryFailure?.httpStatusCode,
               },
               'Workspace invitation created but email delivery failed',
             );
           }
           return jsonResponse(201, {
-            ...invitation,
+            invitationId: invitation.invitationId,
+            invitationUrl: invitation.invitationUrl,
             expiresAt: invitation.expiresAt.toISOString(),
+            emailDeliveryStatus: invitation.emailDeliveryStatus,
           });
         }
         case 'PATCH /review/workspaces/{workspaceId}/members/{memberSubject}': {

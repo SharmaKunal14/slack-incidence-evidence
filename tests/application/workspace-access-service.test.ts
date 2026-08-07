@@ -48,6 +48,11 @@ describe('WorkspaceAccessService invitation email delivery', () => {
       invitationId,
       invitationUrl: `https://review.example.test/#/invitations/${token}`,
       emailDeliveryStatus: 'FAILED',
+      emailDeliveryFailure: {
+        stage: 'REQUEST',
+        code: 'REQUEST_FAILED',
+        retryable: false,
+      },
     });
   });
 });
