@@ -79,11 +79,12 @@ API Gateway creates or updates HTTP API access-log settings. Those delivery APIs
 do not support resource-level IAM permissions; log-group creation and log reads
 remain restricted to this application's environment-scoped groups.
 
-The Lambda boundary also permits `ses:SendEmail` against identities in the
-deployment account because this bootstrap stack does not know the sender chosen
-later by Terraform. This is only a maximum-permissions boundary: the review API
-role narrows the effective grant to the configured sender address or its
-verified domain and enforces `ses:FromAddress`.
+The Lambda boundary permits only the `ses:SendEmail` action at its maximum
+permissions layer. SES supports sender restrictions through request condition
+keys, but the bootstrap stack does not know the sender chosen later by
+Terraform. The review API role supplies the effective restriction: its inline
+policy enforces an exact `ses:FromAddress` match. No other Lambda role receives
+an identity policy granting `ses:SendEmail`.
 
 The script asks GitHub for the repository's current OIDC `sub_claim_prefix`,
 validates that it belongs to the requested repository, and appends the selected

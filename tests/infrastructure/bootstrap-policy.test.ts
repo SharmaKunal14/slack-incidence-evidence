@@ -285,19 +285,17 @@ describe('deployment bootstrap policy', () => {
     const template = await loadTemplate();
     const boundary = template.Resources?.['LambdaRolePermissionsBoundary'];
     const sendEmail = boundary?.Properties?.PolicyDocument?.Statement?.find(
-      ({ Sid }) => Sid === 'SendEmailThroughRoleScopedSesIdentity',
+      ({ Sid }) => Sid === 'PermitRoleScopedEmailSending',
     );
     expect(sendEmail?.Action).toBe('ses:SendEmail');
-    expect(sendEmail?.Resource).toEqual({
-      'Fn::Sub':
-        'arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*',
-    });
+    expect(sendEmail?.Resource).toBe('*');
 
     const review = await readFile(
       resolve('infrastructure/terraform/review.tf'),
       'utf8',
     );
-    expect(review).toContain('sid     = "SendWorkspaceInvitationEmail"');
+    expect(review).toMatch(/sid\s+= "SendWorkspaceInvitationEmail"/u);
+    expect(review).toMatch(/resources\s+= \["\*"\]/u);
     expect(review).toContain('variable = "ses:FromAddress"');
     expect(review).toContain('values   = [var.invitation_email_from_address]');
   });

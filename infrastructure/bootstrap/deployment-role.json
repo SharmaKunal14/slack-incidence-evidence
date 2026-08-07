@@ -174,12 +174,10 @@
               "Resource": "*"
             },
             {
-              "Sid": "SendEmailThroughRoleScopedSesIdentity",
+              "Sid": "PermitRoleScopedEmailSending",
               "Effect": "Allow",
               "Action": "ses:SendEmail",
-              "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
-              }
+              "Resource": "*"
             },
             {
               "Sid": "ManageVpcNetworkInterfacesWhenExplicitlyConfigured",
