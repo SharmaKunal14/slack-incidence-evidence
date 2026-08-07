@@ -18,7 +18,9 @@ GRANT SELECT ON TABLE
   tenants,
   reviewer_memberships,
   slack_installations,
-  slack_oauth_authorizations
+  slack_oauth_authorizations,
+  workspace_invitations,
+  slack_identity_authorizations
 TO :"onboarding_role";
 
 GRANT INSERT ON TABLE
@@ -36,8 +38,27 @@ GRANT UPDATE (
 
 GRANT UPDATE (
   slack_user_id,
-  updated_at
+  role,
+  status,
+  updated_at,
+  revoked_at
 ) ON reviewer_memberships TO :"onboarding_role";
+
+GRANT UPDATE (
+  status,
+  accepted_by_subject,
+  accepted_at,
+  updated_at,
+  version
+) ON workspace_invitations TO :"onboarding_role";
+
+GRANT UPDATE (
+  status,
+  consumed_at,
+  completed_at,
+  failed_at,
+  failure_code
+) ON slack_identity_authorizations TO :"onboarding_role";
 
 GRANT UPDATE (
   enterprise_id,
@@ -68,4 +89,5 @@ GRANT UPDATE (
 ) ON slack_oauth_authorizations TO :"onboarding_role";
 
 -- This role cannot read stored Slack credentials from Secrets Manager, modify
--- incident evidence or reports, grant arbitrary reviewer access, or delete data.
+-- incident evidence or reports, grant access without an accepted identity-bound
+-- invitation, or delete data.

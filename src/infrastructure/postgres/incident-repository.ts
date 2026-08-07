@@ -21,6 +21,7 @@ interface IncidentRow {
   readonly source_thread_ts: string | null;
   readonly requested_by_user_id: string;
   readonly reviewer_user_id: string | null;
+  readonly assigned_reviewer_subject: string | null;
   readonly evidence_retention_days: number | null;
   readonly title: string;
   readonly status: IncidentStatus;
@@ -42,6 +43,7 @@ const INCIDENT_COLUMNS = `
   source_thread_ts,
   requested_by_user_id,
   reviewer_user_id,
+  assigned_reviewer_subject,
   evidence_retention_days,
   title,
   status,
@@ -95,6 +97,9 @@ function toIncident(row: IncidentRow): Incident {
     ...(row.reviewer_user_id === null
       ? {}
       : { reviewerUserId: row.reviewer_user_id }),
+    ...(row.assigned_reviewer_subject === null
+      ? {}
+      : { assignedReviewerSubject: row.assigned_reviewer_subject }),
     ...(row.evidence_retention_days === null
       ? {}
       : { evidenceRetentionDays: row.evidence_retention_days }),
@@ -118,6 +123,32 @@ function requireSingleIncident(
     throw new IncidentPersistenceError(context);
   }
   return toIncident(row);
+}
+
+async function requireEligibleReviewer(
+  client: PoolClient,
+  tenantId: string,
+  slackUserId: string,
+): Promise<string> {
+  const result = await client.query<{ readonly cognito_subject: string }>(
+    `
+      SELECT cognito_subject
+      FROM reviewer_memberships
+      WHERE tenant_id = $1
+        AND slack_user_id = $2
+        AND status = 'ACTIVE'
+        AND role IN ('OWNER', 'ADMIN', 'REVIEWER')
+      LIMIT 1
+    `,
+    [tenantId, slackUserId],
+  );
+  const subject = result.rows[0]?.cognito_subject;
+  if (subject === undefined) {
+    throw new IncidentPersistenceError(
+      'The assigned Slack reviewer is not an active eligible OnRecord member',
+    );
+  }
+  return subject;
 }
 
 async function rollbackQuietly(client: PoolClient): Promise<void> {
@@ -164,6 +195,14 @@ export class PostgresIncidentRepository implements IncidentRepository {
         `,
         [incident.tenantId, `Slack workspace ${incident.sourceWorkspaceId}`],
       );
+      const assignedReviewerSubject =
+        incident.reviewerUserId === undefined
+          ? null
+          : await requireEligibleReviewer(
+              client,
+              incident.tenantId,
+              incident.reviewerUserId,
+            );
       const inserted = await client.query<IncidentRow>(
         `
           INSERT INTO incidents (
@@ -176,6 +215,7 @@ export class PostgresIncidentRepository implements IncidentRepository {
             source_thread_ts,
             requested_by_user_id,
             reviewer_user_id,
+            assigned_reviewer_subject,
             evidence_retention_days,
             title,
             status,
@@ -187,7 +227,7 @@ export class PostgresIncidentRepository implements IncidentRepository {
             version
           )
           VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
           )
           ON CONFLICT (tenant_id, source_event_id) DO NOTHING
           RETURNING ${INCIDENT_COLUMNS}
@@ -202,6 +242,7 @@ export class PostgresIncidentRepository implements IncidentRepository {
           incident.sourceThreadTs ?? null,
           incident.requestedByUserId,
           incident.reviewerUserId ?? null,
+          assignedReviewerSubject,
           incident.evidenceRetentionDays ?? null,
           incident.title,
           incident.status,

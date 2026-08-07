@@ -13,14 +13,17 @@ import {
   ListIncidentReviews,
 } from '../application/review-incident.js';
 import { GetSlackOnboardingStatus } from '../application/get-slack-onboarding-status.js';
+import { WorkspaceAccessService } from '../application/onboarding/workspace-access-service.js';
 import { systemClock } from '../application/ports/clock.js';
 import { uuidGenerator } from '../application/ports/id-generator.js';
 import { loadIncidentReviewApiLambdaEnvironment } from '../config/environment.js';
 import { parseDatabaseConnectionSecret } from '../config/runtime-secrets.js';
 import { PostgresIncidentReviewRepository } from '../infrastructure/postgres/incident-review-repository.js';
 import { PostgresSlackOnboardingStatusRepository } from '../infrastructure/postgres/slack-onboarding-status-repository.js';
+import { PostgresWorkspaceAccessRepository } from '../infrastructure/postgres/workspace-access-repository.js';
 import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
+import { NodeSecureTokenGenerator } from '../infrastructure/security/node-secure-token-generator.js';
 import { createLogger } from '../observability/logger.js';
 import {
   createIncidentReviewApiHandler,
@@ -89,6 +92,9 @@ async function buildHandler(): Promise<IncidentReviewApiHandler> {
     });
     await assertDatabaseSchemaCompatible(database);
     const repository = new PostgresIncidentReviewRepository(database);
+    const workspaceAccessRepository = new PostgresWorkspaceAccessRepository(
+      database,
+    );
     return createIncidentReviewApiHandler({
       listReviews: new ListIncidentReviews(repository),
       getReview: new GetIncidentReview(repository),
@@ -105,6 +111,17 @@ async function buildHandler(): Promise<IncidentReviewApiHandler> {
       ),
       getSlackOnboardingStatus: new GetSlackOnboardingStatus(
         new PostgresSlackOnboardingStatusRepository(database),
+      ),
+      workspaceAccess: new WorkspaceAccessService(
+        workspaceAccessRepository,
+        new NodeSecureTokenGenerator(),
+        uuidGenerator,
+        systemClock,
+        {
+          applicationBaseUrl: environment.REVIEW_APP_BASE_URL,
+          slackClientId: environment.SLACK_OAUTH_CLIENT_ID,
+          identityRedirectUri: environment.SLACK_IDENTITY_REDIRECT_URI,
+        },
       ),
       logger,
       maxBodyBytes: environment.REVIEW_API_MAX_BODY_BYTES,

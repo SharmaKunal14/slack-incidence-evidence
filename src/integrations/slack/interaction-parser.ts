@@ -6,7 +6,7 @@ export const INCIDENT_SCOPE_SHORTCUT_CALLBACK_ID = 'scope_incident';
 
 const slackId = z.string().regex(/^[A-Z][A-Z0-9]{1,63}$/);
 const channelId = z.string().regex(/^C[A-Z0-9]{1,63}$/);
-const userId = z.string().regex(/^U[A-Z0-9]{1,63}$/);
+const userId = z.string().regex(/^[UW][A-Z0-9]{1,63}$/);
 const timestamp = z.string().regex(/^\d{1,20}\.\d{1,20}$/);
 
 const messageShortcutSchema = z
@@ -42,6 +42,11 @@ const stateValueSchema = z
     selected_conversation: channelId.nullable().optional(),
     selected_conversations: z.array(channelId).max(4).optional(),
     selected_user: userId.nullable().optional(),
+    selected_option: z
+      .object({ value: userId })
+      .passthrough()
+      .nullable()
+      .optional(),
     selected_date_time: z
       .number()
       .int()
@@ -168,7 +173,11 @@ function parseSubmission(
     'additional_channels',
     'selected_conversations',
   );
-  const reviewer = textValue(values, 'reviewer', 'selected_user');
+  const reviewerState = findState(values, 'reviewer');
+  const reviewer =
+    reviewerState?.selected_user ??
+    reviewerState?.selected_option?.value ??
+    undefined;
   const startedAtSeconds = numberValue(
     values,
     'started_at',

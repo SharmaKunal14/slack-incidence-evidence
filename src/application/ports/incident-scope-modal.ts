@@ -8,6 +8,9 @@ export interface OpenIncidentScopeModalInput {
   readonly defaultStartedAt: Date;
   readonly defaultEndedAt: Date;
   readonly evidenceRetentionDays: number;
+  readonly eligibleReviewers?: readonly {
+    readonly slackUserId: string;
+  }[];
 }
 
 export interface IncidentScopeModal {

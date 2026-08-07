@@ -137,6 +137,7 @@ export interface ReportRevisionDetail extends ReportRevisionSummary {
 }
 
 export interface IncidentReviewBundle {
+  readonly accessMode: 'EDITOR' | 'VIEWER';
   readonly incident: {
     readonly id: string;
     readonly title: string;

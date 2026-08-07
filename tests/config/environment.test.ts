@@ -38,6 +38,12 @@ describe('Lambda environment configuration', () => {
       ONBOARDING_SUCCESS_REDIRECT_URL:
         'https://app.example.test/?slack=connected',
       ONBOARDING_FAILURE_REDIRECT_URL: 'https://app.example.test/?slack=failed',
+      IDENTITY_SUCCESS_REDIRECT_URL:
+        'https://app.example.test/?slack_identity=connected',
+      IDENTITY_FAILURE_REDIRECT_URL:
+        'https://app.example.test/?slack_identity=failed',
+      SLACK_IDENTITY_REDIRECT_URI:
+        'https://api.example.test/onboarding/slack/identity/callback',
     });
     expect(callback.SLACK_OAUTH_TIMEOUT_MS).toBe(5_000);
     expect(() =>
@@ -278,6 +284,10 @@ describe('Lambda environment configuration', () => {
       DATABASE_SECRET_ARN: 'database-secret-arn',
       DATABASE_HOST: 'pooler.example.test',
       DATABASE_NAME: 'postgres',
+      REVIEW_APP_BASE_URL: 'https://review.example.test',
+      SLACK_OAUTH_CLIENT_ID: '123.456',
+      SLACK_IDENTITY_REDIRECT_URI:
+        'https://review.example.test/onboarding/slack/identity/callback',
     };
 
     expect(

@@ -51,6 +51,7 @@ interface InboxRow {
 }
 
 interface BundleHeaderRow {
+  readonly access_role: 'OWNER' | 'ADMIN' | 'REVIEWER' | 'VIEWER';
   readonly tenant_id: string;
   readonly incident_id: string;
   readonly title: string;
@@ -280,6 +281,14 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
         ) revision ON TRUE
         WHERE i.status IN ('NEEDS_REVIEW', 'APPROVED')
           AND (
+            membership.role IN ('OWNER', 'ADMIN')
+            OR i.status = 'APPROVED'
+            OR (
+              membership.role = 'REVIEWER'
+              AND i.assigned_reviewer_subject = membership.cognito_subject
+            )
+          )
+          AND (
             $2::timestamptz IS NULL
             OR (i.created_at, i.id) < ($2::timestamptz, $3::text)
           )
@@ -330,7 +339,8 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
           d.id AS report_draft_id,
           d.draft_version,
           d.rendered_markdown,
-          d.analysis_run_id
+          d.analysis_run_id,
+          membership.role AS access_role
         FROM incidents i
         JOIN reviewer_memberships membership
           ON membership.tenant_id = i.tenant_id
@@ -347,6 +357,14 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
         ) d ON TRUE
         WHERE i.id = $2
           AND i.status IN ('NEEDS_REVIEW', 'APPROVED')
+          AND (
+            membership.role IN ('OWNER', 'ADMIN')
+            OR i.status = 'APPROVED'
+            OR (
+              membership.role = 'REVIEWER'
+              AND i.assigned_reviewer_subject = membership.cognito_subject
+            )
+          )
         LIMIT 1
       `,
       [reviewer.subject, incidentId],
@@ -354,6 +372,48 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
     const header = headerResult.rows[0];
     if (header === undefined) {
       return null;
+    }
+
+    if (header.access_role === 'VIEWER') {
+      const approved = await this.pool.query<RevisionRow>(
+        `
+          SELECT ${REVISION_COLUMNS}
+          FROM report_revisions
+          WHERE tenant_id = $1 AND incident_id = $2 AND status = 'APPROVED'
+          ORDER BY revision_number DESC
+          LIMIT 1
+        `,
+        [header.tenant_id, header.incident_id],
+      );
+      const revision = approved.rows[0];
+      if (revision === undefined) {
+        return null;
+      }
+      return {
+        accessMode: 'VIEWER',
+        incident: {
+          id: header.incident_id,
+          title: header.title,
+          severity: header.severity,
+          status: header.incident_status,
+          version: header.incident_version,
+          createdAt: toIsoString(header.incident_created_at),
+          updatedAt: toIsoString(header.incident_updated_at),
+        },
+        reportDraft: {
+          id: header.report_draft_id,
+          draftVersion: header.draft_version,
+          renderedMarkdown: revision.rendered_markdown,
+        },
+        sections: [],
+        claims: [],
+        timeline: [],
+        evidence: [],
+        evidenceCoverage: [],
+        openQuestions: [],
+        revisions: [toRevisionSummary(revision)],
+        latestRevision: null,
+      };
     }
 
     const [
@@ -393,6 +453,7 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
           );
 
     return {
+      accessMode: 'EDITOR',
       incident: {
         id: header.incident_id,
         title: header.title,
@@ -456,6 +517,15 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
         WHERE revision.incident_id = $2
           AND revision.id = $3
           AND incident.status IN ('NEEDS_REVIEW', 'APPROVED')
+          AND (membership.role <> 'VIEWER' OR revision.status = 'APPROVED')
+          AND (
+            membership.role IN ('OWNER', 'ADMIN')
+            OR incident.status = 'APPROVED'
+            OR (
+              membership.role = 'REVIEWER'
+              AND incident.assigned_reviewer_subject = membership.cognito_subject
+            )
+          )
         LIMIT 1
       `,
       [reviewer.subject, incidentId, revisionId],
@@ -626,8 +696,12 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
             ON membership.tenant_id = i.tenant_id
            AND membership.cognito_subject = $1
            AND membership.status = 'ACTIVE'
-           AND membership.role IN ('REVIEWER', 'ADMIN')
+           AND membership.role IN ('OWNER', 'ADMIN', 'REVIEWER')
           WHERE i.id = $2
+            AND (
+              membership.role IN ('OWNER', 'ADMIN')
+              OR i.assigned_reviewer_subject = membership.cognito_subject
+            )
           FOR UPDATE OF i
         `,
         [input.reviewer.subject, input.incidentId],
@@ -1234,8 +1308,12 @@ async function lockReviewContext(
         ON membership.tenant_id = i.tenant_id
        AND membership.cognito_subject = $1
        AND membership.status = 'ACTIVE'
-       AND membership.role IN ('REVIEWER', 'ADMIN')
+       AND membership.role IN ('OWNER', 'ADMIN', 'REVIEWER')
       WHERE i.id = $2
+        AND (
+          membership.role IN ('OWNER', 'ADMIN')
+          OR i.assigned_reviewer_subject = membership.cognito_subject
+        )
       FOR UPDATE OF i, draft
     `,
     [reviewer.subject, incidentId, reportDraftId],

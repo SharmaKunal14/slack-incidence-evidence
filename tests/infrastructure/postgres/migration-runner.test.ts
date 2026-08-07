@@ -87,6 +87,7 @@ describe('runMigrations', () => {
         '0013_slack_enterprise_user_ids.sql',
         '0014_slack_secret_arn_constraint.sql',
         '0015_slack_installation_disconnection.sql',
+        '0016_workspace_roles_and_invitations.sql',
       ],
       alreadyApplied: 0,
     });
@@ -120,6 +121,9 @@ describe('runMigrations', () => {
     );
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('CREATE TABLE slack_oauth_authorizations'),
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE TABLE workspace_invitations'),
     );
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('CREATE TABLE report_publications'),

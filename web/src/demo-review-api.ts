@@ -257,6 +257,7 @@ export function createDemoReviewApi(): ReviewApiClient {
 
 function initialBundle(): Bundle {
   return bundleSchema.parse({
+    accessMode: 'EDITOR',
     incident: {
       id: demoIncidentId,
       title: 'EU checkout outage',

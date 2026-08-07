@@ -158,9 +158,14 @@ function callbackHandler(
 ): SlackOnboardingCallbackHandler {
   return createSlackOnboardingCallbackHandler({
     onboarding: { complete },
+    workspaceIdentity: { complete: vi.fn() },
     logger: loggerOverride,
     successRedirectUrl: 'https://app.example.test/?slack=connected',
     failureRedirectUrl: 'https://app.example.test/?slack=failed',
+    identitySuccessRedirectUrl:
+      'https://app.example.test/?slack_identity=connected',
+    identityFailureRedirectUrl:
+      'https://app.example.test/?slack_identity=failed',
   });
 }
 

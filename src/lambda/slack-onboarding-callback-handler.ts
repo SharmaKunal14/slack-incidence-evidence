@@ -6,13 +6,23 @@ import type {
 import type { Logger } from 'pino';
 import { SlackOnboardingError } from '../application/onboarding/slack-onboarding-service.js';
 import type { SlackOnboardingService } from '../application/onboarding/slack-onboarding-service.js';
+import {
+  WorkspaceAccessError,
+  type WorkspaceIdentityCompletionService,
+} from '../application/onboarding/workspace-access-service.js';
 import { SLACK_ONBOARDING_BROWSER_COOKIE } from './slack-onboarding-start-handler.js';
 
 export interface SlackOnboardingCallbackHandlerDependencies {
   readonly onboarding: Pick<SlackOnboardingService, 'complete'>;
+  readonly workspaceIdentity: Pick<
+    WorkspaceIdentityCompletionService,
+    'complete'
+  >;
   readonly logger: Pick<Logger, 'warn'>;
   readonly successRedirectUrl: string;
   readonly failureRedirectUrl: string;
+  readonly identitySuccessRedirectUrl: string;
+  readonly identityFailureRedirectUrl: string;
 }
 
 export type SlackOnboardingCallbackHandler = (
@@ -28,8 +38,56 @@ export function createSlackOnboardingCallbackHandler(
   const failureRedirectUrl = requireStaticHttpsUrl(
     dependencies.failureRedirectUrl,
   );
+  const identitySuccessRedirectUrl = requireStaticHttpsUrl(
+    dependencies.identitySuccessRedirectUrl,
+  );
+  const identityFailureRedirectUrl = requireStaticHttpsUrl(
+    dependencies.identityFailureRedirectUrl,
+  );
 
   return async (event) => {
+    if (event.routeKey === 'GET /onboarding/slack/identity/callback') {
+      const query = event.queryStringParameters;
+      const callback = parseCallback({
+        slackError: query?.['error'],
+        browserBinding: readCookie(event, '__Host-onrecord-slack-identity'),
+        state: query?.['state'],
+        code: query?.['code'],
+      });
+      if ('rejectionCode' in callback) {
+        dependencies.logger.warn(
+          {
+            requestId: event.requestContext.requestId,
+            identityCode: callback.rejectionCode,
+          },
+          'Slack identity callback rejected',
+        );
+        return redirect(
+          identityFailureRedirectUrl,
+          '__Host-onrecord-slack-identity',
+        );
+      }
+      try {
+        await dependencies.workspaceIdentity.complete(callback.value);
+        return redirect(
+          identitySuccessRedirectUrl,
+          '__Host-onrecord-slack-identity',
+        );
+      } catch (error) {
+        dependencies.logger.warn(
+          {
+            requestId: event.requestContext.requestId,
+            identityCode:
+              error instanceof WorkspaceAccessError ? error.code : 'UNEXPECTED',
+          },
+          'Slack identity callback failed',
+        );
+        return redirect(
+          identityFailureRedirectUrl,
+          '__Host-onrecord-slack-identity',
+        );
+      }
+    }
     if (event.routeKey !== 'GET /onboarding/slack/callback') {
       return redirect(failureRedirectUrl);
     }
@@ -133,7 +191,10 @@ function readCookie(
   return undefined;
 }
 
-function redirect(location: string): APIGatewayProxyStructuredResultV2 {
+function redirect(
+  location: string,
+  cookieName = SLACK_ONBOARDING_BROWSER_COOKIE,
+): APIGatewayProxyStructuredResultV2 {
   return {
     statusCode: 303,
     headers: {
@@ -143,7 +204,7 @@ function redirect(location: string): APIGatewayProxyStructuredResultV2 {
       'x-content-type-options': 'nosniff',
     },
     cookies: [
-      `${SLACK_ONBOARDING_BROWSER_COOKIE}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax`,
+      `${cookieName}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax`,
     ],
   };
 }

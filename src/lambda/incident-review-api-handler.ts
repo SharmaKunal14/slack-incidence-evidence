@@ -1,6 +1,7 @@
 import type {
   APIGatewayProxyEventV2WithJWTAuthorizer,
   APIGatewayProxyResultV2,
+  APIGatewayProxyStructuredResultV2,
 } from 'aws-lambda';
 import type { Logger } from 'pino';
 import { z } from 'zod';
@@ -12,6 +13,10 @@ import type {
   ListIncidentReviews,
 } from '../application/review-incident.js';
 import type { GetSlackOnboardingStatus } from '../application/get-slack-onboarding-status.js';
+import {
+  WorkspaceAccessError,
+  type WorkspaceAccessService,
+} from '../application/onboarding/workspace-access-service.js';
 import {
   approveReportRevisionCommandSchema,
   createReportRevisionCommandSchema,
@@ -39,6 +44,10 @@ export interface IncidentReviewApiDependencies {
   readonly createRevision: Pick<CreateReportRevision, 'execute'>;
   readonly approveRevision: Pick<ApproveReportRevision, 'execute'>;
   readonly getSlackOnboardingStatus: Pick<GetSlackOnboardingStatus, 'execute'>;
+  readonly workspaceAccess: Pick<
+    WorkspaceAccessService,
+    'listMembers' | 'invite' | 'updateMember' | 'startIdentity'
+  >;
   readonly logger: Logger;
   readonly maxBodyBytes: number;
 }
@@ -57,6 +66,71 @@ export function createIncidentReviewApiHandler(
     }
     try {
       switch (event.routeKey) {
+        case 'GET /review/workspaces/{workspaceId}/members': {
+          const workspaceId = parseWorkspaceId(event);
+          const members = await dependencies.workspaceAccess.listMembers(
+            reviewer.subject,
+            workspaceId,
+          );
+          return jsonResponse(200, {
+            members: members.map((member) => ({
+              ...member,
+              createdAt: member.createdAt.toISOString(),
+              updatedAt: member.updatedAt.toISOString(),
+            })),
+          });
+        }
+        case 'POST /review/workspaces/{workspaceId}/invitations': {
+          const workspaceId = parseWorkspaceId(event);
+          const body = parseJsonBody(event, dependencies.maxBodyBytes);
+          const invitation = await dependencies.workspaceAccess.invite(
+            reviewer.subject,
+            { ...(isRecord(body) ? body : {}), tenantId: workspaceId },
+          );
+          return jsonResponse(201, {
+            ...invitation,
+            expiresAt: invitation.expiresAt.toISOString(),
+          });
+        }
+        case 'PATCH /review/workspaces/{workspaceId}/members/{memberSubject}': {
+          const workspaceId = parseWorkspaceId(event);
+          const memberSubject = subjectSchema.parse(
+            event.pathParameters?.['memberSubject'],
+          );
+          const body = parseJsonBody(event, dependencies.maxBodyBytes);
+          const member = await dependencies.workspaceAccess.updateMember(
+            reviewer.subject,
+            {
+              ...(isRecord(body) ? body : {}),
+              tenantId: workspaceId,
+              memberSubject,
+            },
+          );
+          return jsonResponse(200, {
+            ...member,
+            createdAt: member.createdAt.toISOString(),
+            updatedAt: member.updatedAt.toISOString(),
+          });
+        }
+        case 'POST /review/invitations/slack/start': {
+          const body = z
+            .object({ invitationToken: z.string().min(43).max(128) })
+            .strict()
+            .parse(parseJsonBody(event, dependencies.maxBodyBytes));
+          const started = await dependencies.workspaceAccess.startIdentity(
+            reviewer.subject,
+            body.invitationToken,
+          );
+          return {
+            ...jsonResponse(200, {
+              authorizationUrl: started.authorizationUrl,
+              expiresAt: started.expiresAt.toISOString(),
+            }),
+            cookies: [
+              `__Host-onrecord-slack-identity=${started.browserBinding}; Max-Age=600; Path=/; Secure; HttpOnly; SameSite=Lax`,
+            ],
+          };
+        }
         case 'GET /review/onboarding/slack/status': {
           const status = await dependencies.getSlackOnboardingStatus.execute(
             reviewer.subject,
@@ -144,6 +218,20 @@ export function createIncidentReviewApiHandler(
           return jsonResponse(404, { error: 'not_found' });
       }
     } catch (error) {
+      if (error instanceof WorkspaceAccessError) {
+        if (error.code === 'FORBIDDEN') {
+          return jsonResponse(403, { error: 'forbidden' });
+        }
+        if (
+          error.code === 'INVITATION_CONFLICT' ||
+          error.code === 'IDENTITY_CONFLICT'
+        ) {
+          return jsonResponse(409, { error: error.code.toLowerCase() });
+        }
+        if (error.code === 'INVITATION_INVALID') {
+          return jsonResponse(400, { error: 'invitation_invalid' });
+        }
+      }
       if (error instanceof ReviewAuthorizationError) {
         return jsonResponse(403, { error: 'forbidden' });
       }
@@ -169,6 +257,19 @@ export function createIncidentReviewApiHandler(
       return jsonResponse(500, { error: 'internal_server_error' });
     }
   };
+}
+
+function parseWorkspaceId(
+  event: APIGatewayProxyEventV2WithJWTAuthorizer,
+): string {
+  return z
+    .string()
+    .regex(/^T[A-Z0-9]{1,63}$/u)
+    .parse(event.pathParameters?.['workspaceId']);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function authenticatedReviewer(
@@ -258,7 +359,7 @@ function serializeRevision(
 function jsonResponse(
   statusCode: number,
   body: unknown,
-): APIGatewayProxyResultV2 {
+): APIGatewayProxyStructuredResultV2 {
   return {
     statusCode,
     headers: {

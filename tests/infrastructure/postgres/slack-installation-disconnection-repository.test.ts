@@ -60,7 +60,9 @@ describe('PostgresSlackInstallationDisconnectionRepository', () => {
       state: 'CLAIMED',
     });
 
-    expect(query.mock.calls[1]?.[0]).toContain("membership.role = 'ADMIN'");
+    expect(query.mock.calls[1]?.[0]).toContain(
+      "membership.role IN ('OWNER', 'ADMIN')",
+    );
     expect(query.mock.calls[1]?.[0]).toContain("tenant.status = 'ACTIVE'");
     expect(query.mock.calls[2]?.[0]).toContain("status = 'DISCONNECTING'");
     expect(query.mock.calls[3]?.[0]).toContain('INSERT INTO audit_events');

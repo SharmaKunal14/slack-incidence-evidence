@@ -21,5 +21,6 @@ describe('Slack app manifest', () => {
       .filter((scope) => scope.length > 0);
 
     expect(manifestScopes).toEqual([...SLACK_REQUIRED_BOT_SCOPES]);
+    expect(manifest).toContain('    user:\n      - openid\n      - profile');
   });
 });

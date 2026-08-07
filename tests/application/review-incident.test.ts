@@ -22,6 +22,7 @@ const now = new Date('2026-07-18T01:00:00.000Z');
 
 function bundle(): IncidentReviewBundle {
   return {
+    accessMode: 'EDITOR',
     incident: {
       id: incidentId,
       title: 'Checkout latency',

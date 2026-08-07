@@ -57,6 +57,8 @@ import {
   revisionResponseSchema,
   slackDisconnectionResponseSchema,
   slackOnboardingStatusSchema,
+  workspaceInvitationSchema,
+  workspaceMembersSchema,
   type Bundle,
   type Classification,
   type Configuration,
@@ -64,6 +66,10 @@ import {
   type RevisionDetail,
   type Statement,
 } from './contracts.js';
+import {
+  consumeSlackIdentityCallbackResult,
+  requestSlackIdentityAuthorization,
+} from './workspace-access.js';
 import {
   consumeSlackOnboardingCallbackResult,
   requestSlackAuthorization,
@@ -145,6 +151,9 @@ export function IncidentReviewApplication({
   const [slackCallbackResult] = useState(() =>
     consumeSlackOnboardingCallbackResult(),
   );
+  const [identityCallbackResult] = useState(() =>
+    consumeSlackIdentityCallbackResult(),
+  );
   const [token, setToken] = useState<string | null>(() =>
     sessionStorage.getItem('review_access_token'),
   );
@@ -171,13 +180,32 @@ export function IncidentReviewApplication({
     return <SignIn configuration={configuration} />;
   }
   const incidentMatch = /^#\/incidents\/([0-9a-f-]{36})$/iu.exec(hash);
+  const invitationMatch = /^#\/invitations\/([A-Za-z0-9_-]{43,128})$/u.exec(
+    hash,
+  );
+  const membersMatch =
+    /^#\/settings\/workspaces\/(T[A-Z0-9]{1,63})\/members$/u.exec(hash);
   const integrations = hash === '#/settings/integrations';
   return (
     <ApplicationErrorBoundary>
-      {integrations ? (
+      {invitationMatch?.[1] !== undefined ? (
+        <InvitationAcceptancePage
+          configuration={configuration}
+          token={token}
+          invitationToken={invitationMatch[1]}
+        />
+      ) : membersMatch?.[1] !== undefined ? (
+        <WorkspaceMembersPage
+          apiClient={apiClient}
+          configuration={configuration}
+          token={token}
+          workspaceId={membersMatch[1]}
+        />
+      ) : integrations ? (
         <SlackConnectionPage
           apiClient={apiClient}
           callbackResult={slackCallbackResult}
+          identityCallbackResult={identityCallbackResult}
           configuration={configuration}
           token={token}
         />
@@ -199,14 +227,305 @@ export function IncidentReviewApplication({
   );
 }
 
+function InvitationAcceptancePage({
+  configuration,
+  token,
+  invitationToken,
+}: {
+  readonly configuration: Configuration;
+  readonly token: string;
+  readonly invitationToken: string;
+}): ReactNode {
+  const identity = useMutation({
+    mutationFn: () =>
+      requestSlackIdentityAuthorization(configuration, token, invitationToken),
+    onSuccess: (authorizationUrl) => location.assign(authorizationUrl),
+  });
+  return (
+    <AppFrame configuration={configuration}>
+      <main className="page-shell integration-page">
+        <section className="integration-hero reveal">
+          <div>
+            <p className="eyebrow">Workspace invitation</p>
+            <h1>Verify your Slack identity</h1>
+            <p className="hero-copy">
+              You are signed into OnRecord. Continue to Slack so OnRecord can
+              confirm the exact workspace and Slack user named by this
+              invitation. Your email address does not grant access.
+            </p>
+          </div>
+          <ShieldCheck size={30} aria-hidden="true" />
+        </section>
+        <section className="connection-card">
+          <div className="connection-card-copy">
+            <h2>Sign in with Slack</h2>
+            <p>
+              Slack handles this verification. Never enter your Slack password
+              into an OnRecord form.
+            </p>
+            <button
+              className="button button-primary"
+              disabled={identity.isPending}
+              onClick={() => identity.mutate()}
+            >
+              {identity.isPending ? (
+                <LoaderCircle className="spin" size={18} />
+              ) : (
+                <MessageSquareText size={18} />
+              )}
+              {identity.isPending ? 'Opening Slack…' : 'Sign in with Slack'}
+            </button>
+            {identity.isError && (
+              <p className="form-notice" data-error="true" role="alert">
+                <AlertCircle size={16} /> {userFacingError(identity.error)}
+              </p>
+            )}
+          </div>
+        </section>
+      </main>
+    </AppFrame>
+  );
+}
+
+function WorkspaceMembersPage({
+  apiClient,
+  configuration,
+  token,
+  workspaceId,
+}: {
+  readonly apiClient: ReviewApiClient;
+  readonly configuration: Configuration;
+  readonly token: string;
+  readonly workspaceId: string;
+}): ReactNode {
+  const queryClient = useQueryClient();
+  const [slackUserId, setSlackUserId] = useState('');
+  const [deliveryEmail, setDeliveryEmail] = useState('');
+  const [role, setRole] = useState<'ADMIN' | 'REVIEWER' | 'VIEWER'>('REVIEWER');
+  const members = useQuery({
+    queryKey: ['workspace-members', workspaceId],
+    queryFn: async () =>
+      workspaceMembersSchema.parse(
+        await apiClient(
+          configuration,
+          token,
+          `/review/workspaces/${encodeURIComponent(workspaceId)}/members`,
+        ),
+      ),
+  });
+  const invite = useMutation({
+    mutationFn: async () =>
+      workspaceInvitationSchema.parse(
+        await apiClient(
+          configuration,
+          token,
+          `/review/workspaces/${encodeURIComponent(workspaceId)}/invitations`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              invitedSlackUserId: slackUserId.trim(),
+              deliveryEmail: deliveryEmail.trim(),
+              role,
+            }),
+          },
+        ),
+      ),
+  });
+  const updateMember = useMutation({
+    mutationFn: async (input: {
+      readonly memberSubject: string;
+      readonly role: 'ADMIN' | 'REVIEWER' | 'VIEWER';
+      readonly status: 'ACTIVE' | 'REVOKED';
+    }) =>
+      workspaceMembersSchema.shape.members.element.parse(
+        await apiClient(
+          configuration,
+          token,
+          `/review/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(input.memberSubject)}`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({ role: input.role, status: input.status }),
+          },
+        ),
+      ),
+    onSettled: async () =>
+      queryClient.invalidateQueries({
+        queryKey: ['workspace-members', workspaceId],
+      }),
+  });
+  return (
+    <AppFrame configuration={configuration}>
+      <main className="page-shell integration-page">
+        <nav className="breadcrumb" aria-label="Breadcrumb">
+          <a href="#/settings/integrations">
+            <ArrowLeft size={16} /> Integrations
+          </a>
+        </nav>
+        <section className="integration-hero reveal">
+          <div>
+            <p className="eyebrow">Workspace {workspaceId}</p>
+            <h1>Members and roles</h1>
+            <p className="hero-copy">
+              Only an Owner or Administrator can invite members. Activation
+              requires an exact Slack user and workspace match.
+            </p>
+          </div>
+          <ShieldCheck size={30} />
+        </section>
+        <section className="connection-card">
+          <div className="connection-card-copy">
+            <h2>Invite a member</h2>
+            <label>
+              Work email
+              <input
+                value={deliveryEmail}
+                onChange={(event) => setDeliveryEmail(event.target.value)}
+                type="email"
+                autoComplete="email"
+              />
+            </label>
+            <label>
+              Slack user ID
+              <input
+                value={slackUserId}
+                onChange={(event) =>
+                  setSlackUserId(event.target.value.toUpperCase())
+                }
+                placeholder="U012ABCDEF"
+              />
+            </label>
+            <label>
+              Role
+              <select
+                value={role}
+                onChange={(event) => setRole(event.target.value as typeof role)}
+              >
+                <option value="ADMIN">Administrator</option>
+                <option value="REVIEWER">Reviewer</option>
+                <option value="VIEWER">Viewer</option>
+              </select>
+            </label>
+            <button
+              className="button button-primary"
+              disabled={invite.isPending}
+              onClick={() => invite.mutate()}
+            >
+              <Plus size={18} />{' '}
+              {invite.isPending
+                ? 'Creating invitation…'
+                : 'Create secure invitation'}
+            </button>
+            {invite.isError && (
+              <p className="form-notice" data-error="true" role="alert">
+                <AlertCircle size={16} /> {userFacingError(invite.error)}
+              </p>
+            )}
+            {invite.data !== undefined && (
+              <div className="security-note">
+                <div>
+                  <strong>Copy this single-use link</strong>
+                  <p>{invite.data.invitationUrl}</p>
+                  <small>
+                    Expires {new Date(invite.data.expiresAt).toLocaleString()}.
+                    Email is delivery metadata only; send the link through a
+                    trusted channel.
+                  </small>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+        <section className="connection-stack" aria-label="Workspace members">
+          {members.isPending ? (
+            <div className="connection-card">
+              <LoaderCircle className="spin" size={18} /> Loading members…
+            </div>
+          ) : members.isError ? (
+            <div className="connection-card">
+              <AlertCircle size={18} /> {userFacingError(members.error)}
+            </div>
+          ) : (
+            members.data.members.map((member) => (
+              <article className="connection-card" key={member.cognitoSubject}>
+                <div className="connection-card-copy">
+                  <div className="connection-card-heading">
+                    <h2>{member.slackUserId ?? 'Slack identity pending'}</h2>
+                    <span className="status-pill">{member.status}</span>
+                  </div>
+                  <p>
+                    {member.role} · OnRecord account {member.cognitoSubject}
+                  </p>
+                  {member.role !== 'OWNER' && (
+                    <div className="confirmation-dialog-actions">
+                      <select
+                        aria-label={`Role for ${member.slackUserId ?? member.cognitoSubject}`}
+                        disabled={
+                          updateMember.isPending &&
+                          updateMember.variables?.memberSubject ===
+                            member.cognitoSubject
+                        }
+                        value={member.role}
+                        onChange={(event) =>
+                          updateMember.mutate({
+                            memberSubject: member.cognitoSubject,
+                            role: event.target.value as
+                              'ADMIN' | 'REVIEWER' | 'VIEWER',
+                            status: member.status,
+                          })
+                        }
+                      >
+                        <option value="ADMIN">Administrator</option>
+                        <option value="REVIEWER">Reviewer</option>
+                        <option value="VIEWER">Viewer</option>
+                      </select>
+                      <button
+                        className="button button-secondary"
+                        disabled={
+                          updateMember.isPending &&
+                          updateMember.variables?.memberSubject ===
+                            member.cognitoSubject
+                        }
+                        onClick={() =>
+                          updateMember.mutate({
+                            memberSubject: member.cognitoSubject,
+                            role:
+                              member.role === 'OWNER' ? 'VIEWER' : member.role,
+                            status:
+                              member.status === 'ACTIVE' ? 'REVOKED' : 'ACTIVE',
+                          })
+                        }
+                      >
+                        {member.status === 'ACTIVE'
+                          ? 'Revoke access'
+                          : 'Restore access'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </article>
+            ))
+          )}
+          {updateMember.isError && (
+            <p className="form-notice" data-error="true" role="alert">
+              <AlertCircle size={16} /> {userFacingError(updateMember.error)}
+            </p>
+          )}
+        </section>
+      </main>
+    </AppFrame>
+  );
+}
+
 export function SlackConnectionPage({
   apiClient,
   callbackResult = null,
+  identityCallbackResult = null,
   configuration,
   token,
 }: {
   readonly apiClient: ReviewApiClient;
   readonly callbackResult?: SlackOnboardingCallbackResult | null;
+  readonly identityCallbackResult?: 'connected' | 'failed' | null;
   readonly configuration: Configuration;
   readonly token: string;
 }): ReactNode {
@@ -328,6 +647,32 @@ export function SlackConnectionPage({
           </div>
         )}
 
+        {identityCallbackResult !== null && (
+          <div
+            className="connection-notice"
+            data-tone={
+              identityCallbackResult === 'connected' ? 'success' : 'error'
+            }
+            role="status"
+          >
+            {identityCallbackResult === 'connected' ? (
+              <CheckCircle2 size={19} />
+            ) : (
+              <AlertCircle size={19} />
+            )}
+            <span>
+              <strong>
+                {identityCallbackResult === 'connected'
+                  ? 'Workspace invitation accepted'
+                  : 'Slack identity could not be verified'}
+              </strong>
+              {identityCallbackResult === 'connected'
+                ? ' Your role is now active.'
+                : ' Sign in to the invited Slack workspace and try the invitation link again.'}
+            </span>
+          </div>
+        )}
+
         {disconnect.isSuccess && (
           <div className="connection-notice" role="status">
             <CheckCircle2 size={19} />
@@ -421,9 +766,13 @@ export function SlackConnectionPage({
                     </div>
                     <p>
                       Workspace ID {workspace.workspaceId} · Your role:{' '}
-                      {workspace.role === 'ADMIN'
-                        ? 'Administrator'
-                        : 'Reviewer'}
+                      {workspace.role === 'OWNER'
+                        ? 'Owner'
+                        : workspace.role === 'ADMIN'
+                          ? 'Administrator'
+                          : workspace.role === 'REVIEWER'
+                            ? 'Reviewer'
+                            : 'Viewer'}
                     </p>
                     <p className="connection-meta">
                       {workspace.installedAt === null
@@ -438,6 +787,14 @@ export function SlackConnectionPage({
                             workspace.credentialExpiresAt,
                           ).toLocaleDateString()}`}
                     </p>
+                    {workspace.canManage && (
+                      <a
+                        className="button button-secondary"
+                        href={`#/settings/workspaces/${workspace.workspaceId}/members`}
+                      >
+                        Manage members
+                      </a>
+                    )}
                     {workspace.connectionStatus !== 'CONNECTED' &&
                       workspace.connectionStatus !== 'DISCONNECTING' &&
                       workspace.canManage && (
@@ -796,8 +1153,9 @@ function SignIn({
           <p className="eyebrow">Secure workspace</p>
           <h2 id="sign-in-title">Continue to OnRecord</h2>
           <p className="muted-copy">
-            Sign in or create a verified account. Workspace access is checked
-            server-side before every integration and incident action.
+            Create a separate OnRecord account using your work email. After
+            sign-in, OnRecord will ask you to connect Slack. Never enter your
+            Slack password into OnRecord.
           </p>
           <button
             className="button button-primary button-large"
@@ -814,7 +1172,7 @@ function SignIn({
             ) : (
               <ShieldCheck size={18} />
             )}
-            {busy ? 'Redirecting securely…' : 'Continue securely'}
+            {busy ? 'Redirecting securely…' : 'Continue to secure sign-in'}
           </button>
           <div className="security-note">
             <ShieldCheck size={16} aria-hidden="true" />
@@ -1051,6 +1409,37 @@ function IncidentPage({
         onRetry={() => void query.refetch()}
         back
       />
+    );
+  }
+  if (query.data.accessMode === 'VIEWER') {
+    return (
+      <AppFrame configuration={configuration} compact experience={experience}>
+        <main className="page-shell">
+          <nav className="breadcrumb" aria-label="Breadcrumb">
+            <a href="#/">
+              <ArrowLeft size={16} /> Review inbox
+            </a>
+          </nav>
+          <section className="integration-hero">
+            <div>
+              <p className="eyebrow">Approved report · Read only</p>
+              <h1>{query.data.incident.title}</h1>
+              <p className="hero-copy">
+                Viewer access includes the approved report only. Raw evidence
+                and editing controls remain restricted.
+              </p>
+            </div>
+            <FileCheck2 size={30} aria-hidden="true" />
+          </section>
+          <article className="connection-card">
+            <div className="connection-card-copy">
+              <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                {query.data.reportDraft.renderedMarkdown}
+              </pre>
+            </div>
+          </article>
+        </main>
+      </AppFrame>
     );
   }
   return (

@@ -35,6 +35,7 @@ export interface Incident {
   readonly sourceThreadTs?: string;
   readonly requestedByUserId: string;
   readonly reviewerUserId?: string;
+  readonly assignedReviewerSubject?: string;
   readonly evidenceRetentionDays?: number;
   readonly title: string;
   readonly status: IncidentStatus;
@@ -56,6 +57,7 @@ export interface CreateIncident {
   readonly sourceThreadTs?: string;
   readonly requestedByUserId: string;
   readonly reviewerUserId?: string;
+  readonly assignedReviewerSubject?: string;
   readonly evidenceRetentionDays?: number;
   readonly title: string;
   readonly startedAt?: Date;
@@ -114,6 +116,9 @@ export class IncidentAggregate {
       ...(input.reviewerUserId === undefined
         ? {}
         : { reviewerUserId: input.reviewerUserId }),
+      ...(input.assignedReviewerSubject === undefined
+        ? {}
+        : { assignedReviewerSubject: input.assignedReviewerSubject }),
       ...(input.evidenceRetentionDays === undefined
         ? {}
         : { evidenceRetentionDays: input.evidenceRetentionDays }),

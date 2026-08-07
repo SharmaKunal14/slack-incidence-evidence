@@ -22,6 +22,7 @@ export const REQUIRED_SCHEMA_MIGRATIONS = [
   { version: '13', name: '0013_slack_enterprise_user_ids.sql' },
   { version: '14', name: '0014_slack_secret_arn_constraint.sql' },
   { version: '15', name: '0015_slack_installation_disconnection.sql' },
+  { version: '16', name: '0016_workspace_roles_and_invitations.sql' },
 ] as const;
 
 interface AppliedMigrationRow extends QueryResultRow {

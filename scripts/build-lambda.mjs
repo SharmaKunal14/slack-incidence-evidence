@@ -125,6 +125,8 @@ await executeFile(
       SLACK_OAUTH_CLIENT_ID: '123.456',
       SLACK_OAUTH_REDIRECT_URI:
         'https://api.example.test/onboarding/slack/callback',
+      SLACK_IDENTITY_REDIRECT_URI:
+        'https://api.example.test/onboarding/slack/identity/callback',
       SLACK_INSTALLATION_KMS_KEY_ARN: 'test-kms-key',
       SLACK_INSTALLATION_SECRET_PREFIX:
         'incident-copilot/test/slack/installations',
@@ -133,6 +135,10 @@ await executeFile(
       ONBOARDING_SUCCESS_REDIRECT_URL:
         'https://app.example.test/?slack=connected',
       ONBOARDING_FAILURE_REDIRECT_URL: 'https://app.example.test/?slack=failed',
+      IDENTITY_SUCCESS_REDIRECT_URL:
+        'https://app.example.test/?slack_identity=connected',
+      IDENTITY_FAILURE_REDIRECT_URL:
+        'https://app.example.test/?slack_identity=failed',
     },
   },
 );

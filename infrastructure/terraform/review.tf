@@ -456,6 +456,9 @@ resource "aws_lambda_function" "incident_review_api" {
       LOG_LEVEL                           = var.log_level
       NODE_ENV                            = local.node_env
       REVIEW_API_MAX_BODY_BYTES           = tostring(var.review_api_max_body_bytes)
+      REVIEW_APP_BASE_URL                 = local.review_application_url
+      SLACK_IDENTITY_REDIRECT_URI         = "${local.review_application_url}/onboarding/slack/identity/callback"
+      SLACK_OAUTH_CLIENT_ID               = var.slack_oauth_client_id
     }
   }
 
@@ -521,6 +524,10 @@ locals {
     "GET /review/incidents/{incidentId}/revisions/{revisionId}",
     "POST /review/incidents/{incidentId}/revisions",
     "POST /review/incidents/{incidentId}/revisions/{revisionId}/approve",
+    "GET /review/workspaces/{workspaceId}/members",
+    "POST /review/workspaces/{workspaceId}/invitations",
+    "PATCH /review/workspaces/{workspaceId}/members/{memberSubject}",
+    "POST /review/invitations/slack/start",
   ])
 }
 

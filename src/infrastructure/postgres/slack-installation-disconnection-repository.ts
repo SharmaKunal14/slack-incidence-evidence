@@ -274,7 +274,7 @@ async function lockAuthorizedInstallation(
       JOIN reviewer_memberships AS membership
         ON membership.tenant_id = installation.tenant_id
        AND membership.cognito_subject = $2
-       AND membership.role = 'ADMIN'
+       AND membership.role IN ('OWNER', 'ADMIN')
        AND membership.status = 'ACTIVE'
       WHERE installation.team_id = $1
         AND installation.tenant_id = $1

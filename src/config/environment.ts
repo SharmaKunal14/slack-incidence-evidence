@@ -109,6 +109,14 @@ const incidentReviewApiLambdaEnvironmentSchema =
       .min(1_024)
       .max(1_048_576)
       .default(524_288),
+    REVIEW_APP_BASE_URL: z.url(),
+    SLACK_OAUTH_CLIENT_ID: z
+      .string()
+      .trim()
+      .min(1)
+      .max(256)
+      .regex(/^[0-9.]+$/u),
+    SLACK_IDENTITY_REDIRECT_URI: z.url(),
   });
 
 const slackOAuthPublicConfigurationSchema = z.object({
@@ -152,6 +160,9 @@ const slackOnboardingCallbackLambdaEnvironmentSchema =
         .default(5_000),
       ONBOARDING_SUCCESS_REDIRECT_URL: z.url(),
       ONBOARDING_FAILURE_REDIRECT_URL: z.url(),
+      IDENTITY_SUCCESS_REDIRECT_URL: z.url(),
+      IDENTITY_FAILURE_REDIRECT_URL: z.url(),
+      SLACK_IDENTITY_REDIRECT_URI: z.url(),
     });
 
 const slackInstallationDisconnectLambdaEnvironmentSchema =

@@ -6,6 +6,7 @@ import type {
 import pino from 'pino';
 import { describe, expect, it, vi } from 'vitest';
 import { ReviewConflictError } from '../../src/application/review/incident-review.js';
+import { WorkspaceAccessError } from '../../src/application/onboarding/workspace-access-service.js';
 import {
   createIncidentReviewApiHandler,
   type IncidentReviewApiDependencies,
@@ -56,6 +57,12 @@ function dependencies(
         canStartInstallation: true,
         workspaces: [],
       }),
+    },
+    workspaceAccess: {
+      listMembers: vi.fn().mockResolvedValue([]),
+      invite: vi.fn(),
+      updateMember: vi.fn(),
+      startIdentity: vi.fn(),
     },
     logger: pino({ level: 'silent' }),
     maxBodyBytes: 524_288,
@@ -212,6 +219,57 @@ describe('incident review API boundary', () => {
     });
     expect(structured(response).body).not.toContain('secret');
     expect(structured(response).body).not.toContain('token');
+  });
+
+  it('creates a role invitation from the authenticated workspace manager', async () => {
+    const invite = vi.fn().mockResolvedValue({
+      invitationId: '617b5728-8404-4934-a616-1a319ba72b7f',
+      invitationUrl:
+        'https://app.example.test/#/invitations/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ',
+      expiresAt: new Date('2026-08-14T01:00:00.000Z'),
+    });
+    const handler = createIncidentReviewApiHandler(
+      dependencies({
+        workspaceAccess: { ...dependencies().workspaceAccess, invite },
+      }),
+    );
+    const response = await handler(
+      eventFor({
+        routeKey: 'POST /review/workspaces/{workspaceId}/invitations',
+        pathParameters: { workspaceId: 'T001' },
+        body: JSON.stringify({
+          invitedSlackUserId: 'U001',
+          deliveryEmail: 'person@example.test',
+          role: 'REVIEWER',
+        }),
+      }),
+    );
+    expect(structured(response).statusCode).toBe(201);
+    expect(invite).toHaveBeenCalledWith(subject, {
+      tenantId: 'T001',
+      invitedSlackUserId: 'U001',
+      deliveryEmail: 'person@example.test',
+      role: 'REVIEWER',
+    });
+  });
+
+  it('does not expose workspace membership operations to non-managers', async () => {
+    const listMembers = vi
+      .fn()
+      .mockRejectedValue(new WorkspaceAccessError('FORBIDDEN'));
+    const handler = createIncidentReviewApiHandler(
+      dependencies({
+        workspaceAccess: { ...dependencies().workspaceAccess, listMembers },
+      }),
+    );
+    const response = await handler(
+      eventFor({
+        routeKey: 'GET /review/workspaces/{workspaceId}/members',
+        pathParameters: { workspaceId: 'T001' },
+      }),
+    );
+    expect(structured(response).statusCode).toBe(403);
+    expect(parsed(response)).toEqual({ error: 'forbidden' });
   });
 
   it('loads one preserved revision through the tenant-authorized use case', async () => {

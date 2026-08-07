@@ -33,6 +33,13 @@ describe('CloudFront browser API routing', () => {
     expect(onboarding).toContain(
       'route_key          = "POST /onboarding/slack/{workspaceId}/disconnect"',
     );
+    expect(onboarding).toContain(
+      'route_key          = "GET /onboarding/slack/identity/callback"',
+    );
+    expect(review).toContain(
+      '"POST /review/workspaces/{workspaceId}/invitations"',
+    );
+    expect(review).toContain('"POST /review/invitations/slack/start"');
     expect(onboarding).toContain('sid       = "ReadDisconnectRuntimeSecrets"');
     expect(onboarding).toContain(
       'resources = [local.onboarding_database_secret, var.slack_oauth_app_secret_arn]',

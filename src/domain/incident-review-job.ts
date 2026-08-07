@@ -59,14 +59,14 @@ export const incidentReviewRequestedV2Schema = z
         channelId: slackChannelId,
         messageTs: slackTimestamp,
         threadTs: slackTimestamp.optional(),
-        userId: z.string().regex(/^U[A-Z0-9]{1,63}$/),
+        userId: z.string().regex(/^[UW][A-Z0-9]{1,63}$/),
       })
       .strict(),
     scope: z
       .object({
         startedAt: z.iso.datetime(),
         endedAt: z.iso.datetime(),
-        reviewerUserId: z.string().regex(/^U[A-Z0-9]{1,63}$/),
+        reviewerUserId: z.string().regex(/^[UW][A-Z0-9]{1,63}$/),
         evidenceRetentionDays: z.number().int().min(1).max(365),
         channels: z
           .array(

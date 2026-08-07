@@ -102,6 +102,7 @@ const revisionDetailSchema = revisionSummarySchema
 
 export const bundleSchema = z
   .object({
+    accessMode: z.enum(['EDITOR', 'VIEWER']),
     incident: z
       .object({
         id: z.uuid(),
@@ -221,7 +222,7 @@ export const slackOnboardingStatusSchema = z
           .object({
             workspaceId: z.string().regex(/^T[A-Z0-9]{1,63}$/),
             displayName: z.string().trim().min(1).max(200),
-            role: z.enum(['ADMIN', 'REVIEWER']),
+            role: z.enum(['OWNER', 'ADMIN', 'REVIEWER', 'VIEWER']),
             connectionStatus: z.enum([
               'NOT_CONNECTED',
               'CONNECTING',
@@ -247,6 +248,36 @@ export const slackDisconnectionResponseSchema = z
     workspaceId: z.string().regex(/^T[A-Z0-9]{1,63}$/),
     status: z.literal('DISCONNECTED'),
     idempotent: z.boolean(),
+  })
+  .strict();
+
+export const workspaceMembersSchema = z
+  .object({
+    members: z
+      .array(
+        z
+          .object({
+            cognitoSubject: z.uuid(),
+            slackUserId: z
+              .string()
+              .regex(/^[UW][A-Z0-9]{1,63}$/)
+              .nullable(),
+            role: z.enum(['OWNER', 'ADMIN', 'REVIEWER', 'VIEWER']),
+            status: z.enum(['ACTIVE', 'REVOKED']),
+            createdAt: z.iso.datetime(),
+            updatedAt: z.iso.datetime(),
+          })
+          .strict(),
+      )
+      .max(500),
+  })
+  .strict();
+
+export const workspaceInvitationSchema = z
+  .object({
+    invitationId: z.uuid(),
+    invitationUrl: z.url().max(4_096),
+    expiresAt: z.iso.datetime(),
   })
   .strict();
 

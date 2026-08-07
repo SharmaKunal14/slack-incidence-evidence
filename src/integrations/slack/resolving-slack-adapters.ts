@@ -53,6 +53,11 @@ import { SlackThreadWebApiSource } from './web-api-slack-thread-source.js';
 export class ResolvingSlackIncidentScopeModal implements IncidentScopeModal {
   public constructor(
     private readonly resolver: SlackInstallationCredentialResolver,
+    private readonly reviewerSource?: {
+      list(
+        workspaceId: string,
+      ): Promise<readonly { readonly slackUserId: string }[]>;
+    },
   ) {}
 
   public async open(input: OpenIncidentScopeModalInput): Promise<void> {
@@ -62,7 +67,13 @@ export class ResolvingSlackIncidentScopeModal implements IncidentScopeModal {
     } catch (error) {
       throw mapModalResolutionError(error);
     }
-    await new SlackWebApiIncidentScopeModal(installation).open(input);
+    const eligibleReviewers = await this.reviewerSource?.list(
+      input.workspaceId,
+    );
+    await new SlackWebApiIncidentScopeModal(installation).open({
+      ...input,
+      ...(eligibleReviewers === undefined ? {} : { eligibleReviewers }),
+    });
   }
 }
 

@@ -2,6 +2,7 @@ locals {
   slack_oauth_redirect_uri = "${local.review_application_url}/onboarding/slack/callback"
   slack_onboarding_routes = toset([
     "GET /onboarding/slack/callback",
+    "GET /onboarding/slack/identity/callback",
     "POST /onboarding/slack/{workspaceId}/disconnect",
     "POST /onboarding/slack/start",
   ])
@@ -320,12 +321,15 @@ resource "aws_lambda_function" "slack_onboarding_callback" {
       NODE_ENV                            = local.node_env
       ONBOARDING_FAILURE_REDIRECT_URL     = "${local.review_application_url}/?slack=failed"
       ONBOARDING_SUCCESS_REDIRECT_URL     = "${local.review_application_url}/?slack=connected"
+      IDENTITY_FAILURE_REDIRECT_URL       = "${local.review_application_url}/?slack_identity=failed"
+      IDENTITY_SUCCESS_REDIRECT_URL       = "${local.review_application_url}/?slack_identity=connected"
       SLACK_INSTALLATION_KMS_KEY_ARN      = var.slack_installation_kms_key_arn
       SLACK_INSTALLATION_SECRET_PREFIX    = local.slack_installation_secret_prefix
       SLACK_OAUTH_APP_ID                  = var.slack_oauth_app_id
       SLACK_OAUTH_APP_SECRET_ARN          = var.slack_oauth_app_secret_arn
       SLACK_OAUTH_CLIENT_ID               = var.slack_oauth_client_id
       SLACK_OAUTH_REDIRECT_URI            = local.slack_oauth_redirect_uri
+      SLACK_IDENTITY_REDIRECT_URI         = "${local.review_application_url}/onboarding/slack/identity/callback"
       SLACK_OAUTH_TIMEOUT_MS              = "5000"
     }
   }
@@ -451,6 +455,13 @@ resource "aws_apigatewayv2_route" "slack_onboarding_callback" {
   authorization_type = "NONE"
 }
 
+resource "aws_apigatewayv2_route" "slack_identity_callback" {
+  api_id             = aws_apigatewayv2_api.public.id
+  route_key          = "GET /onboarding/slack/identity/callback"
+  target             = "integrations/${aws_apigatewayv2_integration.slack_onboarding_callback.id}"
+  authorization_type = "NONE"
+}
+
 resource "aws_apigatewayv2_route" "slack_installation_disconnect" {
   api_id             = aws_apigatewayv2_api.public.id
   route_key          = "POST /onboarding/slack/{workspaceId}/disconnect"
@@ -473,6 +484,14 @@ resource "aws_lambda_permission" "api_gateway_slack_onboarding_callback" {
   function_name = aws_lambda_function.slack_onboarding_callback.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.public.execution_arn}/*/GET/onboarding/slack/callback"
+}
+
+resource "aws_lambda_permission" "api_gateway_slack_identity_callback" {
+  statement_id  = "AllowApiGatewaySlackIdentityCallback"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.slack_onboarding_callback.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.public.execution_arn}/*/GET/onboarding/slack/identity/callback"
 }
 
 resource "aws_lambda_permission" "api_gateway_slack_installation_disconnect" {

@@ -18,8 +18,10 @@ GRANT USAGE ON SCHEMA public TO :"slack_runtime_role";
 
 GRANT SELECT ON TABLE
   public.schema_migrations,
-  slack_installations
+  slack_installations,
+  reviewer_memberships
 TO :"slack_runtime_role";
 
--- Runtime processes can select installation metadata only. They cannot mutate
--- tenants, memberships, OAuth attempts, installations, incidents, or reports.
+-- Runtime processes can select installation metadata and eligible reviewer IDs
+-- only. They cannot mutate tenants, memberships, OAuth attempts, installations,
+-- incidents, or reports.

@@ -382,7 +382,7 @@ async function createTenantAndFirstAdmin(
         created_at,
         updated_at
       )
-      VALUES ($1, $2, $3, 'ADMIN', 'ACTIVE', $4, $4)
+      VALUES ($1, $2, $3, 'OWNER', 'ACTIVE', $4, $4)
     `,
     [
       input.teamId,
@@ -404,7 +404,7 @@ async function requireAndBindExistingAdmin(
       FROM reviewer_memberships
       WHERE tenant_id = $1
         AND cognito_subject = $2
-        AND role = 'ADMIN'
+        AND role IN ('OWNER', 'ADMIN')
         AND status = 'ACTIVE'
       FOR UPDATE
     `,
@@ -443,7 +443,7 @@ async function requireAndBindExistingAdmin(
           updated_at = $2
       WHERE tenant_id = $3
         AND cognito_subject = $4
-        AND role = 'ADMIN'
+        AND role IN ('OWNER', 'ADMIN')
         AND status = 'ACTIVE'
     `,
     [

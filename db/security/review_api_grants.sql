@@ -20,6 +20,7 @@ GRANT SELECT ON TABLE
   public.schema_migrations,
   tenants,
   reviewer_memberships,
+  workspace_invitations,
   slack_installations,
   incidents,
   incident_report_drafts,
@@ -40,6 +41,8 @@ GRANT SELECT ON TABLE
 TO :"review_role";
 
 GRANT INSERT ON TABLE
+  workspace_invitations,
+  slack_identity_authorizations,
   report_revisions,
   report_revision_statements,
   report_revision_claim_links,
@@ -62,7 +65,14 @@ GRANT UPDATE (
   version
 ) ON incidents TO :"review_role";
 
--- The API must never provision reviewers, change model drafts, delete evidence,
--- or execute publication. It may only enqueue the approved immutable revision
--- in the same transaction; external publication remains a separate worker
--- concern.
+GRANT UPDATE (
+  role,
+  status,
+  updated_at,
+  revoked_at
+) ON reviewer_memberships TO :"review_role";
+
+-- The API creates pending, identity-bound invitations and browser-bound Slack
+-- identity attempts. It cannot activate a membership; only the callback role
+-- can do that after Slack verification. It cannot change model drafts, delete
+-- evidence, or execute publication.

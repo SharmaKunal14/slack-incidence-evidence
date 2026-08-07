@@ -13,7 +13,7 @@ export type SlackConnectionStatus = (typeof slackConnectionStatuses)[number];
 export interface SlackOnboardingWorkspaceStatus {
   readonly workspaceId: string;
   readonly displayName: string;
-  readonly role: 'ADMIN' | 'REVIEWER';
+  readonly role: 'OWNER' | 'ADMIN' | 'REVIEWER' | 'VIEWER';
   readonly connectionStatus: SlackConnectionStatus;
   readonly canManage: boolean;
   readonly installedAt: Date | null;

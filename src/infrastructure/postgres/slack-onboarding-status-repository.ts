@@ -12,7 +12,7 @@ interface StatusRow extends QueryResultRow {
   readonly tenant_id: string;
   readonly display_name: string;
   readonly tenant_status: 'ACTIVE' | 'SUSPENDED' | 'DELETED';
-  readonly role: 'ADMIN' | 'REVIEWER';
+  readonly role: 'OWNER' | 'ADMIN' | 'REVIEWER' | 'VIEWER';
   readonly membership_status: 'ACTIVE' | 'REVOKED';
   readonly team_id: string | null;
   readonly installation_status:
@@ -91,7 +91,7 @@ function toWorkspaceStatus(row: StatusRow): SlackOnboardingWorkspaceStatus {
     displayName: row.display_name,
     role: row.role,
     connectionStatus: connectionStatus(row, tenantActive),
-    canManage: tenantActive && row.role === 'ADMIN',
+    canManage: tenantActive && (row.role === 'OWNER' || row.role === 'ADMIN'),
     installedAt: optionalDate(row.installed_at),
     updatedAt: requiredDate(row.connection_updated_at),
     credentialExpiresAt: optionalDate(row.credential_expires_at),

@@ -6,6 +6,7 @@ import type {
 } from 'aws-lambda';
 import { Pool } from 'pg';
 import { SlackOnboardingService } from '../application/onboarding/slack-onboarding-service.js';
+import { WorkspaceIdentityCompletionService } from '../application/onboarding/workspace-access-service.js';
 import { systemClock } from '../application/ports/clock.js';
 import { uuidGenerator } from '../application/ports/id-generator.js';
 import { loadSlackOnboardingCallbackLambdaEnvironment } from '../config/environment.js';
@@ -14,11 +15,13 @@ import {
   parseSlackOAuthAppSecret,
 } from '../config/runtime-secrets.js';
 import { PostgresSlackOnboardingRepository } from '../infrastructure/postgres/slack-onboarding-repository.js';
+import { PostgresWorkspaceAccessRepository } from '../infrastructure/postgres/workspace-access-repository.js';
 import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { SecretsManagerSlackInstallationCredentialStore } from '../infrastructure/secrets/secrets-manager-slack-installation-credential-store.js';
 import { NodeSecureTokenGenerator } from '../infrastructure/security/node-secure-token-generator.js';
 import { WebApiSlackOAuthProvider } from '../integrations/slack/web-api-slack-oauth-provider.js';
+import { WebApiSlackIdentityProvider } from '../integrations/slack/web-api-slack-identity-provider.js';
 import { createLogger } from '../observability/logger.js';
 import {
   createSlackOnboardingCallbackHandler,
@@ -85,11 +88,23 @@ async function buildHandler(): Promise<SlackOnboardingCallbackHandler> {
         redirectUri: environment.SLACK_OAUTH_REDIRECT_URI,
       },
     );
+    const workspaceIdentity = new WorkspaceIdentityCompletionService(
+      new PostgresWorkspaceAccessRepository(database),
+      new WebApiSlackIdentityProvider(
+        environment.SLACK_OAUTH_CLIENT_ID,
+        oauth.clientSecret,
+        { timeoutMs: environment.SLACK_OAUTH_TIMEOUT_MS },
+      ),
+      systemClock,
+    );
     return createSlackOnboardingCallbackHandler({
       onboarding,
+      workspaceIdentity,
       logger,
       successRedirectUrl: environment.ONBOARDING_SUCCESS_REDIRECT_URL,
       failureRedirectUrl: environment.ONBOARDING_FAILURE_REDIRECT_URL,
+      identitySuccessRedirectUrl: environment.IDENTITY_SUCCESS_REDIRECT_URL,
+      identityFailureRedirectUrl: environment.IDENTITY_FAILURE_REDIRECT_URL,
     });
   } catch (error) {
     await database?.end();

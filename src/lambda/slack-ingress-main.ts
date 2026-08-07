@@ -18,6 +18,7 @@ import {
   parseSlackSigningSecret,
 } from '../config/runtime-secrets.js';
 import { PostgresSecretsSlackInstallationCredentialResolver } from '../infrastructure/postgres-secrets/slack-installation-credential-resolver.js';
+import { PostgresEligibleIncidentReviewerSource } from '../infrastructure/postgres/eligible-incident-reviewer-source.js';
 import { SqsIncidentJobPublisher } from '../infrastructure/queue/sqs-incident-job-publisher.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { ResolvingSlackIncidentScopeModal } from '../integrations/slack/resolving-slack-adapters.js';
@@ -123,6 +124,7 @@ async function buildHandler(): Promise<SlackIngressHandler> {
           secretReader,
           systemClock,
         ),
+        new PostgresEligibleIncidentReviewerSource(database),
       ),
       evidenceRetentionDays: environment.EVIDENCE_RETENTION_DAYS,
     });
