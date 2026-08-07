@@ -103,7 +103,9 @@ describe('PostgresSlackOnboardingRepository', () => {
     ).resolves.toMatchObject({ id: authorizationId, consumedAt });
 
     expect(query.mock.calls[0]?.[0]).toContain('state_sha256');
-    expect(query.mock.calls[0]?.[0]).toContain("membership.role = 'ADMIN'");
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "membership.role IN ('OWNER', 'ADMIN')",
+    );
     expect(query.mock.calls[0]?.[0]).toContain("tenant.status = 'ACTIVE'");
     expect(query.mock.calls[1]?.[0]).toContain("status = 'PENDING'");
     expect(query.mock.calls[1]?.[0]).toContain('expires_at > $3');

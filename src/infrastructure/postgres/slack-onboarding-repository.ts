@@ -115,7 +115,7 @@ export class PostgresSlackOnboardingRepository implements SlackOnboardingReposit
             JOIN tenants AS tenant
               ON tenant.id = membership.tenant_id
             WHERE membership.cognito_subject = $4
-              AND membership.role = 'ADMIN'
+              AND membership.role IN ('OWNER', 'ADMIN')
               AND membership.status = 'ACTIVE'
               AND tenant.status = 'ACTIVE'
           )
