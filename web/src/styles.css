@@ -591,6 +591,37 @@ a {
   gap: 1rem;
 }
 
+.connection-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  border: 1px solid #cfd5ff;
+  border-radius: 1.1rem;
+  padding: 1.1rem 1.25rem;
+  background: var(--brand-soft);
+}
+
+.connection-actions h2,
+.connection-actions p {
+  margin: 0;
+}
+
+.connection-actions h2 {
+  font-size: 1rem;
+}
+
+.connection-actions p {
+  margin-top: 0.3rem;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.connection-actions .button {
+  flex: 0 0 auto;
+}
+
 .connection-card {
   display: flex;
   align-items: flex-start;
@@ -2822,6 +2853,7 @@ a {
   }
 
   .integration-hero,
+  .connection-actions,
   .connection-card,
   .connection-card-heading {
     align-items: flex-start;

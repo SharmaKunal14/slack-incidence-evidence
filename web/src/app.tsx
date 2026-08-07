@@ -294,6 +294,30 @@ export function SlackConnectionPage({
           </section>
         ) : (
           <section className="connection-stack" aria-label="Slack workspaces">
+            {status.data.workspaces.length > 0 &&
+              status.data.canStartInstallation && (
+                <div className="connection-actions">
+                  <div>
+                    <h2>Add another workspace</h2>
+                    <p>
+                      Slack will ask you to choose and authorize the workspace
+                      you want to connect.
+                    </p>
+                  </div>
+                  <button
+                    className="button button-primary"
+                    disabled={connect.isPending}
+                    onClick={() => connect.mutate()}
+                  >
+                    {connect.isPending ? (
+                      <LoaderCircle className="spin" size={18} />
+                    ) : (
+                      <Plus size={18} />
+                    )}
+                    {connect.isPending ? 'Opening Slack…' : 'Add workspace'}
+                  </button>
+                </div>
+              )}
             {status.data.workspaces.length === 0 ? (
               <DisconnectedSlackCard
                 canConnect={status.data.canStartInstallation}

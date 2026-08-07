@@ -64,6 +64,7 @@ describe('Slack onboarding console', () => {
       await screen.findByRole('heading', { name: 'Acme Engineering' }),
     ).toBeTruthy();
     expect(screen.getByText('Connected')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add workspace' })).toBeTruthy();
     expect(document.body.textContent).not.toContain('access-token');
     expect(document.body.textContent).not.toContain('credential_secret_arn');
     expect(apiClient).toHaveBeenCalledWith(
@@ -71,6 +72,43 @@ describe('Slack onboarding console', () => {
       'access-token',
       '/review/onboarding/slack/status',
     );
+  });
+
+  it('does not offer another workspace to a reviewer', async () => {
+    const apiClient = vi.fn().mockResolvedValue({
+      canStartInstallation: false,
+      workspaces: [
+        {
+          workspaceId: 'T001',
+          displayName: 'Acme Engineering',
+          role: 'REVIEWER',
+          connectionStatus: 'CONNECTED',
+          canManage: false,
+          installedAt: '2026-08-05T01:00:00.000Z',
+          updatedAt: '2026-08-05T01:05:00.000Z',
+          credentialExpiresAt: null,
+        },
+      ],
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(SlackConnectionPage, {
+          apiClient,
+          configuration,
+          token: 'access-token',
+        }),
+      ),
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Acme Engineering' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add workspace' })).toBeNull();
   });
 
   it('requests onboarding same-origin and accepts only Slack authorization URLs', async () => {
