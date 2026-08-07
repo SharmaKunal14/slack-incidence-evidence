@@ -227,6 +227,7 @@ describe('incident review API boundary', () => {
       invitationUrl:
         'https://app.example.test/#/invitations/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ',
       expiresAt: new Date('2026-08-14T01:00:00.000Z'),
+      emailDeliveryStatus: 'SENT',
     });
     const handler = createIncidentReviewApiHandler(
       dependencies({

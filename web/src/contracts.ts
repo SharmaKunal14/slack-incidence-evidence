@@ -278,6 +278,7 @@ export const workspaceInvitationSchema = z
     invitationId: z.uuid(),
     invitationUrl: z.url().max(4_096),
     expiresAt: z.iso.datetime(),
+    emailDeliveryStatus: z.enum(['SENT', 'FAILED']),
   })
   .strict();
 

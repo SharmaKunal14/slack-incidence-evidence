@@ -115,6 +115,7 @@ await executeFile(
       PUBLICATION_RETRY_BASE_SECONDS: '60',
       REPORT_LEASE_SECONDS: '180',
       REVIEW_APP_BASE_URL: 'https://review.example.test',
+      INVITATION_EMAIL_FROM_ADDRESS: 'invites@example.test',
       EVIDENCE_RETENTION_DAYS: '30',
       INCIDENT_QUEUE_URL: 'https://sqs.example.test/incident-jobs.fifo',
       INCIDENT_WORKFLOW_STATE_MACHINE_ARN: 'test-state-machine',

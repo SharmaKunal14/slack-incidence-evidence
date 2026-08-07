@@ -281,6 +281,27 @@ describe('deployment bootstrap policy', () => {
     expect(comprehend?.Resource).toBe('*');
   });
 
+  it('allows SES only as a boundary maximum while Terraform scopes the sender', async () => {
+    const template = await loadTemplate();
+    const boundary = template.Resources?.['LambdaRolePermissionsBoundary'];
+    const sendEmail = boundary?.Properties?.PolicyDocument?.Statement?.find(
+      ({ Sid }) => Sid === 'SendEmailThroughRoleScopedSesIdentity',
+    );
+    expect(sendEmail?.Action).toBe('ses:SendEmail');
+    expect(sendEmail?.Resource).toEqual({
+      'Fn::Sub':
+        'arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*',
+    });
+
+    const review = await readFile(
+      resolve('infrastructure/terraform/review.tf'),
+      'utf8',
+    );
+    expect(review).toContain('sid     = "SendWorkspaceInvitationEmail"');
+    expect(review).toContain('variable = "ses:FromAddress"');
+    expect(review).toContain('values   = [var.invitation_email_from_address]');
+  });
+
   it('limits runtime secret creation to tagged Slack installation credentials', async () => {
     const template = await loadTemplate();
     const boundary = template.Resources?.['LambdaRolePermissionsBoundary'];

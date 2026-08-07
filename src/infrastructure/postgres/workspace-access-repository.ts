@@ -56,6 +56,7 @@ export class PostgresWorkspaceAccessRepository implements WorkspaceAccessReposit
       const result = await this.pool.query<{
         id: string;
         tenant_id: string;
+        workspace_display_name: string;
         invited_slack_user_id: string;
         delivery_email: string;
         role: WorkspaceInvitation['role'];
@@ -64,21 +65,26 @@ export class PostgresWorkspaceAccessRepository implements WorkspaceAccessReposit
         created_at: Date;
       }>(
         `
-        INSERT INTO workspace_invitations (
-          id, tenant_id, invited_slack_user_id, delivery_email, role,
-          token_sha256, status, invited_by_subject, created_at, expires_at, updated_at
-        )
-        SELECT $1, $2, $3, $4, $5, $6, 'PENDING', $7, $8, $9, $8
-        FROM reviewer_memberships actor
-        WHERE actor.tenant_id = $2 AND actor.cognito_subject = $7
-          AND actor.status = 'ACTIVE' AND actor.role IN ('OWNER', 'ADMIN')
-          AND NOT EXISTS (
-            SELECT 1 FROM reviewer_memberships existing
-            WHERE existing.tenant_id = $2 AND existing.slack_user_id = $3
-              AND existing.status = 'ACTIVE'
+        WITH inserted AS (
+          INSERT INTO workspace_invitations (
+            id, tenant_id, invited_slack_user_id, delivery_email, role,
+            token_sha256, status, invited_by_subject, created_at, expires_at, updated_at
           )
-        RETURNING id, tenant_id, invited_slack_user_id, delivery_email, role,
-                  status, expires_at, created_at
+          SELECT $1, $2, $3, $4, $5, $6, 'PENDING', $7, $8, $9, $8
+          FROM reviewer_memberships actor
+          WHERE actor.tenant_id = $2 AND actor.cognito_subject = $7
+            AND actor.status = 'ACTIVE' AND actor.role IN ('OWNER', 'ADMIN')
+            AND NOT EXISTS (
+              SELECT 1 FROM reviewer_memberships existing
+              WHERE existing.tenant_id = $2 AND existing.slack_user_id = $3
+                AND existing.status = 'ACTIVE'
+            )
+          RETURNING id, tenant_id, invited_slack_user_id, delivery_email, role,
+                    status, expires_at, created_at
+        )
+        SELECT inserted.*, tenant.display_name AS workspace_display_name
+        FROM inserted
+        JOIN tenants tenant ON tenant.id = inserted.tenant_id
       `,
         [
           input.id,
@@ -98,6 +104,7 @@ export class PostgresWorkspaceAccessRepository implements WorkspaceAccessReposit
       return {
         id: row.id,
         tenantId: row.tenant_id,
+        workspaceDisplayName: row.workspace_display_name,
         invitedSlackUserId: row.invited_slack_user_id,
         deliveryEmail: row.delivery_email,
         role: row.role,

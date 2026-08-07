@@ -138,6 +138,20 @@ variable "review_self_signup_enabled" {
   default     = false
 }
 
+variable "invitation_email_from_address" {
+  description = "Verified Amazon SES sender used for workspace invitation email."
+  type        = string
+  default     = "invites@onrecord.kunal-sharma.in"
+
+  validation {
+    condition = can(regex(
+      "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$",
+      var.invitation_email_from_address,
+    ))
+    error_message = "invitation_email_from_address must be a valid email address."
+  }
+}
+
 variable "lambda_architecture" {
   description = "Lambda CPU architecture. arm64 is cost-efficient for this pure Node.js workload."
   type        = string

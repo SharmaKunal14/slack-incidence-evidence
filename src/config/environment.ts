@@ -110,6 +110,7 @@ const incidentReviewApiLambdaEnvironmentSchema =
       .max(1_048_576)
       .default(524_288),
     REVIEW_APP_BASE_URL: z.url(),
+    INVITATION_EMAIL_FROM_ADDRESS: z.email().max(320),
     SLACK_OAUTH_CLIENT_ID: z
       .string()
       .trim()

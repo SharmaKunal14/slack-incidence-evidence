@@ -468,7 +468,7 @@ Prerequisites:
   or a Notion data source shared with the Notion integration.
 - An existing PostgreSQL endpoint. For the current Supabase deployment, use the
   transaction-pooler hostname, port 6543, and empty VPC input lists.
-- Database migrations through `0010_auto_discovered_slack_threads.sql` applied
+- Database migrations through `0016_workspace_roles_and_invitations.sql` applied
   before the updated workflow is deployed or invoked.
 
 Create an ignored variable file:
@@ -490,6 +490,17 @@ public pilot, add `"review_self_signup_enabled": true` to the deployment
 environment's `TF_INPUTS_JSON`. Cognito then requires email verification before
 the visitor can enter the console. Do not enable this merely to avoid creating
 test users: public registration expands abuse, email-delivery, and cost exposure.
+
+Workspace invitations are sent with Amazon SES from
+`invites@onrecord.kunal-sharma.in` by default. Before testing, verify either that
+exact address or the `onrecord.kunal-sharma.in` domain in SES in the deployment
+region. Domain verification is preferred; publish the DKIM CNAME records SES
+returns in the domain's DNS. Override `invitation_email_from_address` in
+`TF_INPUTS_JSON` if a different verified sender is used. Accounts still in the
+SES sandbox can send only to verified recipient addresses; request production
+access before inviting arbitrary customers. Invitation delivery failure is
+shown to the workspace manager and the same single-use link remains available
+as a manual fallback.
 
 Build both deployable artifacts, then run:
 

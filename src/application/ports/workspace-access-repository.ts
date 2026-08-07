@@ -12,6 +12,7 @@ export interface WorkspaceMember {
 export interface WorkspaceInvitation {
   readonly id: string;
   readonly tenantId: string;
+  readonly workspaceDisplayName: string;
   readonly invitedSlackUserId: string;
   readonly deliveryEmail: string;
   readonly role: Exclude<WorkspaceRole, 'OWNER'>;

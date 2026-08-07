@@ -330,6 +330,10 @@ function WorkspaceMembersPage({
           },
         ),
       ),
+    onSuccess: () => {
+      setSlackUserId('');
+      setDeliveryEmail('');
+    },
   });
   const updateMember = useMutation({
     mutationFn: async (input: {
@@ -412,8 +416,8 @@ function WorkspaceMembersPage({
             >
               <Plus size={18} />{' '}
               {invite.isPending
-                ? 'Creating invitation…'
-                : 'Create secure invitation'}
+                ? 'Sending invitation…'
+                : 'Send secure invitation'}
             </button>
             {invite.isError && (
               <p className="form-notice" data-error="true" role="alert">
@@ -423,12 +427,20 @@ function WorkspaceMembersPage({
             {invite.data !== undefined && (
               <div className="security-note">
                 <div>
-                  <strong>Copy this single-use link</strong>
+                  <strong>
+                    {invite.data.emailDeliveryStatus === 'SENT'
+                      ? 'Invitation email sent'
+                      : 'Invitation created, but email delivery failed'}
+                  </strong>
+                  <p>
+                    {invite.data.emailDeliveryStatus === 'SENT'
+                      ? 'The recipient should receive the invitation shortly. Keep this link as a fallback.'
+                      : 'Copy this link and send it through a trusted channel.'}
+                  </p>
                   <p>{invite.data.invitationUrl}</p>
                   <small>
                     Expires {new Date(invite.data.expiresAt).toLocaleString()}.
-                    Email is delivery metadata only; send the link through a
-                    trusted channel.
+                    Access still requires the exact invited Slack identity.
                   </small>
                 </div>
               </div>

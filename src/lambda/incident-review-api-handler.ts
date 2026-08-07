@@ -87,6 +87,16 @@ export function createIncidentReviewApiHandler(
             reviewer.subject,
             { ...(isRecord(body) ? body : {}), tenantId: workspaceId },
           );
+          if (invitation.emailDeliveryStatus === 'FAILED') {
+            dependencies.logger.warn(
+              {
+                requestId: event.requestContext.requestId,
+                invitationId: invitation.invitationId,
+                workspaceId,
+              },
+              'Workspace invitation created but email delivery failed',
+            );
+          }
           return jsonResponse(201, {
             ...invitation,
             expiresAt: invitation.expiresAt.toISOString(),

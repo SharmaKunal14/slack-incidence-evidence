@@ -1,4 +1,5 @@
 import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { SESv2Client } from '@aws-sdk/client-sesv2';
 import type {
   APIGatewayProxyEventV2WithJWTAuthorizer,
   APIGatewayProxyResultV2,
@@ -24,6 +25,7 @@ import { PostgresWorkspaceAccessRepository } from '../infrastructure/postgres/wo
 import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { NodeSecureTokenGenerator } from '../infrastructure/security/node-secure-token-generator.js';
+import { SesWorkspaceInvitationEmailSender } from '../integrations/aws/ses-workspace-invitation-email-sender.js';
 import { createLogger } from '../observability/logger.js';
 import {
   createIncidentReviewApiHandler,
@@ -32,6 +34,10 @@ import {
 
 const environment = loadIncidentReviewApiLambdaEnvironment();
 const logger = createLogger(environment.LOG_LEVEL);
+const invitationEmailClient = new SESv2Client({
+  region: environment.AWS_REGION,
+  maxAttempts: 3,
+});
 let handlerPromise: Promise<IncidentReviewApiHandler> | undefined;
 
 export async function handler(
@@ -117,6 +123,10 @@ async function buildHandler(): Promise<IncidentReviewApiHandler> {
         new NodeSecureTokenGenerator(),
         uuidGenerator,
         systemClock,
+        new SesWorkspaceInvitationEmailSender(invitationEmailClient, {
+          fromAddress: environment.INVITATION_EMAIL_FROM_ADDRESS,
+          applicationBaseUrl: environment.REVIEW_APP_BASE_URL,
+        }),
         {
           applicationBaseUrl: environment.REVIEW_APP_BASE_URL,
           slackClientId: environment.SLACK_OAUTH_CLIENT_ID,

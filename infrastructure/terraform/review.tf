@@ -13,10 +13,11 @@ data "aws_cloudfront_origin_request_policy" "all_viewer_except_host_header" {
 }
 
 locals {
-  review_bucket_name     = "${substr(local.name_prefix, 0, 24)}-review-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
-  review_cognito_domain  = "${substr(local.name_prefix, 0, 40)}-${data.aws_caller_identity.current.account_id}"
-  review_application_url = "https://${aws_cloudfront_distribution.review.domain_name}"
-  review_database_secret = coalesce(var.review_database_secret_arn, var.database_secret_arn)
+  review_bucket_name             = "${substr(local.name_prefix, 0, 24)}-review-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
+  review_cognito_domain          = "${substr(local.name_prefix, 0, 40)}-${data.aws_caller_identity.current.account_id}"
+  review_application_url         = "https://${aws_cloudfront_distribution.review.domain_name}"
+  review_database_secret         = coalesce(var.review_database_secret_arn, var.database_secret_arn)
+  invitation_email_sender_domain = split("@", var.invitation_email_from_address)[1]
   review_runtime_configuration = "window.__INCIDENT_REVIEW_CONFIG__ = ${jsonencode({
     apiBaseUrl      = local.review_application_url
     cognitoBaseUrl  = "https://${aws_cognito_user_pool_domain.reviewers.domain}.auth.${var.aws_region}.amazoncognito.com"
@@ -390,6 +391,21 @@ data "aws_iam_policy_document" "incident_review_api" {
     resources = [local.review_database_secret]
   }
 
+  statement {
+    sid     = "SendWorkspaceInvitationEmail"
+    actions = ["ses:SendEmail"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/${var.invitation_email_from_address}",
+      "arn:${data.aws_partition.current.partition}:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/${local.invitation_email_sender_domain}",
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "ses:FromAddress"
+      values   = [var.invitation_email_from_address]
+    }
+  }
+
   dynamic "statement" {
     for_each = local.worker_vpc_enabled ? [1] : []
     content {
@@ -454,6 +470,7 @@ resource "aws_lambda_function" "incident_review_api" {
       DATABASE_SECRET_ARN                 = local.review_database_secret
       DATABASE_SSL                        = "true"
       LOG_LEVEL                           = var.log_level
+      INVITATION_EMAIL_FROM_ADDRESS       = var.invitation_email_from_address
       NODE_ENV                            = local.node_env
       REVIEW_API_MAX_BODY_BYTES           = tostring(var.review_api_max_body_bytes)
       REVIEW_APP_BASE_URL                 = local.review_application_url

@@ -285,6 +285,7 @@ describe('Lambda environment configuration', () => {
       DATABASE_HOST: 'pooler.example.test',
       DATABASE_NAME: 'postgres',
       REVIEW_APP_BASE_URL: 'https://review.example.test',
+      INVITATION_EMAIL_FROM_ADDRESS: 'invites@example.test',
       SLACK_OAUTH_CLIENT_ID: '123.456',
       SLACK_IDENTITY_REDIRECT_URI:
         'https://review.example.test/onboarding/slack/identity/callback',

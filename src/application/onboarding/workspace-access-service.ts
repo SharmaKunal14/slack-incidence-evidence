@@ -4,6 +4,7 @@ import type { Clock } from '../ports/clock.js';
 import type { IdGenerator } from '../ports/id-generator.js';
 import type { SecureTokenGenerator } from '../ports/secure-token-generator.js';
 import type { SlackIdentityProvider } from '../ports/slack-identity-provider.js';
+import type { WorkspaceInvitationEmailSender } from '../ports/workspace-invitation-email-sender.js';
 import {
   WorkspaceAccessRepositoryError,
   type WorkspaceAccessRepository,
@@ -61,6 +62,7 @@ export class WorkspaceAccessService {
     private readonly tokenGenerator: SecureTokenGenerator,
     private readonly idGenerator: IdGenerator,
     private readonly clock: Clock,
+    private readonly invitationEmailSender: WorkspaceInvitationEmailSender,
     configuration: {
       readonly applicationBaseUrl: string;
       readonly slackClientId: string;
@@ -98,6 +100,7 @@ export class WorkspaceAccessService {
     readonly invitationId: string;
     readonly invitationUrl: string;
     readonly expiresAt: Date;
+    readonly emailDeliveryStatus: 'SENT' | 'FAILED';
   }> {
     const parsed = invitationInputSchema.parse(input);
     const token = this.tokenGenerator.generate();
@@ -114,10 +117,23 @@ export class WorkspaceAccessService {
       });
       const invitationUrl = new URL(this.applicationBaseUrl);
       invitationUrl.hash = `/invitations/${token}`;
+      let emailDeliveryStatus: 'SENT' | 'FAILED' = 'SENT';
+      try {
+        await this.invitationEmailSender.send({
+          recipientEmail: invitation.deliveryEmail,
+          invitationUrl: invitationUrl.toString(),
+          workspaceDisplayName: invitation.workspaceDisplayName,
+          role: invitation.role,
+          expiresAt,
+        });
+      } catch {
+        emailDeliveryStatus = 'FAILED';
+      }
       return {
         invitationId: invitation.id,
         invitationUrl: invitationUrl.toString(),
         expiresAt,
+        emailDeliveryStatus,
       };
     } catch (error) {
       throw normalizeRepositoryError(error);
