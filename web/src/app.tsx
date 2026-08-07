@@ -796,8 +796,8 @@ function SignIn({
           <p className="eyebrow">Secure workspace</p>
           <h2 id="sign-in-title">Continue to OnRecord</h2>
           <p className="muted-copy">
-            Sign in with your reviewer account. Access is checked against your
-            active workspace membership for every incident.
+            Sign in or create a verified account. Workspace access is checked
+            server-side before every integration and incident action.
           </p>
           <button
             className="button button-primary button-large"
@@ -814,7 +814,7 @@ function SignIn({
             ) : (
               <ShieldCheck size={18} />
             )}
-            {busy ? 'Redirecting securely…' : 'Sign in securely'}
+            {busy ? 'Redirecting securely…' : 'Continue securely'}
           </button>
           <div className="security-note">
             <ShieldCheck size={16} aria-hidden="true" />

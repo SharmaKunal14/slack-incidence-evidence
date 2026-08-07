@@ -25,6 +25,7 @@ jobs:
         working-directory: website
     env:
       NEXT_PUBLIC_SITE_URL: https://onrecord.kunal-sharma.in
+      NEXT_PUBLIC_APP_URL: 'https://dk95lfvlz4v6e.cloudfront.net/#/settings/integrations'
     steps:
       - name: Check out source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

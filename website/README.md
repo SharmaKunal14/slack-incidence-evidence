@@ -23,8 +23,15 @@ Set `NEXT_PUBLIC_SITE_URL` to the final HTTPS origin before the S3 build so
 Open Graph and social-card URLs use the custom domain:
 
 ```bash
-NEXT_PUBLIC_SITE_URL=https://onrecord.example.com npm run build:s3
+NEXT_PUBLIC_SITE_URL=https://onrecord.example.com \
+NEXT_PUBLIC_APP_URL=https://app.example.com/#/settings/integrations \
+npm run build:s3
 ```
+
+`NEXT_PUBLIC_APP_URL` is the public HTTPS location of the authenticated review
+console. Landing-page “Connect Slack” actions send visitors to its Integrations
+route; authentication and Slack authorization still happen in the protected
+console, never in the static website.
 
 The static export contains the landing page, `/demo/` redirect, interactive
 synthetic review application, product images, technology artwork, captions,

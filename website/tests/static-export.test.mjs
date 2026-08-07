@@ -11,6 +11,11 @@ test('exports the landing page as static HTML', async () => {
   assert.match(html, /OnRecord — Put every incident on the record/);
   assert.match(html, /The incident is over/);
   assert.match(html, /href="\/review-demo\/demo\.html"/);
+  assert.match(
+    html,
+    /href="https:\/\/dk95lfvlz4v6e\.cloudfront\.net\/#\/settings\/integrations"/,
+  );
+  assert.match(html, /Connect your Slack/);
   assert.doesNotMatch(html, /signin-with-chatgpt/);
 });
 

@@ -8,10 +8,11 @@ async function terraformFile(name: string): Promise<string> {
 
 describe('CloudFront browser API routing', () => {
   it('keeps authenticated browser traffic and onboarding cookies same-origin', async () => {
-    const [review, onboarding, outputs] = await Promise.all([
+    const [review, onboarding, outputs, variables] = await Promise.all([
       terraformFile('review.tf'),
       terraformFile('onboarding.tf'),
       terraformFile('outputs.tf'),
+      terraformFile('variables.tf'),
     ]);
 
     expect(review).toContain('name = "Managed-AllViewerExceptHostHeader"');
@@ -38,6 +39,12 @@ describe('CloudFront browser API routing', () => {
     );
     expect(outputs).toContain(
       'value       = "${local.review_application_url}/onboarding/slack/start"',
+    );
+    expect(review).toContain(
+      'allow_admin_create_user_only = !var.review_self_signup_enabled',
+    );
+    expect(variables).toMatch(
+      /variable "review_self_signup_enabled" \{[\s\S]*?default\s+= false[\s\S]*?\}/u,
     );
   });
 

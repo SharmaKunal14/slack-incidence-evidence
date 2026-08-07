@@ -132,6 +132,12 @@ variable "review_web_artifact_directory" {
   default     = "../../artifacts/review-web"
 }
 
+variable "review_self_signup_enabled" {
+  description = "Allow verified public Cognito registration for the review console. Keep disabled unless the environment is intentionally exposed for self-service onboarding."
+  type        = bool
+  default     = false
+}
+
 variable "lambda_architecture" {
   description = "Lambda CPU architecture. arm64 is cost-efficient for this pure Node.js workload."
   type        = string

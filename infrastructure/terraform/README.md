@@ -39,8 +39,9 @@ the application's at-least-once and idempotency assumptions.
 - Workspace-aware Slack runtime adapters which resolve only the active OAuth
   installation for the operation's Slack team. Runtime IAM can read only the
   environment's installation-secret prefix; there is no global-token fallback.
-- An admin-created Cognito reviewer pool using authorization-code + PKCE and
-  optional TOTP MFA.
+- A Cognito reviewer pool using authorization-code + PKCE and optional TOTP
+  MFA. Operator-created accounts are the default; verified self-registration
+  can be enabled explicitly for a public onboarding environment.
 - A private, encrypted, versioned S3 bucket exposed only through an origin-
   access-controlled CloudFront review console with restrictive response headers.
 - Non-cached CloudFront `/review/*` and `/onboarding/*` behaviors which proxy to
@@ -483,6 +484,12 @@ secret values in `terraform.tfvars`. `slack_auto_thread_max_count` defaults to
 50 automatically expanded roots per selected channel and is hard-bounded to
 500; lower it if workspace rate limits or incident volume require a smaller
 collection budget.
+
+Public self-service onboarding is disabled by default. For an intentionally
+public pilot, add `"review_self_signup_enabled": true` to the deployment
+environment's `TF_INPUTS_JSON`. Cognito then requires email verification before
+the visitor can enter the console. Do not enable this merely to avoid creating
+test users: public registration expands abuse, email-delivery, and cost exposure.
 
 Build both deployable artifacts, then run:
 

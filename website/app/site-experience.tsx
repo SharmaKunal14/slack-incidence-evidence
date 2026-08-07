@@ -3,6 +3,22 @@
 import { Fragment, useEffect, useState, type CSSProperties } from "react";
 
 const demoHref = "/review-demo/demo.html";
+const connectSlackHref = requireHttpsUrl(
+  process.env.NEXT_PUBLIC_APP_URL ??
+    "https://dk95lfvlz4v6e.cloudfront.net/#/settings/integrations",
+);
+
+function requireHttpsUrl(value: string): string {
+  const parsed = new URL(value);
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.username !== "" ||
+    parsed.password !== ""
+  ) {
+    throw new Error("NEXT_PUBLIC_APP_URL must be a trusted HTTPS URL");
+  }
+  return parsed.toString();
+}
 
 const workflow = [
   {
@@ -457,8 +473,8 @@ export function OnRecordSite() {
             >
               <span /><span />
             </button>
-            <a className="button button-ivory nav-demo" href={demoHref}>
-              Explore demo <span aria-hidden="true">↗</span>
+            <a className="button button-ivory nav-demo" href={connectSlackHref}>
+              Connect Slack <span aria-hidden="true">→</span>
             </a>
           </div>
         </nav>
@@ -472,10 +488,13 @@ export function OnRecordSite() {
               incident record—reviewed and approved by a human.
             </p>
             <div className="hero-actions">
-              <a className="button button-signal" href={demoHref}>
-                Review an incident <span aria-hidden="true">→</span>
+              <a className="button button-signal" href={connectSlackHref}>
+                Connect your Slack <span aria-hidden="true">→</span>
               </a>
               <div className="hero-action-links">
+                <a className="text-link" href={demoHref}>
+                  Explore the demo <span aria-hidden="true">↗</span>
+                </a>
                 <button className="text-link" type="button" onClick={() => setWalkthroughOpen(true)}>
                   Watch the 2-minute story <span aria-hidden="true">↗</span>
                 </button>
@@ -574,7 +593,7 @@ export function OnRecordSite() {
           <p className="kicker kicker-light">Evidence first. Human approved.</p>
           <h2>Put the incident on the record.</h2>
           <p>Review the evidence. Challenge the draft. Approve what your team can defend.</p>
-          <a className="button button-signal button-large" href={demoHref}>Enter the demo <span aria-hidden="true">→</span></a>
+          <a className="button button-signal button-large" href={connectSlackHref}>Connect your Slack <span aria-hidden="true">→</span></a>
         </div>
       </section>
 

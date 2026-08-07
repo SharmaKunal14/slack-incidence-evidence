@@ -68,6 +68,11 @@ test('server-renders the OnRecord landing page', async () => {
     );
   }
   assert.match(html, /href="\/review-demo\/demo\.html"/);
+  assert.match(
+    html,
+    /href="https:\/\/dk95lfvlz4v6e\.cloudfront\.net\/#\/settings\/integrations"/,
+  );
+  assert.match(html, /Connect your Slack/);
   assert.match(html, /Watch the 2-minute story/);
   assert.match(html, /id="method"/);
   assert.match(html, /id="technical"/);
