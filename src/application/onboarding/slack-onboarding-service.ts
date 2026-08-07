@@ -404,7 +404,16 @@ async function startSlackOnboarding(
       createdAt,
       expiresAt,
     });
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof SlackOnboardingRepositoryError &&
+      error.code === 'ADMIN_REQUIRED'
+    ) {
+      throw new SlackOnboardingError(
+        'SLACK_INSTALLATION_ADMIN_REQUIRED',
+        false,
+      );
+    }
     throw new SlackOnboardingError('ONBOARDING_STATE_PERSISTENCE_FAILED', true);
   }
 

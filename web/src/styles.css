@@ -204,6 +204,10 @@ a {
   transform: translateY(-1px);
 }
 
+.icon-button[href]:hover {
+  color: var(--brand);
+}
+
 /* Authentication */
 .auth-shell {
   display: grid;
@@ -530,6 +534,162 @@ a {
 }
 
 /* Inbox */
+.integration-page {
+  max-width: 64rem;
+}
+
+.integration-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  margin: 2rem 0;
+}
+
+.integration-hero h1 {
+  margin: 0;
+  font-size: clamp(2.25rem, 5vw, 4rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.integration-hero-icon {
+  display: inline-grid;
+  width: 4.5rem;
+  height: 4.5rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #cfd5ff;
+  border-radius: 1.25rem;
+  color: var(--brand);
+  background: linear-gradient(145deg, #fff, var(--brand-soft));
+  box-shadow: var(--shadow-md);
+}
+
+.connection-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  border: 1px solid #a8d9cb;
+  border-radius: 0.9rem;
+  padding: 0.9rem 1rem;
+  color: #0c6b54;
+  background: var(--teal-soft);
+  line-height: 1.5;
+}
+
+.connection-notice[data-tone='error'] {
+  border-color: #f0bcc3;
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.connection-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.connection-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1.1rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.connection-loading {
+  align-items: center;
+  color: var(--ink-soft);
+}
+
+.connection-status-icon {
+  display: inline-grid;
+  width: 3rem;
+  height: 3rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 0.9rem;
+  color: var(--ink-faint);
+  background: var(--surface-muted);
+}
+
+.connection-status-icon[data-status='CONNECTED'] {
+  color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.connection-card-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.connection-card-copy h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.015em;
+}
+
+.connection-card-copy > p:not(.eyebrow, .form-notice) {
+  margin: 0.65rem 0;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.connection-card-copy .button {
+  margin-top: 0.65rem;
+}
+
+.connection-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.connection-meta {
+  color: var(--ink-faint) !important;
+  font-size: 0.78rem;
+}
+
+.connection-status-pill {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0.38rem 0.62rem;
+  color: var(--ink-soft);
+  background: var(--surface-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.connection-status-pill[data-status='CONNECTED'] {
+  color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.connection-status-pill[data-status='RECONNECT_REQUIRED'],
+.connection-status-pill[data-status='CONNECTING'] {
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.connection-status-pill[data-status='FAILED'],
+.connection-status-pill[data-status='DISCONNECTED'] {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.connection-guidance {
+  border-left: 3px solid var(--amber);
+  padding-left: 0.75rem;
+  color: #8a5d0b !important;
+}
+
 .inbox-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2658,6 +2818,17 @@ a {
   }
 
   .environment-indicator {
+    display: none;
+  }
+
+  .integration-hero,
+  .connection-card,
+  .connection-card-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .integration-hero-icon {
     display: none;
   }
 

@@ -8,7 +8,7 @@ the application's at-least-once and idempotency assumptions.
 ## What it creates
 
 - An API Gateway HTTP API with one Slack-HMAC-authenticated public route, one
-  public browser-bound Slack OAuth callback, and six Cognito-JWT routes.
+  public browser-bound Slack OAuth callback, and seven Cognito-JWT routes.
 - A short-lived Slack ingress Lambda behind that route.
 - An encrypted SQS FIFO queue, encrypted FIFO dead-letter queue, redrive policy,
   explicit redrive allow policy, and resource policies denying non-TLS access.
@@ -27,6 +27,8 @@ the application's at-least-once and idempotency assumptions.
   and an authenticated console link and has no model-provider credentials.
 - A bounded human-review API Lambda with a separate IAM role and, in production,
   a required dedicated least-privilege PostgreSQL credential.
+- An authenticated integrations screen which shows membership-scoped Slack
+  connection status and starts browser-bound OAuth without exposing credentials.
 - Separate Slack onboarding start and callback Lambdas. Only the callback can
   read the Slack OAuth client secret or create installation credentials.
 - Workspace-aware Slack runtime adapters which resolve only the active OAuth
@@ -243,6 +245,11 @@ psql "$ADMIN_DATABASE_URL" \
   --set=review_role=incident_review_api \
   --file=db/security/review_api_grants.sql
 ```
+
+Reapply this grant script when deploying the customer-facing Slack status API;
+the review role now needs read-only access to `tenants` and
+`slack_installations`. No credential value is stored in either table or returned
+to the browser.
 
 The script cannot make an owner credential least-privileged. A real production
 deployment also needs a non-owner pipeline role; otherwise a compromised

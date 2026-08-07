@@ -5,6 +5,7 @@ import type {
 } from 'aws-lambda';
 import type { Logger } from 'pino';
 import { z } from 'zod';
+import { SlackOnboardingError } from '../application/onboarding/slack-onboarding-service.js';
 import type { SlackOnboardingStartService } from '../application/onboarding/slack-onboarding-service.js';
 
 export const SLACK_ONBOARDING_BROWSER_COOKIE =
@@ -44,7 +45,21 @@ export function createSlackOnboardingStartHandler(
           `${SLACK_ONBOARDING_BROWSER_COOKIE}=${started.browserBinding}; Max-Age=600; Path=/; Secure; HttpOnly; SameSite=Lax`,
         ],
       };
-    } catch {
+    } catch (error) {
+      if (
+        error instanceof SlackOnboardingError &&
+        error.code === 'SLACK_INSTALLATION_ADMIN_REQUIRED'
+      ) {
+        dependencies.logger.warn(
+          {
+            requestId: event.requestContext.requestId,
+            routeKey: event.routeKey,
+            onboardingCode: error.code,
+          },
+          'Slack onboarding start request denied',
+        );
+        return jsonResponse(403, { error: 'admin_required' });
+      }
       dependencies.logger.error(
         {
           requestId: event.requestContext.requestId,

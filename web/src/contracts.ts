@@ -212,6 +212,35 @@ export const revisionDetailResponseSchema = z
   })
   .strict();
 
+export const slackOnboardingStatusSchema = z
+  .object({
+    canStartInstallation: z.boolean(),
+    workspaces: z
+      .array(
+        z
+          .object({
+            workspaceId: z.string().regex(/^T[A-Z0-9]{1,63}$/),
+            displayName: z.string().trim().min(1).max(200),
+            role: z.enum(['ADMIN', 'REVIEWER']),
+            connectionStatus: z.enum([
+              'NOT_CONNECTED',
+              'CONNECTING',
+              'CONNECTED',
+              'RECONNECT_REQUIRED',
+              'DISCONNECTED',
+              'FAILED',
+            ]),
+            canManage: z.boolean(),
+            installedAt: z.iso.datetime().nullable(),
+            updatedAt: z.iso.datetime(),
+            credentialExpiresAt: z.iso.datetime().nullable(),
+          })
+          .strict(),
+      )
+      .max(50),
+  })
+  .strict();
+
 export type Bundle = z.infer<typeof bundleSchema>;
 export type Classification = (typeof classificationValues)[number];
 export type Configuration = z.infer<typeof configurationSchema>;
@@ -220,3 +249,4 @@ export type RevisionDetail = z.infer<
   typeof revisionDetailResponseSchema
 >['revision'];
 export type Statement = z.infer<typeof statementSchema>;
+export type SlackOnboardingStatus = z.infer<typeof slackOnboardingStatusSchema>;

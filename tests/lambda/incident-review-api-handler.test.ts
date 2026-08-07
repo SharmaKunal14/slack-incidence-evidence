@@ -51,6 +51,12 @@ function dependencies(
         approvedAt: new Date('2026-07-18T01:05:00.000Z'),
       }),
     },
+    getSlackOnboardingStatus: {
+      execute: vi.fn().mockResolvedValue({
+        canStartInstallation: true,
+        workspaces: [],
+      }),
+    },
     logger: pino({ level: 'silent' }),
     maxBodyBytes: 524_288,
     ...overrides,
@@ -159,6 +165,53 @@ describe('incident review API boundary', () => {
       'cache-control': 'no-store',
       'x-content-type-options': 'nosniff',
     });
+  });
+
+  it('returns only safe, membership-scoped Slack connection metadata', async () => {
+    const getSlackOnboardingStatus = vi.fn().mockResolvedValue({
+      canStartInstallation: true,
+      workspaces: [
+        {
+          workspaceId: 'T001',
+          displayName: 'Acme Engineering',
+          role: 'ADMIN',
+          connectionStatus: 'CONNECTED',
+          canManage: true,
+          installedAt: new Date('2026-08-05T01:00:00.000Z'),
+          updatedAt: new Date('2026-08-05T01:05:00.000Z'),
+          credentialExpiresAt: null,
+        },
+      ],
+    });
+    const handler = createIncidentReviewApiHandler(
+      dependencies({
+        getSlackOnboardingStatus: { execute: getSlackOnboardingStatus },
+      }),
+    );
+
+    const response = await handler(
+      eventFor({ routeKey: 'GET /review/onboarding/slack/status' }),
+    );
+
+    expect(structured(response).statusCode).toBe(200);
+    expect(getSlackOnboardingStatus).toHaveBeenCalledWith(subject);
+    expect(parsed(response)).toEqual({
+      canStartInstallation: true,
+      workspaces: [
+        {
+          workspaceId: 'T001',
+          displayName: 'Acme Engineering',
+          role: 'ADMIN',
+          connectionStatus: 'CONNECTED',
+          canManage: true,
+          installedAt: '2026-08-05T01:00:00.000Z',
+          updatedAt: '2026-08-05T01:05:00.000Z',
+          credentialExpiresAt: null,
+        },
+      ],
+    });
+    expect(structured(response).body).not.toContain('secret');
+    expect(structured(response).body).not.toContain('token');
   });
 
   it('loads one preserved revision through the tenant-authorized use case', async () => {

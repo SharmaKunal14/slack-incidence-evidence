@@ -115,7 +115,6 @@ await executeFile(
       EVIDENCE_RETENTION_DAYS: '30',
       INCIDENT_QUEUE_URL: 'https://sqs.example.test/incident-jobs.fifo',
       INCIDENT_WORKFLOW_STATE_MACHINE_ARN: 'test-state-machine',
-      SLACK_BOT_TOKEN_SECRET_ARN: 'test-slack-bot-secret',
       SLACK_THREAD_MAX_PAGES: '100',
       SLACK_SIGNING_SECRET_ARN: 'test-slack-secret',
       SLACK_OAUTH_APP_ID: 'A001',

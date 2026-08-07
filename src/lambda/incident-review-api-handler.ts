@@ -11,6 +11,7 @@ import type {
   GetReportRevision,
   ListIncidentReviews,
 } from '../application/review-incident.js';
+import type { GetSlackOnboardingStatus } from '../application/get-slack-onboarding-status.js';
 import {
   approveReportRevisionCommandSchema,
   createReportRevisionCommandSchema,
@@ -37,6 +38,7 @@ export interface IncidentReviewApiDependencies {
   readonly getRevision: Pick<GetReportRevision, 'execute'>;
   readonly createRevision: Pick<CreateReportRevision, 'execute'>;
   readonly approveRevision: Pick<ApproveReportRevision, 'execute'>;
+  readonly getSlackOnboardingStatus: Pick<GetSlackOnboardingStatus, 'execute'>;
   readonly logger: Logger;
   readonly maxBodyBytes: number;
 }
@@ -55,6 +57,21 @@ export function createIncidentReviewApiHandler(
     }
     try {
       switch (event.routeKey) {
+        case 'GET /review/onboarding/slack/status': {
+          const status = await dependencies.getSlackOnboardingStatus.execute(
+            reviewer.subject,
+          );
+          return jsonResponse(200, {
+            canStartInstallation: status.canStartInstallation,
+            workspaces: status.workspaces.map((workspace) => ({
+              ...workspace,
+              installedAt: workspace.installedAt?.toISOString() ?? null,
+              updatedAt: workspace.updatedAt.toISOString(),
+              credentialExpiresAt:
+                workspace.credentialExpiresAt?.toISOString() ?? null,
+            })),
+          });
+        }
         case 'GET /review/incidents': {
           const limit = parseLimit(event.queryStringParameters?.['limit']);
           const cursor = parseCursor(event.queryStringParameters?.['cursor']);

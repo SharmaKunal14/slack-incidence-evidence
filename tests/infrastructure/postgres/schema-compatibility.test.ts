@@ -60,6 +60,14 @@ describe('database schema compatibility', () => {
     }
   });
 
+  it('allows the review API to read safe Slack connection metadata', async () => {
+    const grants = await readFile('db/security/review_api_grants.sql', 'utf8');
+
+    expect(grants).toMatch(
+      /GRANT SELECT ON TABLE[\s\S]*?tenants,[\s\S]*?reviewer_memberships,[\s\S]*?slack_installations,/u,
+    );
+  });
+
   it('accepts every required migration and allows later additive migrations', async () => {
     const query = vi.fn().mockResolvedValue(
       diagnosticResult(

@@ -200,6 +200,12 @@ the existing SQS and Step Functions path. Lambda handlers stay thin and call
 application services; OAuth and credential logic do not move into Terraform or
 API Gateway mappings.
 
+The review console consumes a separate membership-scoped status read model. It
+returns workspace display metadata, role, lifecycle state, and timestamps only.
+The OAuth start boundary permits an unbound first installer or an active tenant
+administrator; reviewer-only and revoked identities are rejected before an
+authorization is created.
+
 ### Token rotation activation
 
 Rotation support is implemented and proven with a cloned staging Slack app

@@ -62,7 +62,7 @@ describe('PostgresSlackOnboardingRepository', () => {
     const consumedAt = new Date('2026-08-05T01:00:30.000Z');
     const query = vi
       .fn()
-      .mockResolvedValueOnce(result([]))
+      .mockResolvedValueOnce(result([{ id: authorizationId }]))
       .mockResolvedValueOnce(
         result([
           {
@@ -102,6 +102,8 @@ describe('PostgresSlackOnboardingRepository', () => {
     ).resolves.toMatchObject({ id: authorizationId, consumedAt });
 
     expect(query.mock.calls[0]?.[0]).toContain('state_sha256');
+    expect(query.mock.calls[0]?.[0]).toContain("membership.role = 'ADMIN'");
+    expect(query.mock.calls[0]?.[0]).toContain("tenant.status = 'ACTIVE'");
     expect(query.mock.calls[1]?.[0]).toContain("status = 'PENDING'");
     expect(query.mock.calls[1]?.[0]).toContain('expires_at > $3');
     expect(query.mock.calls[1]?.[0]).toContain(
@@ -115,6 +117,26 @@ describe('PostgresSlackOnboardingRepository', () => {
       browserBindingSha256,
       consumedAt,
     ]);
+  });
+
+  it('denies OAuth start when the subject is bound without active admin authority', async () => {
+    const query = vi.fn().mockResolvedValue(result([]));
+    const repository = new PostgresSlackOnboardingRepository({
+      query,
+    } as unknown as Pool);
+
+    await expect(
+      repository.createAuthorization({
+        id: authorizationId,
+        stateSha256,
+        browserBindingSha256,
+        cognitoSubject,
+        redirectUri: 'https://app.example.com/onboarding/slack/callback',
+        requestedScopes: [...SLACK_REQUIRED_BOT_SCOPES],
+        createdAt: new Date('2026-08-05T01:00:00.000Z'),
+        expiresAt: new Date('2026-08-05T01:10:00.000Z'),
+      }),
+    ).rejects.toBeInstanceOf(SlackOnboardingAdminRequiredError);
   });
 
   it('returns a bound completed authorization for callback replay', async () => {

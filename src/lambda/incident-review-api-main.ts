@@ -12,11 +12,13 @@ import {
   GetReportRevision,
   ListIncidentReviews,
 } from '../application/review-incident.js';
+import { GetSlackOnboardingStatus } from '../application/get-slack-onboarding-status.js';
 import { systemClock } from '../application/ports/clock.js';
 import { uuidGenerator } from '../application/ports/id-generator.js';
 import { loadIncidentReviewApiLambdaEnvironment } from '../config/environment.js';
 import { parseDatabaseConnectionSecret } from '../config/runtime-secrets.js';
 import { PostgresIncidentReviewRepository } from '../infrastructure/postgres/incident-review-repository.js';
+import { PostgresSlackOnboardingStatusRepository } from '../infrastructure/postgres/slack-onboarding-status-repository.js';
 import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
 import { createLogger } from '../observability/logger.js';
@@ -100,6 +102,9 @@ async function buildHandler(): Promise<IncidentReviewApiHandler> {
         repository,
         systemClock,
         uuidGenerator,
+      ),
+      getSlackOnboardingStatus: new GetSlackOnboardingStatus(
+        new PostgresSlackOnboardingStatusRepository(database),
       ),
       logger,
       maxBodyBytes: environment.REVIEW_API_MAX_BODY_BYTES,

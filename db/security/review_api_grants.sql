@@ -18,7 +18,9 @@ GRANT USAGE ON SCHEMA public TO :"review_role";
 
 GRANT SELECT ON TABLE
   public.schema_migrations,
+  tenants,
   reviewer_memberships,
+  slack_installations,
   incidents,
   incident_report_drafts,
   incident_report_sections,

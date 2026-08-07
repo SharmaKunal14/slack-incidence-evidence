@@ -55,6 +55,26 @@ describe('Slack onboarding HTTP handlers', () => {
     expect(start).not.toHaveBeenCalled();
   });
 
+  it('returns forbidden before redirecting a non-admin to Slack', async () => {
+    const start = vi
+      .fn()
+      .mockRejectedValue(
+        new SlackOnboardingError('SLACK_INSTALLATION_ADMIN_REQUIRED', false),
+      );
+    const handler = createSlackOnboardingStartHandler({
+      onboarding: { start },
+      logger,
+    });
+
+    const response = structured(await handler(startEvent()));
+
+    expect(response.statusCode).toBe(403);
+    expect(JSON.parse(response.body ?? '')).toEqual({
+      error: 'admin_required',
+    });
+    expect(response.cookies).toBeUndefined();
+  });
+
   it('completes from state plus browser binding and redirects to a fixed URL', async () => {
     const complete = vi.fn().mockResolvedValue({});
     const handler = callbackHandler(complete);

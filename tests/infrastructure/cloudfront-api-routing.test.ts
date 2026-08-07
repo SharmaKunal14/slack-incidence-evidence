@@ -22,6 +22,7 @@ describe('CloudFront browser API routing', () => {
       'origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host_header.id',
     );
     expect(review).toContain('apiBaseUrl      = local.review_application_url');
+    expect(review).toContain('"GET /review/onboarding/slack/status"');
     expect(review).toContain(
       'source_hash   = sha256(local.review_runtime_configuration)',
     );

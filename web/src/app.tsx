@@ -25,10 +25,12 @@ import {
   PencilLine,
   Plus,
   Search,
+  Settings2,
   ShieldCheck,
   Sparkles,
   Trash2,
   TriangleAlert,
+  Unplug,
   RotateCcw,
   X,
 } from 'lucide-react';
@@ -53,6 +55,7 @@ import {
   inboxSchema,
   revisionDetailResponseSchema,
   revisionResponseSchema,
+  slackOnboardingStatusSchema,
   type Bundle,
   type Classification,
   type Configuration,
@@ -60,6 +63,11 @@ import {
   type RevisionDetail,
   type Statement,
 } from './contracts.js';
+import {
+  consumeSlackOnboardingCallbackResult,
+  requestSlackAuthorization,
+  type SlackOnboardingCallbackResult,
+} from './slack-onboarding.js';
 import {
   reconcileRevisionQuestionAnswers,
   reconcileRevisionStatements,
@@ -130,6 +138,9 @@ export function IncidentReviewApplication({
   readonly configuration: Configuration;
   readonly apiClient?: ReviewApiClient;
 }): ReactNode {
+  const [slackCallbackResult] = useState(() =>
+    consumeSlackOnboardingCallbackResult(),
+  );
   const [token, setToken] = useState<string | null>(() =>
     sessionStorage.getItem('review_access_token'),
   );
@@ -156,9 +167,17 @@ export function IncidentReviewApplication({
     return <SignIn configuration={configuration} />;
   }
   const incidentMatch = /^#\/incidents\/([0-9a-f-]{36})$/iu.exec(hash);
+  const integrations = hash === '#/settings/integrations';
   return (
     <ApplicationErrorBoundary>
-      {incidentMatch?.[1] === undefined ? (
+      {integrations ? (
+        <SlackConnectionPage
+          apiClient={apiClient}
+          callbackResult={slackCallbackResult}
+          configuration={configuration}
+          token={token}
+        />
+      ) : incidentMatch?.[1] === undefined ? (
         <InboxPage
           apiClient={apiClient}
           configuration={configuration}
@@ -173,6 +192,267 @@ export function IncidentReviewApplication({
         />
       )}
     </ApplicationErrorBoundary>
+  );
+}
+
+export function SlackConnectionPage({
+  apiClient,
+  callbackResult = null,
+  configuration,
+  token,
+}: {
+  readonly apiClient: ReviewApiClient;
+  readonly callbackResult?: SlackOnboardingCallbackResult | null;
+  readonly configuration: Configuration;
+  readonly token: string;
+}): ReactNode {
+  const status = useQuery({
+    queryKey: ['slack-onboarding-status'],
+    queryFn: async () =>
+      slackOnboardingStatusSchema.parse(
+        await apiClient(
+          configuration,
+          token,
+          '/review/onboarding/slack/status',
+        ),
+      ),
+  });
+  const connect = useMutation({
+    mutationFn: () => requestSlackAuthorization(configuration, token),
+    onSuccess: (authorizationUrl) => location.assign(authorizationUrl),
+  });
+
+  return (
+    <AppFrame configuration={configuration}>
+      <main className="page-shell integration-page">
+        <nav className="breadcrumb" aria-label="Breadcrumb">
+          <a href="#/">
+            <ArrowLeft size={16} /> Review inbox
+          </a>
+          <ChevronRight size={15} aria-hidden="true" />
+          <span>Integrations</span>
+        </nav>
+
+        <section className="integration-hero reveal">
+          <div>
+            <p className="eyebrow">Workspace settings</p>
+            <h1>Slack connection</h1>
+            <p className="hero-copy">
+              Authorize OnRecord once. Workspace credentials remain encrypted
+              and are never shown in this browser.
+            </p>
+          </div>
+          <span className="integration-hero-icon" aria-hidden="true">
+            <MessageSquareText size={30} />
+          </span>
+        </section>
+
+        {callbackResult !== null && (
+          <div
+            className="connection-notice"
+            data-tone={callbackResult === 'connected' ? 'success' : 'error'}
+            role="status"
+          >
+            {callbackResult === 'connected' ? (
+              <CheckCircle2 size={19} />
+            ) : (
+              <AlertCircle size={19} />
+            )}
+            <span>
+              <strong>
+                {callbackResult === 'connected'
+                  ? 'Slack connected'
+                  : 'Slack connection was not completed'}
+              </strong>
+              {callbackResult === 'connected'
+                ? ' The workspace is ready for incident collection.'
+                : ' Review the status below and try again, or contact an administrator.'}
+            </span>
+          </div>
+        )}
+
+        {status.isPending ? (
+          <section
+            className="connection-card connection-loading"
+            aria-live="polite"
+          >
+            <LoaderCircle className="spin" size={21} /> Loading Slack status…
+          </section>
+        ) : status.isError ? (
+          <section className="connection-card">
+            <AlertCircle size={22} />
+            <div>
+              <h2>Connection status unavailable</h2>
+              <p>{userFacingError(status.error)}</p>
+              <button
+                className="button button-secondary"
+                onClick={() => void status.refetch()}
+              >
+                Try again
+              </button>
+            </div>
+          </section>
+        ) : (
+          <section className="connection-stack" aria-label="Slack workspaces">
+            {status.data.workspaces.length === 0 ? (
+              <DisconnectedSlackCard
+                canConnect={status.data.canStartInstallation}
+                connecting={connect.isPending}
+                onConnect={() => connect.mutate()}
+              />
+            ) : (
+              status.data.workspaces.map((workspace) => (
+                <article
+                  className="connection-card"
+                  key={workspace.workspaceId}
+                >
+                  <span
+                    className="connection-status-icon"
+                    data-status={workspace.connectionStatus}
+                    aria-hidden="true"
+                  >
+                    {workspace.connectionStatus === 'CONNECTED' ? (
+                      <CheckCircle2 size={23} />
+                    ) : (
+                      <Unplug size={23} />
+                    )}
+                  </span>
+                  <div className="connection-card-copy">
+                    <div className="connection-card-heading">
+                      <div>
+                        <p className="eyebrow">Slack workspace</p>
+                        <h2>{workspace.displayName}</h2>
+                      </div>
+                      <ConnectionStatusPill
+                        status={workspace.connectionStatus}
+                      />
+                    </div>
+                    <p>
+                      Workspace ID {workspace.workspaceId} · Your role:{' '}
+                      {workspace.role === 'ADMIN'
+                        ? 'Administrator'
+                        : 'Reviewer'}
+                    </p>
+                    <p className="connection-meta">
+                      {workspace.installedAt === null
+                        ? 'Not connected yet'
+                        : `Connected ${new Date(
+                            workspace.installedAt,
+                          ).toLocaleDateString()}`}
+                      {' · '}Updated {formatRelativeTime(workspace.updatedAt)}
+                      {workspace.credentialExpiresAt === null
+                        ? ''
+                        : ` · Credential expires ${new Date(
+                            workspace.credentialExpiresAt,
+                          ).toLocaleDateString()}`}
+                    </p>
+                    {workspace.connectionStatus !== 'CONNECTED' &&
+                      workspace.canManage && (
+                        <button
+                          className="button button-primary"
+                          disabled={connect.isPending}
+                          onClick={() => connect.mutate()}
+                        >
+                          {connect.isPending ? (
+                            <LoaderCircle className="spin" size={18} />
+                          ) : (
+                            <RotateCcw size={18} />
+                          )}
+                          {connect.isPending
+                            ? 'Opening Slack…'
+                            : 'Reconnect Slack'}
+                        </button>
+                      )}
+                    {!workspace.canManage &&
+                      workspace.connectionStatus !== 'CONNECTED' && (
+                        <p className="connection-guidance">
+                          A workspace administrator must reconnect Slack.
+                        </p>
+                      )}
+                  </div>
+                </article>
+              ))
+            )}
+            {connect.isError && (
+              <p className="form-notice" data-error="true" role="alert">
+                <AlertCircle size={16} /> {userFacingError(connect.error)}
+              </p>
+            )}
+          </section>
+        )}
+      </main>
+    </AppFrame>
+  );
+}
+
+function DisconnectedSlackCard({
+  canConnect,
+  connecting,
+  onConnect,
+}: {
+  readonly canConnect: boolean;
+  readonly connecting: boolean;
+  readonly onConnect: () => void;
+}): ReactNode {
+  return (
+    <article className="connection-card">
+      <span className="connection-status-icon" data-status="NOT_CONNECTED">
+        <Unplug size={23} />
+      </span>
+      <div className="connection-card-copy">
+        <p className="eyebrow">Slack workspace</p>
+        <h2>Slack is not connected</h2>
+        <p>
+          Connect a workspace to open incident-scoping modals, collect evidence,
+          and receive review notifications.
+        </p>
+        {canConnect ? (
+          <button
+            className="button button-primary"
+            disabled={connecting}
+            onClick={onConnect}
+          >
+            {connecting ? (
+              <LoaderCircle className="spin" size={18} />
+            ) : (
+              <MessageSquareText size={18} />
+            )}
+            {connecting ? 'Opening Slack…' : 'Connect to Slack'}
+          </button>
+        ) : (
+          <p className="connection-guidance">
+            Your account cannot manage workspace integrations. Contact an
+            OnRecord administrator.
+          </p>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function ConnectionStatusPill({
+  status,
+}: {
+  readonly status:
+    | 'NOT_CONNECTED'
+    | 'CONNECTING'
+    | 'CONNECTED'
+    | 'RECONNECT_REQUIRED'
+    | 'DISCONNECTED'
+    | 'FAILED';
+}): ReactNode {
+  const label: Record<typeof status, string> = {
+    NOT_CONNECTED: 'Not connected',
+    CONNECTING: 'Connecting',
+    CONNECTED: 'Connected',
+    RECONNECT_REQUIRED: 'Reconnect required',
+    DISCONNECTED: 'Disconnected',
+    FAILED: 'Setup failed',
+  };
+  return (
+    <span className="connection-status-pill" data-status={status}>
+      {label[status]}
+    </span>
   );
 }
 
@@ -1993,6 +2273,16 @@ function AppFrame({
               ? 'Synthetic demo · no external effects'
               : 'Protected workspace'}
           </span>
+          {experience !== 'demo' && (
+            <a
+              className="icon-button"
+              href="#/settings/integrations"
+              title="Workspace integrations"
+            >
+              <Settings2 size={18} aria-hidden="true" />
+              <span className="sr-only">Workspace integrations</span>
+            </a>
+          )}
           <button
             className="icon-button"
             onClick={() =>
@@ -2371,7 +2661,7 @@ function userFacingError(error: unknown): string {
       case 400:
         return 'The request was invalid. Check every decision and acknowledgement.';
       case 403:
-        return 'Your account is not an active reviewer for this workspace.';
+        return 'Your account does not have permission to perform this workspace action.';
       case 404:
         return 'The incident was not found or is not available to your account.';
       case 409:

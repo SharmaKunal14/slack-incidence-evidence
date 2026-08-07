@@ -89,7 +89,7 @@ export class PostgresSlackOnboardingRepository implements SlackOnboardingReposit
     rawInput: CreateSlackOAuthAuthorizationInput,
   ): Promise<void> {
     const input = createSlackOAuthAuthorizationSchema.parse(rawInput);
-    await this.pool.query(
+    const result = await this.pool.query(
       `
         INSERT INTO slack_oauth_authorizations (
           id,
@@ -102,7 +102,24 @@ export class PostgresSlackOnboardingRepository implements SlackOnboardingReposit
           created_at,
           expires_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, $8)
+        SELECT $1, $2, $3, $4, $5, $6, 'PENDING', $7, $8
+        WHERE
+          NOT EXISTS (
+            SELECT 1
+            FROM reviewer_memberships
+            WHERE cognito_subject = $4
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM reviewer_memberships AS membership
+            JOIN tenants AS tenant
+              ON tenant.id = membership.tenant_id
+            WHERE membership.cognito_subject = $4
+              AND membership.role = 'ADMIN'
+              AND membership.status = 'ACTIVE'
+              AND tenant.status = 'ACTIVE'
+          )
+        RETURNING id
       `,
       [
         input.id,
@@ -115,6 +132,9 @@ export class PostgresSlackOnboardingRepository implements SlackOnboardingReposit
         input.expiresAt,
       ],
     );
+    if (result.rowCount !== 1) {
+      throw new SlackOnboardingAdminRequiredError();
+    }
   }
 
   public async consumeAuthorization(

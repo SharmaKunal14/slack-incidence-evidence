@@ -431,7 +431,7 @@ resource "aws_iam_role_policy" "incident_review_api" {
 
 resource "aws_lambda_function" "incident_review_api" {
   function_name = "${local.name_prefix}-incident-review-api"
-  description   = "Serves tenant-authorized human review reads, immutable revisions, and atomic approval."
+  description   = "Serves tenant-authorized review operations and safe Slack connection status."
   role          = aws_iam_role.incident_review_api.arn
   runtime       = "nodejs22.x"
   architectures = [var.lambda_architecture]
@@ -515,6 +515,7 @@ resource "aws_apigatewayv2_authorizer" "reviewers" {
 
 locals {
   review_api_routes = toset([
+    "GET /review/onboarding/slack/status",
     "GET /review/incidents",
     "GET /review/incidents/{incidentId}",
     "GET /review/incidents/{incidentId}/revisions/{revisionId}",
