@@ -61,6 +61,8 @@ GRANT UPDATE (
 
 GRANT UPDATE (
   status,
+  reviewer_user_id,
+  assigned_reviewer_subject,
   updated_at,
   version
 ) ON incidents TO :"review_role";

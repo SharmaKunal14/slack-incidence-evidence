@@ -218,7 +218,7 @@ export function buildIncidentScopeView(
         },
         true,
       ),
-      reviewerBlock(input),
+      ...reviewerBlocks(input),
       {
         type: 'section',
         text: {
@@ -243,31 +243,36 @@ export function buildIncidentScopeView(
   };
 }
 
-function reviewerBlock(
+function reviewerBlocks(
   input: OpenIncidentScopeModalInput,
-): Readonly<Record<string, unknown>> {
+): readonly Readonly<Record<string, unknown>>[] {
   if (input.eligibleReviewers === undefined) {
-    return inputBlock('reviewer', 'reviewer', 'Assigned reviewer', {
-      type: 'users_select',
-      action_id: 'reviewer',
-      initial_user: input.userId,
-    });
+    return [];
   }
   if (input.eligibleReviewers.length === 0) {
-    throw new IncidentScopeModalError('NO_ELIGIBLE_REVIEWERS', false);
+    return [];
   }
   const options = input.eligibleReviewers.map(({ slackUserId }) => ({
     text: { type: 'plain_text', text: slackUserId },
     value: slackUserId,
   }));
-  const initialOption =
-    options.find((option) => option.value === input.userId) ?? options[0];
-  return inputBlock('reviewer', 'reviewer', 'Assigned reviewer', {
-    type: 'static_select',
-    action_id: 'reviewer',
-    options,
-    initial_option: initialOption,
-  });
+  return [
+    inputBlock(
+      'reviewer',
+      'reviewer',
+      'Initial reviewer',
+      {
+        type: 'static_select',
+        action_id: 'reviewer',
+        options,
+        placeholder: {
+          type: 'plain_text',
+          text: 'Optional — assign later in OnRecord',
+        },
+      },
+      true,
+    ),
+  ];
 }
 
 function inputBlock(

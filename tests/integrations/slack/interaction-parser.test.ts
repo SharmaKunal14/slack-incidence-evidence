@@ -140,6 +140,23 @@ describe('Slack interaction parser', () => {
     });
   });
 
+  it('accepts an incident without an initial reviewer', () => {
+    const payload = submission() as {
+      view: { state: { values: Record<string, unknown> } };
+    };
+    delete payload.view.state.values['reviewer'];
+
+    expect(parseSlackInteraction(payload, now)).toMatchObject({
+      kind: 'submit_incident_scope',
+      command: {
+        requestedTitle: 'Checkout outage',
+      },
+    });
+    expect(
+      (parseSlackInteraction(payload, now) as { command: object }).command,
+    ).not.toHaveProperty('reviewerUserId');
+  });
+
   it('rejects duplicate channels, foreign anchors, and unbounded windows with field errors', () => {
     let thrown: unknown;
     try {

@@ -62,7 +62,7 @@ export interface RequestScopedIncidentReviewCommand {
   readonly requestedTitle: string;
   readonly startedAt: string;
   readonly endedAt: string;
-  readonly reviewerUserId: string;
+  readonly reviewerUserId?: string;
   readonly evidenceRetentionDays: number;
   readonly channels: readonly {
     readonly channelId: string;
@@ -103,7 +103,9 @@ export class RequestScopedIncidentReview {
       scope: {
         startedAt: command.startedAt,
         endedAt: command.endedAt,
-        reviewerUserId: command.reviewerUserId,
+        ...(command.reviewerUserId === undefined
+          ? {}
+          : { reviewerUserId: command.reviewerUserId }),
         evidenceRetentionDays: command.evidenceRetentionDays,
         channels: command.channels.map((channel) => ({
           channelId: channel.channelId,

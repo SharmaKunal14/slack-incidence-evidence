@@ -82,6 +82,32 @@ describe('WebApiSlackOAuthProvider', () => {
     });
   });
 
+  it('verifies installer authority without trusting the OAuth response alone', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          user: { id: 'W002', is_admin: true, is_owner: false },
+        }),
+      ),
+    );
+    const provider = new WebApiSlackOAuthProvider(
+      { clientId: '123.456', clientSecret: 'client-secret-value' },
+      { request },
+    );
+
+    await expect(
+      provider.verifyInstaller('xoxb-access', 'W002'),
+    ).resolves.toEqual({
+      userId: 'W002',
+      isWorkspaceAdministrator: true,
+    });
+    expect(request.mock.calls[0]?.[0]).toBe('https://slack.com/api/users.info');
+    expect(
+      (request.mock.calls[0]?.[1]?.body as URLSearchParams).get('user'),
+    ).toBe('W002');
+  });
+
   it('maps rate limits and bounded provider errors without exposing responses', async () => {
     const rateLimitedRequest = vi
       .fn<typeof fetch>()

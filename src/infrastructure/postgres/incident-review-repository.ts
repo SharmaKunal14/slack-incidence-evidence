@@ -6,6 +6,7 @@ import {
   parseReviewClassification,
   parseSectionType,
   type IncidentReviewBundle,
+  type IncidentReviewerAssignment,
   type ReportRevision,
   type ReportRevisionDetail,
   type ReportRevisionSummary,
@@ -64,6 +65,8 @@ interface BundleHeaderRow {
   readonly draft_version: number;
   readonly rendered_markdown: string;
   readonly analysis_run_id: string;
+  readonly reviewer_user_id: string | null;
+  readonly assigned_reviewer_subject: string | null;
 }
 
 interface StatementRow {
@@ -340,6 +343,8 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
           d.draft_version,
           d.rendered_markdown,
           d.analysis_run_id,
+          i.reviewer_user_id,
+          i.assigned_reviewer_subject,
           membership.role AS access_role
         FROM incidents i
         JOIN reviewer_memberships membership
@@ -391,6 +396,7 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       }
       return {
         accessMode: 'VIEWER',
+        assignment: toAssignment(header),
         incident: {
           id: header.incident_id,
           title: header.title,
@@ -454,6 +460,7 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
 
     return {
       accessMode: 'EDITOR',
+      assignment: toAssignment(header),
       incident: {
         id: header.incident_id,
         title: header.title,
@@ -1245,6 +1252,130 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       })),
     };
   }
+
+  public async assignReviewer(input: {
+    readonly auditEventId: string;
+    readonly reviewer: ReviewerIdentity;
+    readonly incidentId: string;
+    readonly expectedIncidentVersion: number;
+    readonly memberSubject: string | null;
+    readonly clientRequestId: string;
+    readonly assignedAt: Date;
+  }): Promise<IncidentReviewerAssignment> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const incidentResult = await client.query<{
+        readonly tenant_id: string;
+        readonly status: string;
+        readonly version: number;
+        readonly assigned_reviewer_subject: string | null;
+      }>(
+        `
+          SELECT i.tenant_id, i.status, i.version,
+                 i.assigned_reviewer_subject
+          FROM incidents AS i
+          JOIN reviewer_memberships AS actor
+            ON actor.tenant_id = i.tenant_id
+           AND actor.cognito_subject = $1
+           AND actor.status = 'ACTIVE'
+           AND actor.role IN ('OWNER', 'ADMIN')
+          WHERE i.id = $2
+          FOR UPDATE OF i
+        `,
+        [input.reviewer.subject, input.incidentId],
+      );
+      const incident = incidentResult.rows[0];
+      if (incident === undefined) throw new ReviewNotFoundError();
+      if (incident.status !== 'NEEDS_REVIEW') {
+        throw new ReviewConflictError(
+          'Only incidents awaiting review can be assigned',
+        );
+      }
+      if (incident.version !== input.expectedIncidentVersion) {
+        throw new ReviewConflictError();
+      }
+
+      let assignedSlackUserId: string | null = null;
+      if (input.memberSubject !== null) {
+        const memberResult = await client.query<{
+          readonly slack_user_id: string;
+        }>(
+          `
+            SELECT slack_user_id
+            FROM reviewer_memberships
+            WHERE tenant_id = $1
+              AND cognito_subject = $2
+              AND status = 'ACTIVE'
+              AND role IN ('OWNER', 'ADMIN', 'REVIEWER')
+              AND slack_user_id IS NOT NULL
+            FOR UPDATE
+          `,
+          [incident.tenant_id, input.memberSubject],
+        );
+        assignedSlackUserId = memberResult.rows[0]?.slack_user_id ?? null;
+        if (assignedSlackUserId === null) throw new ReviewNotFoundError();
+      }
+
+      const updated = await client.query<{
+        readonly version: number;
+        readonly updated_at: Date | string;
+      }>(
+        `
+          UPDATE incidents
+          SET reviewer_user_id = $1,
+              assigned_reviewer_subject = $2,
+              updated_at = $3,
+              version = version + 1
+          WHERE tenant_id = $4 AND id = $5 AND version = $6
+          RETURNING version, updated_at
+        `,
+        [
+          assignedSlackUserId,
+          input.memberSubject,
+          input.assignedAt,
+          incident.tenant_id,
+          input.incidentId,
+          input.expectedIncidentVersion,
+        ],
+      );
+      const assignment = updated.rows[0];
+      if (assignment === undefined) throw new ReviewConflictError();
+
+      await insertAuditEvent(client, {
+        id: input.auditEventId,
+        tenantId: incident.tenant_id,
+        incidentId: input.incidentId,
+        actorId: input.reviewer.subject,
+        action:
+          input.memberSubject === null
+            ? 'INCIDENT_REVIEWER_UNASSIGNED'
+            : 'INCIDENT_REVIEWER_ASSIGNED',
+        targetType: 'INCIDENT',
+        targetId: input.incidentId,
+        requestId: input.clientRequestId,
+        metadata: {
+          previousAssigned: incident.assigned_reviewer_subject !== null,
+          assigned: input.memberSubject !== null,
+        },
+        occurredAt: input.assignedAt,
+      });
+      await client.query('COMMIT');
+      return {
+        incidentId: input.incidentId,
+        workspaceId: incident.tenant_id,
+        assignedMemberSubject: input.memberSubject,
+        assignedSlackUserId,
+        incidentVersion: assignment.version,
+        updatedAt: toIsoString(assignment.updated_at),
+      };
+    } catch (error) {
+      await rollbackQuietly(client);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 }
 
 async function ensurePublicationJob(
@@ -1588,6 +1719,17 @@ function toInboxItem(row: InboxRow): ReviewInboxItem {
     latestRevisionId: row.latest_revision_id,
     latestRevisionNumber: row.latest_revision_number,
     latestRevisionStatus: row.latest_revision_status,
+  };
+}
+
+function toAssignment(
+  header: BundleHeaderRow,
+): IncidentReviewBundle['assignment'] {
+  return {
+    workspaceId: header.tenant_id,
+    canManage: header.access_role === 'OWNER' || header.access_role === 'ADMIN',
+    assignedMemberSubject: header.assigned_reviewer_subject,
+    assignedSlackUserId: header.reviewer_user_id,
   };
 }
 

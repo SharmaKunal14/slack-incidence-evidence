@@ -1,5 +1,6 @@
 import type {
   IncidentReviewBundle,
+  IncidentReviewerAssignment,
   ReportRevision,
   ReportRevisionDetail,
   ResolvedReviewQuestionAnswer,
@@ -55,4 +56,13 @@ export interface IncidentReviewRepository {
   ): Promise<ReportRevisionDetail | null>;
   createRevision(input: CreateReportRevisionInput): Promise<ReportRevision>;
   approveRevision(input: ApproveReportRevisionInput): Promise<ReportRevision>;
+  assignReviewer(input: {
+    readonly auditEventId: string;
+    readonly reviewer: ReviewerIdentity;
+    readonly incidentId: string;
+    readonly expectedIncidentVersion: number;
+    readonly memberSubject: string | null;
+    readonly clientRequestId: string;
+    readonly assignedAt: Date;
+  }): Promise<IncidentReviewerAssignment>;
 }

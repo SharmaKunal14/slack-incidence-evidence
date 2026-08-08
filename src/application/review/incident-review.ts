@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { cognitoSubjectSchema } from '../identity/cognito-subject.js';
 import {
   INCIDENT_REPORT_SECTION_TYPES,
   type IncidentReportSectionType,
@@ -48,6 +49,23 @@ export interface ReviewInboxItem {
 export interface ReviewInboxPage {
   readonly items: readonly ReviewInboxItem[];
   readonly nextCursor: ReviewInboxCursor | null;
+}
+
+export const assignIncidentReviewerCommandSchema = z
+  .object({
+    expectedIncidentVersion: z.number().int().nonnegative(),
+    memberSubject: cognitoSubjectSchema.nullable(),
+    clientRequestId: z.uuid(),
+  })
+  .strict();
+
+export interface IncidentReviewerAssignment {
+  readonly incidentId: string;
+  readonly workspaceId: string;
+  readonly assignedMemberSubject: string | null;
+  readonly assignedSlackUserId: string | null;
+  readonly incidentVersion: number;
+  readonly updatedAt: string;
 }
 
 export interface ReviewEvidence {
@@ -138,6 +156,12 @@ export interface ReportRevisionDetail extends ReportRevisionSummary {
 
 export interface IncidentReviewBundle {
   readonly accessMode: 'EDITOR' | 'VIEWER';
+  readonly assignment: {
+    readonly workspaceId: string;
+    readonly canManage: boolean;
+    readonly assignedMemberSubject: string | null;
+    readonly assignedSlackUserId: string | null;
+  };
   readonly incident: {
     readonly id: string;
     readonly title: string;

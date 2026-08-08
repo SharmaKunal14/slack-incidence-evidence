@@ -4,6 +4,7 @@ import type { IdGenerator } from './ports/id-generator.js';
 import type { IncidentReviewRepository } from './ports/incident-review-repository.js';
 import {
   approveReportRevisionCommandSchema,
+  assignIncidentReviewerCommandSchema,
   classificationCaution,
   createReportRevisionCommandSchema,
   ReviewAuthorizationError,
@@ -11,6 +12,7 @@ import {
   ReviewNotFoundError,
   ReviewValidationError,
   type IncidentReviewBundle,
+  type IncidentReviewerAssignment,
   type ReportRevision,
   type ReportRevisionDetail,
   type ResolvedReviewQuestionAnswer,
@@ -65,6 +67,31 @@ export class GetIncidentReview {
       throw new ReviewNotFoundError();
     }
     return bundle;
+  }
+}
+
+export class AssignIncidentReviewer {
+  public constructor(
+    private readonly reviews: IncidentReviewRepository,
+    private readonly clock: Clock,
+    private readonly idGenerator: IdGenerator,
+  ) {}
+
+  public async execute(input: {
+    readonly reviewer: ReviewerIdentity;
+    readonly incidentId: string;
+    readonly command: unknown;
+  }): Promise<IncidentReviewerAssignment> {
+    const command = assignIncidentReviewerCommandSchema.parse(input.command);
+    return this.reviews.assignReviewer({
+      auditEventId: this.idGenerator.generate(),
+      reviewer: input.reviewer,
+      incidentId: input.incidentId,
+      expectedIncidentVersion: command.expectedIncidentVersion,
+      memberSubject: command.memberSubject,
+      clientRequestId: command.clientRequestId,
+      assignedAt: this.clock.now(),
+    });
   }
 }
 

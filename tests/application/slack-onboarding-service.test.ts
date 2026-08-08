@@ -53,6 +53,9 @@ interface TestDependencies {
   >;
   readonly exchangeCode: MockedFunction<SlackOAuthProvider['exchangeCode']>;
   readonly verifyBot: MockedFunction<SlackOAuthProvider['verifyBot']>;
+  readonly verifyInstaller: MockedFunction<
+    SlackOAuthProvider['verifyInstaller']
+  >;
   readonly storeCredential: MockedFunction<
     SlackInstallationCredentialStore['store']
   >;
@@ -93,6 +96,14 @@ function dependencies(
       kind: 'CREATED',
       idempotent: false,
     });
+  const requiresWorkspaceAdministrator = vi
+    .fn<SlackOnboardingRepository['requiresWorkspaceAdministrator']>()
+    .mockResolvedValue(true);
+  if (overrides.repository?.requiresWorkspaceAdministrator !== undefined) {
+    requiresWorkspaceAdministrator.mockImplementation(
+      overrides.repository.requiresWorkspaceAdministrator,
+    );
+  }
   if (overrides.repository?.createAuthorization !== undefined) {
     createAuthorization.mockImplementation(
       overrides.repository.createAuthorization,
@@ -114,6 +125,7 @@ function dependencies(
     );
   }
   const repository: SlackOnboardingRepository = {
+    requiresWorkspaceAdministrator,
     createAuthorization,
     consumeAuthorization,
     failAuthorization,
@@ -125,13 +137,26 @@ function dependencies(
   const verifyBot = vi
     .fn<SlackOAuthProvider['verifyBot']>()
     .mockResolvedValue({ teamId: 'T001', userId: 'U001' });
+  const verifyInstaller = vi
+    .fn<SlackOAuthProvider['verifyInstaller']>()
+    .mockResolvedValue({
+      userId: 'W002',
+      isWorkspaceAdministrator: true,
+    });
   if (overrides.provider?.exchangeCode !== undefined) {
     exchangeCode.mockImplementation(overrides.provider.exchangeCode);
   }
   if (overrides.provider?.verifyBot !== undefined) {
     verifyBot.mockImplementation(overrides.provider.verifyBot);
   }
-  const provider: SlackOAuthProvider = { exchangeCode, verifyBot };
+  if (overrides.provider?.verifyInstaller !== undefined) {
+    verifyInstaller.mockImplementation(overrides.provider.verifyInstaller);
+  }
+  const provider: SlackOAuthProvider = {
+    exchangeCode,
+    verifyBot,
+    verifyInstaller,
+  };
   const storeCredential = vi
     .fn<SlackInstallationCredentialStore['store']>()
     .mockResolvedValue({ secretArn });
@@ -173,6 +198,7 @@ function dependencies(
     completeInstallation,
     exchangeCode,
     verifyBot,
+    verifyInstaller,
     storeCredential,
   };
 }
@@ -337,6 +363,7 @@ describe('SlackOnboardingService', () => {
     const { service, failAuthorization, storeCredential } = dependencies({
       generatedIds: [installationUuid],
       repository: {
+        requiresWorkspaceAdministrator: vi.fn().mockResolvedValue(false),
         completeInstallation: vi
           .fn()
           .mockRejectedValue(
@@ -363,6 +390,25 @@ describe('SlackOnboardingService', () => {
         failureCode: 'SLACK_INSTALLATION_ADMIN_REQUIRED',
       }),
     );
+  });
+
+  it('requires Slack administrator authority before creating a workspace owner', async () => {
+    const { service, storeCredential, completeInstallation } = dependencies({
+      provider: {
+        verifyInstaller: vi.fn().mockResolvedValue({
+          userId: 'W002',
+          isWorkspaceAdministrator: false,
+        }),
+      },
+    });
+
+    await expect(
+      service.complete({ state, browserBinding, code: 'temporary-code' }),
+    ).rejects.toEqual(
+      new SlackOnboardingError('SLACK_INSTALLATION_ADMIN_REQUIRED', false),
+    );
+    expect(storeCredential).not.toHaveBeenCalled();
+    expect(completeInstallation).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid credential-store reference before database completion', async () => {

@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { cognitoSubjectSchema } from '../application/identity/cognito-subject.js';
 import type {
   ApproveReportRevision,
+  AssignIncidentReviewer,
   CreateReportRevision,
   GetIncidentReview,
   GetReportRevision,
@@ -43,6 +44,7 @@ export interface IncidentReviewApiDependencies {
   readonly getRevision: Pick<GetReportRevision, 'execute'>;
   readonly createRevision: Pick<CreateReportRevision, 'execute'>;
   readonly approveRevision: Pick<ApproveReportRevision, 'execute'>;
+  readonly assignReviewer: Pick<AssignIncidentReviewer, 'execute'>;
   readonly getSlackOnboardingStatus: Pick<GetSlackOnboardingStatus, 'execute'>;
   readonly workspaceAccess: Pick<
     WorkspaceAccessService,
@@ -190,6 +192,15 @@ export function createIncidentReviewApiHandler(
             incidentId,
           });
           return jsonResponse(200, bundle);
+        }
+        case 'PATCH /review/incidents/{incidentId}/assignment': {
+          const incidentId = parsePathId(event, 'incidentId');
+          const assignment = await dependencies.assignReviewer.execute({
+            reviewer,
+            incidentId,
+            command: parseJsonBody(event, dependencies.maxBodyBytes),
+          });
+          return jsonResponse(200, { assignment });
         }
         case 'GET /review/incidents/{incidentId}/revisions/{revisionId}': {
           const incidentId = parsePathId(event, 'incidentId');

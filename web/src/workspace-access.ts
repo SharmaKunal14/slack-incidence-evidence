@@ -8,6 +8,12 @@ const startSchema = z
     expiresAt: z.iso.datetime(),
   })
   .strict();
+const invitationTokenSchema = z
+  .string()
+  .min(43)
+  .max(128)
+  .regex(/^[A-Za-z0-9_-]+$/);
+const INVITATION_RETURN_KEY = 'onrecord_pending_invitation';
 
 export type SlackIdentityCallbackResult = 'connected' | 'failed';
 
@@ -15,7 +21,15 @@ export function consumeSlackIdentityCallbackResult(): SlackIdentityCallbackResul
   const parameters = new URLSearchParams(location.search);
   const value = parameters.get('slack_identity');
   if (value !== 'connected' && value !== 'failed') return null;
-  history.replaceState({}, '', `${location.pathname}#/settings/integrations`);
+  const invitationToken = invitationTokenSchema.safeParse(
+    sessionStorage.getItem(INVITATION_RETURN_KEY),
+  );
+  sessionStorage.removeItem(INVITATION_RETURN_KEY);
+  const hash =
+    value === 'failed' && invitationToken.success
+      ? `#/invitations/${invitationToken.data}`
+      : '#/settings/integrations';
+  history.replaceState({}, '', `${location.pathname}${hash}`);
   return value;
 }
 
@@ -59,5 +73,9 @@ export async function requestSlackIdentityAuthorization(
   }
   if (Date.parse(body.expiresAt) <= Date.now())
     throw new Error('Slack identity request has expired');
+  sessionStorage.setItem(
+    INVITATION_RETURN_KEY,
+    invitationTokenSchema.parse(invitationToken),
+  );
   return url.toString();
 }

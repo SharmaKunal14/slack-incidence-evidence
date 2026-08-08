@@ -8,6 +8,7 @@ import type {
 import { Pool } from 'pg';
 import {
   ApproveReportRevision,
+  AssignIncidentReviewer,
   CreateReportRevision,
   GetIncidentReview,
   GetReportRevision,
@@ -111,6 +112,11 @@ async function buildHandler(): Promise<IncidentReviewApiHandler> {
         uuidGenerator,
       ),
       approveRevision: new ApproveReportRevision(
+        repository,
+        systemClock,
+        uuidGenerator,
+      ),
+      assignReviewer: new AssignIncidentReviewer(
         repository,
         systemClock,
         uuidGenerator,

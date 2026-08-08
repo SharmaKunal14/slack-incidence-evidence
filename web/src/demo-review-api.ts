@@ -258,6 +258,12 @@ export function createDemoReviewApi(): ReviewApiClient {
 function initialBundle(): Bundle {
   return bundleSchema.parse({
     accessMode: 'EDITOR',
+    assignment: {
+      workspaceId: 'TDEMO',
+      canManage: false,
+      assignedMemberSubject: null,
+      assignedSlackUserId: null,
+    },
     incident: {
       id: demoIncidentId,
       title: 'EU checkout outage',

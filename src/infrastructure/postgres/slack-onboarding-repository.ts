@@ -85,6 +85,22 @@ export class SlackOnboardingIdentityConflictError extends SlackOnboardingReposit
 export class PostgresSlackOnboardingRepository implements SlackOnboardingRepository {
   public constructor(private readonly pool: Pool) {}
 
+  public async requiresWorkspaceAdministrator(
+    teamId: string,
+  ): Promise<boolean> {
+    const result = await this.pool.query<{ readonly required: boolean }>(
+      `
+        SELECT NOT EXISTS (
+          SELECT 1 FROM slack_installations WHERE team_id = $1
+        ) AND NOT EXISTS (
+          SELECT 1 FROM tenants WHERE id = $1
+        ) AS required
+      `,
+      [teamId],
+    );
+    return result.rows[0]?.required ?? true;
+  }
+
   public async createAuthorization(
     rawInput: CreateSlackOAuthAuthorizationInput,
   ): Promise<void> {

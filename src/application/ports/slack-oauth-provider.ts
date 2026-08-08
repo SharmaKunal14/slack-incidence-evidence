@@ -17,6 +17,11 @@ export interface SlackBotIdentity {
   readonly userId: string;
 }
 
+export interface SlackInstallerAuthority {
+  readonly userId: string;
+  readonly isWorkspaceAdministrator: boolean;
+}
+
 export class SlackOAuthProviderRequestError extends Error {
   public constructor(readonly retryable: boolean) {
     super('Slack OAuth provider request failed');
@@ -30,4 +35,8 @@ export interface SlackOAuthProvider {
     readonly redirectUri: string;
   }): Promise<SlackOAuthGrant>;
   verifyBot(accessToken: string): Promise<SlackBotIdentity>;
+  verifyInstaller(
+    accessToken: string,
+    userId: string,
+  ): Promise<SlackInstallerAuthority>;
 }

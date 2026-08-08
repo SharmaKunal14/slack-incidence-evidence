@@ -103,6 +103,17 @@ const revisionDetailSchema = revisionSummarySchema
 export const bundleSchema = z
   .object({
     accessMode: z.enum(['EDITOR', 'VIEWER']),
+    assignment: z
+      .object({
+        workspaceId: z.string().regex(/^T[A-Z0-9]{1,63}$/),
+        canManage: z.boolean(),
+        assignedMemberSubject: z.string().min(1).max(128).nullable(),
+        assignedSlackUserId: z
+          .string()
+          .regex(/^[UW][A-Z0-9]{1,63}$/)
+          .nullable(),
+      })
+      .strict(),
     incident: z
       .object({
         id: z.uuid(),
@@ -257,7 +268,7 @@ export const workspaceMembersSchema = z
       .array(
         z
           .object({
-            cognitoSubject: z.uuid(),
+            cognitoSubject: z.string().min(1).max(128),
             slackUserId: z
               .string()
               .regex(/^[UW][A-Z0-9]{1,63}$/)
@@ -279,6 +290,24 @@ export const workspaceInvitationSchema = z
     invitationUrl: z.url().max(4_096),
     expiresAt: z.iso.datetime(),
     emailDeliveryStatus: z.enum(['SENT', 'FAILED']),
+  })
+  .strict();
+
+export const incidentAssignmentResponseSchema = z
+  .object({
+    assignment: z
+      .object({
+        incidentId: z.uuid(),
+        workspaceId: z.string().regex(/^T[A-Z0-9]{1,63}$/),
+        assignedMemberSubject: z.string().min(1).max(128).nullable(),
+        assignedSlackUserId: z
+          .string()
+          .regex(/^[UW][A-Z0-9]{1,63}$/)
+          .nullable(),
+        incidentVersion: z.number().int().nonnegative(),
+        updatedAt: z.iso.datetime(),
+      })
+      .strict(),
   })
   .strict();
 

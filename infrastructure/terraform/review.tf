@@ -534,6 +534,7 @@ locals {
     "GET /review/onboarding/slack/status",
     "GET /review/incidents",
     "GET /review/incidents/{incidentId}",
+    "PATCH /review/incidents/{incidentId}/assignment",
     "GET /review/incidents/{incidentId}/revisions/{revisionId}",
     "POST /review/incidents/{incidentId}/revisions",
     "POST /review/incidents/{incidentId}/revisions/{revisionId}/approve",

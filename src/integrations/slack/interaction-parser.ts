@@ -202,8 +202,11 @@ function parseSubmission(
       message: 'Select one public primary incident channel.',
     });
   }
-  if (reviewer === undefined || !userId.safeParse(reviewer).success) {
-    errors.push({ blockId: 'reviewer', message: 'Select a reviewer.' });
+  if (reviewer !== undefined && !userId.safeParse(reviewer).success) {
+    errors.push({
+      blockId: 'reviewer',
+      message: 'Select an eligible reviewer.',
+    });
   }
   if (startedAtSeconds === undefined || endedAtSeconds === undefined) {
     errors.push({
@@ -256,7 +259,6 @@ function parseSubmission(
   }
   if (
     primary === undefined ||
-    reviewer === undefined ||
     startedAtSeconds === undefined ||
     endedAtSeconds === undefined ||
     'error' in anchors
@@ -278,7 +280,7 @@ function parseSubmission(
       requestedTitle: title,
       startedAt: new Date(startedAtSeconds * 1_000).toISOString(),
       endedAt: new Date(endedAtSeconds * 1_000).toISOString(),
-      reviewerUserId: reviewer,
+      ...(reviewer === undefined ? {} : { reviewerUserId: reviewer }),
       evidenceRetentionDays: metadata.evidenceRetentionDays,
       channels: channelIds.map((selectedChannelId, index) => ({
         channelId: selectedChannelId,

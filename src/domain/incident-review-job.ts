@@ -66,7 +66,10 @@ export const incidentReviewRequestedV2Schema = z
       .object({
         startedAt: z.iso.datetime(),
         endedAt: z.iso.datetime(),
-        reviewerUserId: z.string().regex(/^[UW][A-Z0-9]{1,63}$/),
+        reviewerUserId: z
+          .string()
+          .regex(/^[UW][A-Z0-9]{1,63}$/)
+          .optional(),
         evidenceRetentionDays: z.number().int().min(1).max(365),
         channels: z
           .array(

@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SlackWebApiIncidentScopeModal } from '../../../src/integrations/slack/web-api-incident-scope-modal.js';
+import {
+  buildIncidentScopeView,
+  SlackWebApiIncidentScopeModal,
+} from '../../../src/integrations/slack/web-api-incident-scope-modal.js';
 
 describe('Slack incident scope modal', () => {
   it('opens a public-channel-only bounded modal without exposing the bot token', async () => {
@@ -41,5 +44,32 @@ describe('Slack incident scope modal', () => {
     expect(JSON.stringify(body)).toContain(
       'operators must configure the documented deletion process before production use',
     );
+  });
+
+  it('makes assignment optional and omits it when no eligible member exists', () => {
+    const base = {
+      triggerId: 'trigger-1',
+      workspaceId: 'T001',
+      userId: 'U001',
+      channelId: 'C001',
+      messageTs: '1721178000.000100',
+      defaultStartedAt: new Date('2026-07-20T02:00:00Z'),
+      defaultEndedAt: new Date('2026-07-20T03:00:00Z'),
+      evidenceRetentionDays: 30,
+    };
+    const withoutReviewers = buildIncidentScopeView({
+      ...base,
+      eligibleReviewers: [],
+    });
+    expect(JSON.stringify(withoutReviewers)).not.toContain('reviewer');
+
+    const withReviewer = buildIncidentScopeView({
+      ...base,
+      eligibleReviewers: [{ slackUserId: 'U002' }],
+    });
+    const reviewerBlock = (
+      withReviewer['blocks'] as readonly Record<string, unknown>[]
+    ).find((block) => block['block_id'] === 'reviewer');
+    expect(reviewerBlock).toMatchObject({ optional: true });
   });
 });

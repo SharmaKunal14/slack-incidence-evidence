@@ -58,6 +58,7 @@ export class SlackOnboardingRepositoryError extends Error {
 }
 
 export interface SlackOnboardingRepository {
+  requiresWorkspaceAdministrator(teamId: string): Promise<boolean>;
   createAuthorization(input: CreateSlackOAuthAuthorizationInput): Promise<void>;
   consumeAuthorization(
     input: ConsumeSlackOAuthAuthorizationInput,

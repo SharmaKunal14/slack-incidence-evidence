@@ -23,6 +23,12 @@ const now = new Date('2026-07-18T01:00:00.000Z');
 function bundle(): IncidentReviewBundle {
   return {
     accessMode: 'EDITOR',
+    assignment: {
+      workspaceId: 'T001',
+      canManage: true,
+      assignedMemberSubject: reviewer.subject,
+      assignedSlackUserId: 'U001',
+    },
     incident: {
       id: incidentId,
       title: 'Checkout latency',
@@ -95,6 +101,9 @@ function repository(): {
   readonly approveRevision: ReturnType<
     typeof vi.fn<IncidentReviewRepository['approveRevision']>
   >;
+  readonly assignReviewer: ReturnType<
+    typeof vi.fn<IncidentReviewRepository['assignReviewer']>
+  >;
 } {
   const createdRevision = {
     id: revisionId,
@@ -132,6 +141,16 @@ function repository(): {
     approveRevision: vi
       .fn<IncidentReviewRepository['approveRevision']>()
       .mockResolvedValue(createdRevision),
+    assignReviewer: vi
+      .fn<IncidentReviewRepository['assignReviewer']>()
+      .mockResolvedValue({
+        incidentId,
+        workspaceId: 'T001',
+        assignedMemberSubject: reviewer.subject,
+        assignedSlackUserId: 'U001',
+        incidentVersion: 5,
+        updatedAt: now.toISOString(),
+      }),
   };
 }
 

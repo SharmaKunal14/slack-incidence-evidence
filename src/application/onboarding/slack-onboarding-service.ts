@@ -95,6 +95,7 @@ export type SlackOnboardingErrorCode =
   | 'SLACK_BOT_VERIFICATION_FAILED'
   | 'SLACK_WORKSPACE_MISMATCH'
   | 'SLACK_BOT_IDENTITY_MISMATCH'
+  | 'SLACK_INSTALLER_VERIFICATION_FAILED'
   | 'SLACK_CREDENTIAL_STORAGE_FAILED'
   | 'SLACK_INSTALLATION_ADMIN_REQUIRED'
   | 'SLACK_IDENTITY_CONFLICT'
@@ -293,6 +294,40 @@ export class SlackOnboardingService {
     }
     if (identityResult.data.userId !== grant.botUserId) {
       throw new SlackOnboardingError('SLACK_BOT_IDENTITY_MISMATCH', false);
+    }
+
+    let requiresWorkspaceAdministrator: boolean;
+    try {
+      requiresWorkspaceAdministrator =
+        await this.repository.requiresWorkspaceAdministrator(grant.teamId);
+    } catch {
+      throw new SlackOnboardingError(
+        'SLACK_INSTALLATION_PERSISTENCE_FAILED',
+        true,
+      );
+    }
+    if (requiresWorkspaceAdministrator) {
+      let installerAuthority;
+      try {
+        installerAuthority = await this.provider.verifyInstaller(
+          grant.accessToken,
+          grant.authedUserId,
+        );
+      } catch (error) {
+        throw new SlackOnboardingError(
+          'SLACK_INSTALLER_VERIFICATION_FAILED',
+          error instanceof SlackOAuthProviderRequestError && error.retryable,
+        );
+      }
+      if (
+        installerAuthority.userId !== grant.authedUserId ||
+        !installerAuthority.isWorkspaceAdministrator
+      ) {
+        throw new SlackOnboardingError(
+          'SLACK_INSTALLATION_ADMIN_REQUIRED',
+          false,
+        );
+      }
     }
 
     const credentialIssuedAt = requireValidDate(this.clock.now());

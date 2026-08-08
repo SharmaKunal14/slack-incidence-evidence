@@ -53,6 +53,7 @@ import {
   bundleSchema,
   classificationValues,
   inboxSchema,
+  incidentAssignmentResponseSchema,
   revisionDetailResponseSchema,
   revisionResponseSchema,
   slackDisconnectionResponseSchema,
@@ -191,6 +192,7 @@ export function IncidentReviewApplication({
       {invitationMatch?.[1] !== undefined ? (
         <InvitationAcceptancePage
           configuration={configuration}
+          identityCallbackResult={identityCallbackResult}
           token={token}
           invitationToken={invitationMatch[1]}
         />
@@ -229,10 +231,12 @@ export function IncidentReviewApplication({
 
 function InvitationAcceptancePage({
   configuration,
+  identityCallbackResult,
   token,
   invitationToken,
 }: {
   readonly configuration: Configuration;
+  readonly identityCallbackResult: 'connected' | 'failed' | null;
   readonly token: string;
   readonly invitationToken: string;
 }): ReactNode {
@@ -263,6 +267,14 @@ function InvitationAcceptancePage({
               Slack handles this verification. Never enter your Slack password
               into an OnRecord form.
             </p>
+            {identityCallbackResult === 'failed' && (
+              <p className="form-notice" data-error="true" role="alert">
+                <AlertCircle size={16} /> Slack returned a different workspace
+                or user, or verification could not be completed. Select the
+                workspace and Slack account named by the invitation and try
+                again.
+              </p>
+            )}
             <button
               className="button button-primary"
               disabled={identity.isPending}
@@ -976,10 +988,15 @@ function DisconnectedSlackCard({
       </span>
       <div className="connection-card-copy">
         <p className="eyebrow">Slack workspace</p>
-        <h2>Slack is not connected</h2>
+        <h2>Set up your OnRecord workspace</h2>
         <p>
-          Connect a workspace to open incident-scoping modals, collect evidence,
-          and receive review notifications.
+          Connect Slack to create the workspace. Slack will verify that you are
+          a workspace administrator, and OnRecord will clearly register you as
+          its first Workspace Owner.
+        </p>
+        <p>
+          After setup, invite Admins, Reviewers and Viewers from the dashboard.
+          Incident assignments never grant workspace access.
         </p>
         {canConnect ? (
           <button
@@ -992,7 +1009,9 @@ function DisconnectedSlackCard({
             ) : (
               <MessageSquareText size={18} />
             )}
-            {connecting ? 'Opening Slack…' : 'Connect to Slack'}
+            {connecting
+              ? 'Opening Slack…'
+              : 'Verify admin and create workspace'}
           </button>
         ) : (
           <p className="connection-guidance">
@@ -1506,6 +1525,43 @@ function IncidentWorkspace({
   const [tourOpen, setTourOpen] = useState(
     () => experience === 'demo' && !hasCompletedDemoTour(),
   );
+  const assignmentMembers = useQuery({
+    queryKey: ['workspace-members', bundle.assignment.workspaceId],
+    queryFn: async () =>
+      workspaceMembersSchema.parse(
+        await apiClient(
+          configuration,
+          token,
+          `/review/workspaces/${encodeURIComponent(bundle.assignment.workspaceId)}/members`,
+        ),
+      ),
+    enabled: bundle.assignment.canManage,
+  });
+  const assignReviewer = useMutation({
+    mutationFn: async (memberSubject: string | null) =>
+      incidentAssignmentResponseSchema.parse(
+        await apiClient(
+          configuration,
+          token,
+          `/review/incidents/${encodeURIComponent(bundle.incident.id)}/assignment`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({
+              memberSubject,
+              expectedIncidentVersion: bundle.incident.version,
+              clientRequestId: crypto.randomUUID(),
+            }),
+          },
+        ),
+      ),
+    onSuccess: async () => {
+      setNotice('Incident reviewer assignment updated.');
+      await queryClient.invalidateQueries({
+        queryKey: ['incident-review', bundle.incident.id],
+      });
+      await queryClient.invalidateQueries({ queryKey: ['review-inbox'] });
+    },
+  });
   const revisionIdentity = bundle.latestRevision?.id ?? bundle.reportDraft.id;
   const [selectedVersionId, setSelectedVersionId] = useState(revisionIdentity);
   const selectedIsOriginal = selectedVersionId === bundle.reportDraft.id;
@@ -1751,6 +1807,45 @@ function IncidentWorkspace({
             )}
             <span>Based on incident version {bundle.incident.version}</span>
           </p>
+          {bundle.assignment.canManage && (
+            <label className="version-picker">
+              <span>Assigned reviewer</span>
+              <select
+                aria-label="Assigned reviewer"
+                disabled={
+                  bundle.incident.status !== 'NEEDS_REVIEW' ||
+                  assignmentMembers.isPending ||
+                  assignReviewer.isPending
+                }
+                value={bundle.assignment.assignedMemberSubject ?? ''}
+                onChange={(event) =>
+                  assignReviewer.mutate(event.target.value || null)
+                }
+              >
+                <option value="">Unassigned</option>
+                {(assignmentMembers.data?.members ?? [])
+                  .filter(
+                    (member) =>
+                      member.status === 'ACTIVE' &&
+                      member.slackUserId !== null &&
+                      member.role !== 'VIEWER',
+                  )
+                  .map((member) => (
+                    <option
+                      key={member.cognitoSubject}
+                      value={member.cognitoSubject}
+                    >
+                      {member.slackUserId} · {humanize(member.role)}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
+          {assignReviewer.isError && (
+            <p className="form-notice" data-error="true" role="alert">
+              <AlertCircle size={16} /> {userFacingError(assignReviewer.error)}
+            </p>
+          )}
         </div>
         <div className="incident-health" aria-label="Review readiness">
           <span className="health-ring">

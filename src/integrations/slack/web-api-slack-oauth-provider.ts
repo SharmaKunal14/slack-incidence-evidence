@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type {
   SlackBotIdentity,
+  SlackInstallerAuthority,
   SlackOAuthGrant,
   SlackOAuthProvider,
 } from '../../application/ports/slack-oauth-provider.js';
@@ -9,6 +10,7 @@ import { slackOAuthV2AccessResponseSchema } from './oauth-v2-contracts.js';
 
 const OAUTH_ACCESS_URL = 'https://slack.com/api/oauth.v2.access';
 const AUTH_TEST_URL = 'https://slack.com/api/auth.test';
+const USERS_INFO_URL = 'https://slack.com/api/users.info';
 const MAX_RESPONSE_BYTES = 256 * 1024;
 
 const authTestResponseSchema = z.union([
@@ -17,6 +19,28 @@ const authTestResponseSchema = z.union([
       ok: z.literal(true),
       team_id: z.string().regex(/^T[A-Z0-9]{1,63}$/u),
       user_id: z.string().regex(/^[UW][A-Z0-9]{1,63}$/u),
+    })
+    .passthrough(),
+  z
+    .object({
+      ok: z.literal(false),
+      error: z.string().trim().min(1).max(128),
+    })
+    .passthrough(),
+]);
+
+const userInfoResponseSchema = z.union([
+  z
+    .object({
+      ok: z.literal(true),
+      user: z
+        .object({
+          id: z.string().regex(/^[UW][A-Z0-9]{1,63}$/u),
+          is_admin: z.boolean().optional(),
+          is_owner: z.boolean().optional(),
+          is_primary_owner: z.boolean().optional(),
+        })
+        .passthrough(),
     })
     .passthrough(),
   z
@@ -43,7 +67,12 @@ export type SlackOAuthProviderErrorCode =
   | 'SLACK_AUTH_TEST_RATE_LIMITED'
   | 'SLACK_AUTH_TEST_HTTP_ERROR'
   | 'SLACK_AUTH_TEST_INVALID_RESPONSE'
-  | 'SLACK_AUTH_TEST_REJECTED';
+  | 'SLACK_AUTH_TEST_REJECTED'
+  | 'SLACK_USERS_INFO_NETWORK_ERROR'
+  | 'SLACK_USERS_INFO_RATE_LIMITED'
+  | 'SLACK_USERS_INFO_HTTP_ERROR'
+  | 'SLACK_USERS_INFO_INVALID_RESPONSE'
+  | 'SLACK_USERS_INFO_REJECTED';
 
 export class SlackOAuthProviderError extends SlackOAuthProviderRequestError {
   public constructor(
@@ -175,11 +204,54 @@ export class WebApiSlackOAuthProvider implements SlackOAuthProvider {
     };
   }
 
+  public async verifyInstaller(
+    accessToken: string,
+    userId: string,
+  ): Promise<SlackInstallerAuthority> {
+    const token = printableProviderValue.parse(accessToken);
+    const parsedUserId = z
+      .string()
+      .regex(/^[UW][A-Z0-9]{1,63}$/u)
+      .parse(userId);
+    const response = await this.post(
+      USERS_INFO_URL,
+      {
+        accept: 'application/json',
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      },
+      new URLSearchParams({ user: parsedUserId }),
+      'SLACK_USERS_INFO',
+    );
+    const parsed = userInfoResponseSchema.safeParse(
+      await parseBoundedJson(response, 'SLACK_USERS_INFO_INVALID_RESPONSE'),
+    );
+    if (!parsed.success) {
+      throw new SlackOAuthProviderError(
+        'SLACK_USERS_INFO_INVALID_RESPONSE',
+        false,
+      );
+    }
+    if (!parsed.data.ok) {
+      throw new SlackOAuthProviderError(
+        'SLACK_USERS_INFO_REJECTED',
+        isRetryableSlackError(parsed.data.error),
+      );
+    }
+    return {
+      userId: parsed.data.user.id,
+      isWorkspaceAdministrator:
+        parsed.data.user.is_admin === true ||
+        parsed.data.user.is_owner === true ||
+        parsed.data.user.is_primary_owner === true,
+    };
+  }
+
   private async post(
     url: string,
     headers: Readonly<Record<string, string>>,
     body: URLSearchParams,
-    operation: 'SLACK_OAUTH' | 'SLACK_AUTH_TEST',
+    operation: 'SLACK_OAUTH' | 'SLACK_AUTH_TEST' | 'SLACK_USERS_INFO',
   ): Promise<Response> {
     let response: Response;
     try {
@@ -217,7 +289,9 @@ function parseHttpsUrl(value: string): string {
 async function parseBoundedJson(
   response: Response,
   errorCode:
-    'SLACK_OAUTH_INVALID_RESPONSE' | 'SLACK_AUTH_TEST_INVALID_RESPONSE',
+    | 'SLACK_OAUTH_INVALID_RESPONSE'
+    | 'SLACK_AUTH_TEST_INVALID_RESPONSE'
+    | 'SLACK_USERS_INFO_INVALID_RESPONSE',
 ): Promise<unknown> {
   const text = await readBoundedText(response, errorCode);
   try {
@@ -230,7 +304,9 @@ async function parseBoundedJson(
 async function readBoundedText(
   response: Response,
   errorCode:
-    'SLACK_OAUTH_INVALID_RESPONSE' | 'SLACK_AUTH_TEST_INVALID_RESPONSE',
+    | 'SLACK_OAUTH_INVALID_RESPONSE'
+    | 'SLACK_AUTH_TEST_INVALID_RESPONSE'
+    | 'SLACK_USERS_INFO_INVALID_RESPONSE',
 ): Promise<string> {
   const declaredLength = response.headers.get('content-length');
   if (

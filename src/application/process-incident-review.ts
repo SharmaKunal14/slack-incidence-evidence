@@ -43,7 +43,9 @@ export class ProcessIncidentReview {
       ...(job.version === 1
         ? {}
         : {
-            reviewerUserId: job.scope.reviewerUserId,
+            ...(job.scope.reviewerUserId === undefined
+              ? {}
+              : { reviewerUserId: job.scope.reviewerUserId }),
             evidenceRetentionDays: job.scope.evidenceRetentionDays,
             startedAt: new Date(job.scope.startedAt),
             resolvedAt: new Date(job.scope.endedAt),

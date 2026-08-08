@@ -53,6 +53,16 @@ function dependencies(
         approvedAt: new Date('2026-07-18T01:05:00.000Z'),
       }),
     },
+    assignReviewer: {
+      execute: vi.fn().mockResolvedValue({
+        incidentId,
+        workspaceId: 'T001',
+        assignedMemberSubject: subject,
+        assignedSlackUserId: 'U001',
+        incidentVersion: 5,
+        updatedAt: '2026-07-18T01:05:00.000Z',
+      }),
+    },
     getSlackOnboardingStatus: {
       execute: vi.fn().mockResolvedValue({
         canStartInstallation: true,
@@ -363,6 +373,31 @@ describe('incident review API boundary', () => {
       reviewer: { subject },
       incidentId,
       revisionId,
+    });
+  });
+
+  it('passes reviewer assignment through the authenticated use case', async () => {
+    const deps = dependencies();
+    const handler = createIncidentReviewApiHandler(deps);
+    const command = {
+      expectedIncidentVersion: 4,
+      memberSubject: subject,
+      clientRequestId: 'd61ad8d8-5111-4ce0-a044-1addc5bf0414',
+    };
+
+    const response = await handler(
+      eventFor({
+        routeKey: 'PATCH /review/incidents/{incidentId}/assignment',
+        pathParameters: { incidentId },
+        body: JSON.stringify(command),
+      }),
+    );
+
+    expect(structured(response).statusCode).toBe(200);
+    expect(deps.assignReviewer.execute).toHaveBeenCalledWith({
+      reviewer: { subject },
+      incidentId,
+      command,
     });
   });
 
