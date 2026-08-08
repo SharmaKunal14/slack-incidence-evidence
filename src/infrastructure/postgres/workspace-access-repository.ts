@@ -217,18 +217,18 @@ export class PostgresWorkspaceAccessRepository implements WorkspaceAccessReposit
       redirect_uri: string;
     }>(
       `
-      UPDATE slack_identity_authorizations authorization
+      UPDATE slack_identity_authorizations AS identity_auth
       SET status = 'CONSUMED', consumed_at = $3
-      FROM workspace_invitations invitation
-      WHERE authorization.invitation_id = invitation.id
-        AND authorization.state_sha256 = $1
-        AND authorization.browser_binding_sha256 = $2
-        AND authorization.status = 'PENDING' AND authorization.expires_at > $3
+      FROM workspace_invitations AS invitation
+      WHERE identity_auth.invitation_id = invitation.id
+        AND identity_auth.state_sha256 = $1
+        AND identity_auth.browser_binding_sha256 = $2
+        AND identity_auth.status = 'PENDING' AND identity_auth.expires_at > $3
         AND invitation.status = 'PENDING' AND invitation.expires_at > $3
-      RETURNING authorization.id AS authorization_id, invitation.id AS invitation_id,
-        authorization.cognito_subject, invitation.tenant_id,
+      RETURNING identity_auth.id AS authorization_id, invitation.id AS invitation_id,
+        identity_auth.cognito_subject, invitation.tenant_id,
         invitation.invited_slack_user_id, invitation.role,
-        authorization.nonce_sha256, authorization.redirect_uri
+        identity_auth.nonce_sha256, identity_auth.redirect_uri
     `,
       [input.stateSha256, input.browserBindingSha256, input.consumedAt],
     );
@@ -275,16 +275,16 @@ export class PostgresWorkspaceAccessRepository implements WorkspaceAccessReposit
   ): Promise<void> {
     const accepted = await client.query(
       `
-      UPDATE workspace_invitations invitation
+      UPDATE workspace_invitations AS invitation
       SET status = 'ACCEPTED', accepted_by_subject = $3,
           accepted_at = $6, updated_at = $6, version = version + 1
-      FROM slack_identity_authorizations authorization
-      WHERE invitation.id = $2 AND authorization.id = $1
-        AND authorization.invitation_id = invitation.id
-        AND authorization.cognito_subject = $3
+      FROM slack_identity_authorizations AS identity_auth
+      WHERE invitation.id = $2 AND identity_auth.id = $1
+        AND identity_auth.invitation_id = invitation.id
+        AND identity_auth.cognito_subject = $3
         AND invitation.tenant_id = $4 AND invitation.invited_slack_user_id = $5
         AND invitation.role = $7 AND invitation.status = 'PENDING'
-        AND authorization.status = 'CONSUMED'
+        AND identity_auth.status = 'CONSUMED'
       RETURNING invitation.id
     `,
       [
