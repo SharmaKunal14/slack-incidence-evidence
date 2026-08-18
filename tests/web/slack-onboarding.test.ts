@@ -70,6 +70,7 @@ describe('Slack onboarding console', () => {
     expect(
       await screen.findByRole('heading', { name: 'Acme Engineering' }),
     ).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Connected' })).toBeTruthy();
     expect(screen.getByText('Connected')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Add workspace' })).toBeTruthy();
     expect(
@@ -172,6 +173,9 @@ describe('Slack onboarding console', () => {
     fireEvent.click(
       await screen.findByRole('button', { name: 'Reconnect Slack' }),
     );
+
+    expect(screen.getByRole('img', { name: 'Connected' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Disconnected' })).toBeTruthy();
 
     await waitFor(() =>
       expect(

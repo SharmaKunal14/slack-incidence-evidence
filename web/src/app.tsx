@@ -96,6 +96,14 @@ type Experience = 'production' | 'demo';
 type SlackConnectionTarget =
   | { readonly kind: 'ADD_WORKSPACE' }
   | { readonly kind: 'RECONNECT_WORKSPACE'; readonly workspaceId: string };
+type SlackConnectionStatus =
+  | 'NOT_CONNECTED'
+  | 'CONNECTING'
+  | 'CONNECTED'
+  | 'RECONNECT_REQUIRED'
+  | 'DISCONNECTING'
+  | 'DISCONNECTED'
+  | 'FAILED';
 
 export type ReviewApiClient = (
   configuration: Configuration,
@@ -386,77 +394,89 @@ function WorkspaceMembersPage({
               requires an exact Slack user and workspace match.
             </p>
           </div>
-          <ShieldCheck size={30} />
+          <span className="integration-hero-icon" aria-hidden="true">
+            <ShieldCheck size={30} />
+          </span>
         </section>
-        <section className="connection-card">
+        <section className="connection-card member-invite-card">
           <div className="connection-card-copy">
             <h2>Invite a member</h2>
-            <label>
-              Work email
-              <input
-                value={deliveryEmail}
-                onChange={(event) => setDeliveryEmail(event.target.value)}
-                type="email"
-                autoComplete="email"
-              />
-            </label>
-            <label>
-              Slack user ID
-              <input
-                value={slackUserId}
-                onChange={(event) =>
-                  setSlackUserId(event.target.value.toUpperCase())
-                }
-                placeholder="U012ABCDEF"
-              />
-            </label>
-            <label>
-              Role
-              <select
-                value={role}
-                onChange={(event) => setRole(event.target.value as typeof role)}
-              >
-                <option value="ADMIN">Administrator</option>
-                <option value="REVIEWER">Reviewer</option>
-                <option value="VIEWER">Viewer</option>
-              </select>
-            </label>
-            <button
-              className="button button-primary"
-              disabled={invite.isPending}
-              onClick={() => invite.mutate()}
+            <form
+              className="member-invite-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                invite.mutate();
+              }}
             >
-              <Plus size={18} />{' '}
-              {invite.isPending
-                ? 'Sending invitation…'
-                : 'Send secure invitation'}
-            </button>
-            {invite.isError && (
-              <p className="form-notice" data-error="true" role="alert">
-                <AlertCircle size={16} /> {userFacingError(invite.error)}
-              </p>
-            )}
-            {invite.data !== undefined && (
-              <div className="security-note">
-                <div>
-                  <strong>
-                    {invite.data.emailDeliveryStatus === 'SENT'
-                      ? 'Invitation email sent'
-                      : 'Invitation created, but email delivery failed'}
-                  </strong>
-                  <p>
-                    {invite.data.emailDeliveryStatus === 'SENT'
-                      ? 'The recipient should receive the invitation shortly. Keep this link as a fallback.'
-                      : 'Copy this link and send it through a trusted channel.'}
-                  </p>
-                  <p>{invite.data.invitationUrl}</p>
-                  <small>
-                    Expires {new Date(invite.data.expiresAt).toLocaleString()}.
-                    Access still requires the exact invited Slack identity.
-                  </small>
+              <label className="member-invite-field">
+                <span>Work email</span>
+                <input
+                  value={deliveryEmail}
+                  onChange={(event) => setDeliveryEmail(event.target.value)}
+                  type="email"
+                  autoComplete="email"
+                />
+              </label>
+              <label className="member-invite-field">
+                <span>Slack user ID</span>
+                <input
+                  value={slackUserId}
+                  onChange={(event) =>
+                    setSlackUserId(event.target.value.toUpperCase())
+                  }
+                  placeholder="U012ABCDEF"
+                />
+              </label>
+              <label className="member-invite-field">
+                <span>Role</span>
+                <select
+                  value={role}
+                  onChange={(event) =>
+                    setRole(event.target.value as typeof role)
+                  }
+                >
+                  <option value="ADMIN">Administrator</option>
+                  <option value="REVIEWER">Reviewer</option>
+                  <option value="VIEWER">Viewer</option>
+                </select>
+              </label>
+              <button
+                className="button button-primary"
+                disabled={invite.isPending}
+                type="submit"
+              >
+                <Plus size={18} aria-hidden="true" />{' '}
+                {invite.isPending
+                  ? 'Sending invitation…'
+                  : 'Send secure invitation'}
+              </button>
+              {invite.isError && (
+                <p className="form-notice" data-error="true" role="alert">
+                  <AlertCircle size={16} /> {userFacingError(invite.error)}
+                </p>
+              )}
+              {invite.data !== undefined && (
+                <div className="security-note">
+                  <div>
+                    <strong>
+                      {invite.data.emailDeliveryStatus === 'SENT'
+                        ? 'Invitation email sent'
+                        : 'Invitation created, but email delivery failed'}
+                    </strong>
+                    <p>
+                      {invite.data.emailDeliveryStatus === 'SENT'
+                        ? 'The recipient should receive the invitation shortly. Keep this link as a fallback.'
+                        : 'Copy this link and send it through a trusted channel.'}
+                    </p>
+                    <p>{invite.data.invitationUrl}</p>
+                    <small>
+                      Expires {new Date(invite.data.expiresAt).toLocaleString()}
+                      . Access still requires the exact invited Slack identity.
+                    </small>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </form>
           </div>
         </section>
         <section className="connection-stack" aria-label="Workspace members">
@@ -470,17 +490,22 @@ function WorkspaceMembersPage({
             </div>
           ) : (
             members.data.members.map((member) => (
-              <article className="connection-card" key={member.cognitoSubject}>
+              <article
+                className="connection-card member-card"
+                key={member.cognitoSubject}
+              >
                 <div className="connection-card-copy">
                   <div className="connection-card-heading">
                     <h2>{member.slackUserId ?? 'Slack identity pending'}</h2>
-                    <span className="status-pill">{member.status}</span>
+                    <span className="status-pill" data-status={member.status}>
+                      {member.status}
+                    </span>
                   </div>
                   <p>
                     {member.role} · OnRecord account {member.cognitoSubject}
                   </p>
                   {member.role !== 'OWNER' && (
-                    <div className="confirmation-dialog-actions">
+                    <div className="member-card-actions">
                       <select
                         aria-label={`Role for ${member.slackUserId ?? member.cognitoSubject}`}
                         disabled={
@@ -767,17 +792,7 @@ export function SlackConnectionPage({
                   className="connection-card"
                   key={workspace.workspaceId}
                 >
-                  <span
-                    className="connection-status-icon"
-                    data-status={workspace.connectionStatus}
-                    aria-hidden="true"
-                  >
-                    {workspace.connectionStatus === 'CONNECTED' ? (
-                      <CheckCircle2 size={23} />
-                    ) : (
-                      <Unplug size={23} />
-                    )}
-                  </span>
+                  <ConnectionStatusIcon status={workspace.connectionStatus} />
                   <div className="connection-card-copy">
                     <div className="connection-card-heading">
                       <div>
@@ -812,78 +827,81 @@ export function SlackConnectionPage({
                           ).toLocaleDateString()}`}
                     </p>
                     {workspace.canManage && (
-                      <a
-                        className="button button-secondary"
-                        href={`#/settings/workspaces/${workspace.workspaceId}/members`}
-                      >
-                        Manage members
-                      </a>
-                    )}
-                    {workspace.connectionStatus !== 'CONNECTED' &&
-                      workspace.connectionStatus !== 'DISCONNECTING' &&
-                      workspace.canManage && (
-                        <button
-                          className="button button-primary"
-                          disabled={
-                            reconnectingWorkspaceId === workspace.workspaceId
-                          }
-                          onClick={() =>
-                            startConnection({
-                              kind: 'RECONNECT_WORKSPACE',
-                              workspaceId: workspace.workspaceId,
-                            })
-                          }
+                      <div className="connection-card-actions">
+                        <a
+                          className="button button-secondary"
+                          href={`#/settings/workspaces/${workspace.workspaceId}/members`}
                         >
-                          {reconnectingWorkspaceId === workspace.workspaceId ? (
-                            <LoaderCircle className="spin" size={18} />
-                          ) : (
-                            <RotateCcw size={18} />
+                          Manage members
+                        </a>
+                        {workspace.connectionStatus !== 'CONNECTED' &&
+                          workspace.connectionStatus !== 'DISCONNECTING' && (
+                            <button
+                              className="button button-primary"
+                              disabled={
+                                reconnectingWorkspaceId ===
+                                workspace.workspaceId
+                              }
+                              onClick={() =>
+                                startConnection({
+                                  kind: 'RECONNECT_WORKSPACE',
+                                  workspaceId: workspace.workspaceId,
+                                })
+                              }
+                            >
+                              {reconnectingWorkspaceId ===
+                              workspace.workspaceId ? (
+                                <LoaderCircle className="spin" size={18} />
+                              ) : (
+                                <RotateCcw size={18} aria-hidden="true" />
+                              )}
+                              {reconnectingWorkspaceId === workspace.workspaceId
+                                ? 'Opening Slack…'
+                                : 'Reconnect Slack'}
+                            </button>
                           )}
-                          {reconnectingWorkspaceId === workspace.workspaceId
-                            ? 'Opening Slack…'
-                            : 'Reconnect Slack'}
-                        </button>
-                      )}
-                    {workspace.connectionStatus === 'CONNECTED' &&
-                      workspace.canManage && (
-                        <button
-                          className="button button-danger-secondary"
-                          disabled={
-                            disconnect.isPending &&
-                            disconnect.variables === workspace.workspaceId
-                          }
-                          onClick={() => {
-                            disconnect.reset();
-                            setDisconnectWorkspace({
-                              workspaceId: workspace.workspaceId,
-                              displayName: workspace.displayName,
-                              retrying: false,
-                            });
-                          }}
-                        >
-                          <Unplug size={18} /> Disconnect workspace
-                        </button>
-                      )}
-                    {workspace.connectionStatus === 'DISCONNECTING' &&
-                      workspace.canManage && (
-                        <button
-                          className="button button-danger-secondary"
-                          disabled={
-                            disconnect.isPending &&
-                            disconnect.variables === workspace.workspaceId
-                          }
-                          onClick={() => {
-                            disconnect.reset();
-                            setDisconnectWorkspace({
-                              workspaceId: workspace.workspaceId,
-                              displayName: workspace.displayName,
-                              retrying: true,
-                            });
-                          }}
-                        >
-                          <RotateCcw size={18} /> Retry disconnect
-                        </button>
-                      )}
+                        {workspace.connectionStatus === 'CONNECTED' && (
+                          <button
+                            className="button button-danger-secondary"
+                            disabled={
+                              disconnect.isPending &&
+                              disconnect.variables === workspace.workspaceId
+                            }
+                            onClick={() => {
+                              disconnect.reset();
+                              setDisconnectWorkspace({
+                                workspaceId: workspace.workspaceId,
+                                displayName: workspace.displayName,
+                                retrying: false,
+                              });
+                            }}
+                          >
+                            <Unplug size={18} aria-hidden="true" /> Disconnect
+                            workspace
+                          </button>
+                        )}
+                        {workspace.connectionStatus === 'DISCONNECTING' && (
+                          <button
+                            className="button button-danger-secondary"
+                            disabled={
+                              disconnect.isPending &&
+                              disconnect.variables === workspace.workspaceId
+                            }
+                            onClick={() => {
+                              disconnect.reset();
+                              setDisconnectWorkspace({
+                                workspaceId: workspace.workspaceId,
+                                displayName: workspace.displayName,
+                                retrying: true,
+                              });
+                            }}
+                          >
+                            <RotateCcw size={18} aria-hidden="true" /> Retry
+                            disconnect
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {!workspace.canManage &&
                       workspace.connectionStatus !== 'CONNECTED' && (
                         <p className="connection-guidance">
@@ -983,9 +1001,7 @@ function DisconnectedSlackCard({
 }): ReactNode {
   return (
     <article className="connection-card">
-      <span className="connection-status-icon" data-status="NOT_CONNECTED">
-        <Unplug size={23} />
-      </span>
+      <ConnectionStatusIcon status="NOT_CONNECTED" />
       <div className="connection-card-copy">
         <p className="eyebrow">Slack workspace</p>
         <h2>Set up your OnRecord workspace</h2>
@@ -1027,16 +1043,46 @@ function DisconnectedSlackCard({
 function ConnectionStatusPill({
   status,
 }: {
-  readonly status:
-    | 'NOT_CONNECTED'
-    | 'CONNECTING'
-    | 'CONNECTED'
-    | 'RECONNECT_REQUIRED'
-    | 'DISCONNECTING'
-    | 'DISCONNECTED'
-    | 'FAILED';
+  readonly status: SlackConnectionStatus;
 }): ReactNode {
-  const label: Record<typeof status, string> = {
+  return (
+    <span className="connection-status-pill" data-status={status}>
+      {connectionStatusLabel(status)}
+    </span>
+  );
+}
+
+function ConnectionStatusIcon({
+  status,
+}: {
+  readonly status: SlackConnectionStatus;
+}): ReactNode {
+  const label = connectionStatusLabel(status);
+  const icon =
+    status === 'CONNECTED' ? (
+      <CheckCircle2 size={24} strokeWidth={2.25} />
+    ) : status === 'CONNECTING' || status === 'DISCONNECTING' ? (
+      <LoaderCircle className="spin" size={24} strokeWidth={2.25} />
+    ) : status === 'FAILED' || status === 'RECONNECT_REQUIRED' ? (
+      <AlertCircle size={24} strokeWidth={2.25} />
+    ) : (
+      <Unplug size={24} strokeWidth={2.25} />
+    );
+  return (
+    <span
+      className="connection-status-icon"
+      data-status={status}
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      {icon}
+    </span>
+  );
+}
+
+function connectionStatusLabel(status: SlackConnectionStatus): string {
+  const label: Record<SlackConnectionStatus, string> = {
     NOT_CONNECTED: 'Not connected',
     CONNECTING: 'Connecting',
     CONNECTED: 'Connected',
@@ -1045,11 +1091,7 @@ function ConnectionStatusPill({
     DISCONNECTED: 'Disconnected',
     FAILED: 'Setup failed',
   };
-  return (
-    <span className="connection-status-pill" data-status={status}>
-      {label[status]}
-    </span>
-  );
+  return label[status];
 }
 
 function disconnectFacingError(error: unknown): string {
