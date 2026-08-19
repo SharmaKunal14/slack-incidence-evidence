@@ -5,6 +5,7 @@ export interface IncidentProcessingFailedNotification {
   readonly channelId: string;
   readonly threadTs: string;
   readonly stage: 'ANALYSIS' | 'REPORT';
+  readonly failureCode: string;
 }
 
 export interface IncidentProcessingFailedNotifier {

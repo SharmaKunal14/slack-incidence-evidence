@@ -21,7 +21,10 @@ import { PostgresSecretsSlackInstallationCredentialResolver } from '../infrastru
 import { PostgresEligibleIncidentReviewerSource } from '../infrastructure/postgres/eligible-incident-reviewer-source.js';
 import { SqsIncidentJobPublisher } from '../infrastructure/queue/sqs-incident-job-publisher.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
-import { ResolvingSlackIncidentScopeModal } from '../integrations/slack/resolving-slack-adapters.js';
+import {
+  ResolvingSlackChannelAccessVerifier,
+  ResolvingSlackIncidentScopeModal,
+} from '../integrations/slack/resolving-slack-adapters.js';
 import { SlackSignatureVerifier } from '../integrations/slack/signature-verifier.js';
 import { createLogger } from '../observability/logger.js';
 import {
@@ -106,6 +109,12 @@ async function buildHandler(): Promise<SlackIngressHandler> {
       uuidGenerator,
     );
 
+    const installationResolver =
+      new PostgresSecretsSlackInstallationCredentialResolver(
+        database,
+        secretReader,
+        systemClock,
+      );
     return createSlackIngressHandler({
       clock: systemClock,
       logger,
@@ -119,12 +128,11 @@ async function buildHandler(): Promise<SlackIngressHandler> {
         uuidGenerator,
       ),
       incidentScopeModal: new ResolvingSlackIncidentScopeModal(
-        new PostgresSecretsSlackInstallationCredentialResolver(
-          database,
-          secretReader,
-          systemClock,
-        ),
+        installationResolver,
         new PostgresEligibleIncidentReviewerSource(database),
+      ),
+      channelAccessVerifier: new ResolvingSlackChannelAccessVerifier(
+        installationResolver,
       ),
       evidenceRetentionDays: environment.EVIDENCE_RETENTION_DAYS,
     });

@@ -82,6 +82,70 @@ function incidentMention(title = 'Checkout outage'): string {
   });
 }
 
+function incidentScopeSubmission(): string {
+  const payload = JSON.stringify({
+    type: 'view_submission',
+    team: { id: 'T001' },
+    user: { id: 'U001' },
+    view: {
+      id: 'V001',
+      callback_id: 'incident_scope_v1',
+      private_metadata: JSON.stringify({
+        version: 1,
+        workspaceId: 'T001',
+        userId: 'U001',
+        channelId: 'C001',
+        messageTs: '1721178000.000100',
+        evidenceRetentionDays: 30,
+      }),
+      state: {
+        values: {
+          title: {
+            incident_title: {
+              type: 'plain_text_input',
+              value: 'Checkout outage',
+            },
+          },
+          started_at: {
+            incident_started_at: {
+              type: 'datetimepicker',
+              selected_date_time: Date.parse('2026-07-17T00:00:00Z') / 1_000,
+            },
+          },
+          ended_at: {
+            incident_ended_at: {
+              type: 'datetimepicker',
+              selected_date_time: Date.parse('2026-07-17T01:00:00Z') / 1_000,
+            },
+          },
+          primary_channel: {
+            primary_channel: {
+              type: 'conversations_select',
+              selected_conversation: 'C001',
+            },
+          },
+          additional_channels: {
+            additional_channels: {
+              type: 'multi_conversations_select',
+              selected_conversations: ['C002'],
+            },
+          },
+          anchor_threads: {
+            anchor_threads: { type: 'plain_text_input', value: '' },
+          },
+          retention: {
+            retention: {
+              type: 'checkboxes',
+              selected_options: [{ value: 'accepted' }],
+            },
+          },
+        },
+      },
+    },
+  });
+  return new URLSearchParams({ payload }).toString();
+}
+
 type Execute = RequestIncidentReview['execute'];
 
 function dependencies(
@@ -216,6 +280,51 @@ describe('API Gateway Slack ingress Lambda', () => {
       evidenceRetentionDays: 45,
     });
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('keeps the modal open and identifies inaccessible channels before queueing', async () => {
+    const execute = vi.fn<Execute>();
+    const requestScopedIncidentReview = { execute: vi.fn() };
+    const verify = vi.fn().mockResolvedValue([
+      {
+        channelId: 'C001',
+        accessible: false,
+        code: 'APP_NOT_IN_CHANNEL',
+        retryable: false,
+        displayName: 'incidents',
+      },
+      {
+        channelId: 'C002',
+        accessible: true,
+        displayName: 'engineering',
+      },
+    ]);
+    const body = incidentScopeSubmission();
+    const handler = createSlackIngressHandler({
+      ...dependencies(execute),
+      requestScopedIncidentReview,
+      channelAccessVerifier: { verify },
+    });
+
+    const response = await handler(
+      eventFor(body, {
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          'x-slack-request-timestamp': timestamp,
+          'x-slack-signature': sign(body),
+        },
+      }),
+    );
+
+    expect(structured(response).statusCode).toBe(200);
+    expect(parsedBody(response)).toEqual({
+      response_action: 'errors',
+      errors: {
+        primary_channel: 'Add @OnRecord to #incidents, then submit again.',
+      },
+    });
+    expect(verify).toHaveBeenCalledWith('T001', ['C001', 'C002']);
+    expect(requestScopedIncidentReview.execute).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid signature without parsing or enqueueing the request', async () => {

@@ -34,7 +34,10 @@ GRANT SELECT ON TABLE
   timeline_event_evidence_links,
   source_artifacts,
   incident_sources,
+  source_collection_runs,
+  source_collection_checkpoints,
   source_coverage_manifests,
+  incident_analysis_runs,
   analysis_open_questions,
   report_revisions,
   report_revision_question_answers
@@ -66,6 +69,50 @@ GRANT UPDATE (
   updated_at,
   version
 ) ON incidents TO :"review_role";
+
+GRANT UPDATE (
+  status,
+  updated_at,
+  version
+) ON incident_sources TO :"review_role";
+
+GRANT UPDATE (
+  status,
+  collected_message_count,
+  permission_outcome,
+  provider_rate_limit_state,
+  missing_or_excluded_periods,
+  completion_reason,
+  failure_reason,
+  started_at,
+  finished_at,
+  updated_at,
+  version
+) ON source_collection_runs TO :"review_role";
+
+GRANT UPDATE (
+  phase,
+  anchor_index,
+  collection_cursor,
+  pages_collected,
+  collected_message_count,
+  last_collected_at,
+  rate_limit_count,
+  transient_failure_count,
+  rate_limited_until,
+  updated_at,
+  version
+) ON source_collection_checkpoints TO :"review_role";
+
+GRANT UPDATE (
+  source_state,
+  collected_message_count,
+  missing_or_excluded_periods,
+  permission_outcome,
+  provider_rate_limit_state,
+  completion_or_failure_reason,
+  updated_at
+) ON source_coverage_manifests TO :"review_role";
 
 GRANT UPDATE (
   role,

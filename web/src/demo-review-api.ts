@@ -106,6 +106,7 @@ export function createDemoReviewApi(): ReviewApiClient {
     if (method === 'GET' && url.pathname === '/review/incidents') {
       return inboxSchema.parse({
         items: [inboxItem(bundle)],
+        processingIssues: [],
         nextCursor: null,
       });
     }

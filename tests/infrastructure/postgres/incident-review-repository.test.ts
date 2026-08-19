@@ -74,6 +74,86 @@ function approvalInput(): ApproveReportRevisionInput {
   };
 }
 
+describe('PostgresIncidentReviewRepository processing visibility', () => {
+  it('returns a safe durable analysis failure to a workspace manager', async () => {
+    const query = vi.fn((sql: string) => {
+      if (sql.includes('SELECT EXISTS')) {
+        return Promise.resolve(result([{ authorized: true }]));
+      }
+      if (sql.includes('JOIN LATERAL')) {
+        return Promise.resolve(result([]));
+      }
+      if (sql.includes('WITH issue_incidents')) {
+        return Promise.resolve(
+          result([
+            {
+              incident_id: incidentId,
+              workspace_id: 'T001',
+              title: 'Checkout outage',
+              severity: 'SEV1',
+              incident_status: 'FAILED',
+              incident_version: 8,
+              incident_updated_at: now,
+              source_id: 'source-1',
+              channel_id: 'C001',
+              display_name: 'incident-room',
+              source_status: 'COMPLETE',
+              permission_outcome: 'ALLOWED',
+              failure_reason: null,
+              message_count: 42,
+              artifact_count: '42',
+              connection_active: true,
+              analysis_failure_code: 'PII_REMAINS',
+              report_failure_code: null,
+            },
+          ]),
+        );
+      }
+      throw new Error('Unexpected review query');
+    });
+    const pool = { query } as unknown as Pool;
+
+    await expect(
+      new PostgresIncidentReviewRepository(pool).listInbox(
+        { subject },
+        20,
+        null,
+      ),
+    ).resolves.toEqual({
+      authorized: true,
+      page: {
+        items: [],
+        nextCursor: null,
+        processingIssues: [
+          {
+            incidentId,
+            workspaceId: 'T001',
+            title: 'Checkout outage',
+            severity: 'SEV1',
+            status: 'FAILED',
+            incidentVersion: 8,
+            failureCode: 'ANALYSIS_FAILED',
+            failureReason: 'PII_REMAINS',
+            canRetry: false,
+            updatedAt: now.toISOString(),
+            sources: [
+              {
+                sourceId: 'source-1',
+                channelId: 'C001',
+                displayName: 'incident-room',
+                status: 'COMPLETE',
+                permissionOutcome: 'ALLOWED',
+                failureReason: null,
+                messageCount: 42,
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
+});
+
 describe('PostgresIncidentReviewRepository approval', () => {
   it('authorizes, locks the newest revision, and commits approval atomically', async () => {
     const locked = {
@@ -309,6 +389,139 @@ describe('PostgresIncidentReviewRepository revision persistence', () => {
     );
     expect(query).toHaveBeenCalledWith('COMMIT');
     expect(query).not.toHaveBeenCalledWith('ROLLBACK');
+  });
+});
+
+describe('PostgresIncidentReviewRepository processing retry', () => {
+  it('locks an owner/admin-scoped incident and resets only zero-evidence failures', async () => {
+    const attemptId = '1fcf48ad-3b82-44a0-9f31-00546b499932';
+    const query = vi.fn((sql: string) => {
+      if (sql.includes('FOR UPDATE OF i')) {
+        return Promise.resolve(
+          result([
+            {
+              tenant_id: 'tenant-1',
+              source_workspace_id: 'T001',
+              status: 'FAILED',
+              version: 5,
+            },
+          ]),
+        );
+      }
+      if (sql.includes("action = 'INCIDENT_PROCESSING_RETRY_REQUESTED'")) {
+        return Promise.resolve(result([]));
+      }
+      if (sql.includes('FROM incident_sources') && sql.includes('FOR UPDATE')) {
+        return Promise.resolve(result([{ id: 'source-1' }]));
+      }
+      if (sql.includes('BOOL_AND')) {
+        return Promise.resolve(
+          result([{ retryable: true, artifact_count: '0' }]),
+        );
+      }
+      if (sql.includes('UPDATE incidents')) {
+        return Promise.resolve(result([{ version: 6 }]));
+      }
+      return Promise.resolve(result([]));
+    });
+    const release = vi.fn();
+    const client = { query, release } as unknown as PoolClient;
+    const pool = {
+      connect: vi.fn().mockResolvedValue(client),
+    } as unknown as Pool;
+
+    const retry = await new PostgresIncidentReviewRepository(
+      pool,
+    ).prepareProcessingRetry({
+      auditEventId: '47a988cf-b468-443b-a822-c6bbb76012fb',
+      attemptId,
+      reviewer: { subject },
+      incidentId,
+      expectedIncidentVersion: 5,
+      clientRequestId: 'd61ad8d8-5111-4ce0-a044-1addc5bf0414',
+      requestedAt: now,
+    });
+
+    expect(retry).toEqual({
+      incidentId,
+      workspaceId: 'T001',
+      incidentVersion: 6,
+      attemptId,
+      sourceIds: ['source-1'],
+      idempotent: false,
+    });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("actor.role IN ('OWNER', 'ADMIN')"),
+      [subject, incidentId],
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("SET status = 'PLANNED'"),
+      [now, 'tenant-1', incidentId],
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO audit_events'),
+      expect.arrayContaining([
+        'INCIDENT_PROCESSING_RETRY_REQUESTED',
+        'INCIDENT',
+        incidentId,
+      ]),
+    );
+    expect(query).toHaveBeenCalledWith('COMMIT');
+    expect(query).not.toHaveBeenCalledWith('ROLLBACK');
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it('refuses a retry when any evidence artifact already exists', async () => {
+    const query = vi.fn((sql: string) => {
+      if (sql.includes('FOR UPDATE OF i')) {
+        return Promise.resolve(
+          result([
+            {
+              tenant_id: 'tenant-1',
+              source_workspace_id: 'T001',
+              status: 'FAILED',
+              version: 5,
+            },
+          ]),
+        );
+      }
+      if (sql.includes("action = 'INCIDENT_PROCESSING_RETRY_REQUESTED'")) {
+        return Promise.resolve(result([]));
+      }
+      if (sql.includes('FROM incident_sources') && sql.includes('FOR UPDATE')) {
+        return Promise.resolve(result([{ id: 'source-1' }]));
+      }
+      if (sql.includes('BOOL_AND')) {
+        return Promise.resolve(
+          result([{ retryable: true, artifact_count: '1' }]),
+        );
+      }
+      return Promise.resolve(result([]));
+    });
+    const release = vi.fn();
+    const client = { query, release } as unknown as PoolClient;
+    const pool = {
+      connect: vi.fn().mockResolvedValue(client),
+    } as unknown as Pool;
+
+    await expect(
+      new PostgresIncidentReviewRepository(pool).prepareProcessingRetry({
+        auditEventId: '47a988cf-b468-443b-a822-c6bbb76012fb',
+        attemptId: '1fcf48ad-3b82-44a0-9f31-00546b499932',
+        reviewer: { subject },
+        incidentId,
+        expectedIncidentVersion: 5,
+        clientRequestId: 'd61ad8d8-5111-4ce0-a044-1addc5bf0414',
+        requestedAt: now,
+      }),
+    ).rejects.toBeInstanceOf(ReviewConflictError);
+
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+    expect(query).not.toHaveBeenCalledWith(
+      expect.stringContaining("SET status = 'PLANNED'"),
+      expect.anything(),
+    );
+    expect(release).toHaveBeenCalledOnce();
   });
 });
 

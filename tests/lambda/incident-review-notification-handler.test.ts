@@ -84,6 +84,7 @@ describe('createIncidentReviewNotificationHandler', () => {
       incidentId: failureEvent.incidentId,
       failureId: failureEvent.failureId,
       stage: failureEvent.failureStage,
+      failureCode: failureEvent.failureCode,
     });
   });
 });

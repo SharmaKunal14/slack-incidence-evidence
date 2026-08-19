@@ -103,6 +103,7 @@ const incidentReviewNotificationLambdaEnvironmentSchema =
 
 const incidentReviewApiLambdaEnvironmentSchema =
   lambdaPostgresBaseEnvironmentSchema.extend({
+    INCIDENT_WORKFLOW_STATE_MACHINE_ARN: z.string().trim().min(1).max(2_048),
     REVIEW_API_MAX_BODY_BYTES: z.coerce
       .number()
       .int()

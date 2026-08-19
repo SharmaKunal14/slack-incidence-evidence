@@ -51,6 +51,7 @@ const failedNotificationSchema = z
     channelId: z.string().regex(/^C[A-Z0-9]{1,63}$/),
     threadTs: slackTimestampSchema,
     stage: z.enum(['ANALYSIS', 'REPORT']),
+    failureCode: z.string().regex(/^[A-Z0-9_]{1,64}$/),
   })
   .strict();
 
@@ -225,6 +226,7 @@ export class SlackWebApiIncidentStatusNotifier
         'Incident processing stopped before a review draft could be created.',
         `Reference: ${input.incidentId}`,
         `Stage: ${input.stage.toLocaleLowerCase()}.`,
+        processingFailureGuidance(input.failureCode),
         'Status: operator attention required.',
       ].join('\n'),
     });
@@ -312,6 +314,19 @@ export class SlackWebApiIncidentStatusNotifier
 
 function providerName(provider: 'NOTION' | 'CONFLUENCE'): string {
   return provider === 'NOTION' ? 'Notion' : 'Confluence';
+}
+
+function processingFailureGuidance(failureCode: string): string {
+  switch (failureCode) {
+    case 'NO_ACCESSIBLE_EVIDENCE':
+      return 'No readable Slack evidence was available. Add @OnRecord to every selected public channel, then retry from the OnRecord dashboard.';
+    case 'SLACK_INSTALLATION_NOT_ACTIVE':
+    case 'SLACK_INSTALLATION_CREDENTIAL_EXPIRED':
+    case 'SLACK_INSTALLATION_CREDENTIAL_MISSING':
+      return 'The Slack workspace connection requires attention. Reconnect it in the OnRecord dashboard before retrying.';
+    default:
+      return 'Open the OnRecord dashboard for the safe failure details and next action.';
+  }
 }
 
 function parseReviewAppBaseUrl(value: string | undefined): URL | null {

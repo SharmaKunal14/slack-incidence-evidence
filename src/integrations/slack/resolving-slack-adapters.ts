@@ -1,4 +1,8 @@
 import type {
+  SlackChannelAccessResult,
+  SlackChannelAccessVerifier,
+} from '../../application/ports/slack-channel-access-verifier.js';
+import type {
   IncidentParticipantIdentity,
   IncidentParticipantIdentitySource,
 } from '../../application/ports/incident-participant-identity-source.js';
@@ -48,6 +52,7 @@ import {
   SlackWebApiIncidentStatusNotifier,
 } from './web-api-incident-status-notifier.js';
 import { SlackChannelWebApiSource } from './web-api-slack-channel-source.js';
+import { SlackWebApiChannelAccessVerifier } from './web-api-slack-channel-access-verifier.js';
 import { SlackThreadWebApiSource } from './web-api-slack-thread-source.js';
 
 export class ResolvingSlackIncidentScopeModal implements IncidentScopeModal {
@@ -118,6 +123,38 @@ export class ResolvingSlackChannelSource implements SlackChannelSource {
           isInactiveInstallation(error) ? 'REVOKED' : 'FAILED',
           { cause: error },
         );
+      }
+      throw error;
+    }
+  }
+}
+
+export class ResolvingSlackChannelAccessVerifier implements SlackChannelAccessVerifier {
+  public constructor(
+    private readonly resolver: SlackInstallationCredentialResolver,
+  ) {}
+
+  public async verify(
+    workspaceId: string,
+    channelIds: readonly string[],
+  ): Promise<readonly SlackChannelAccessResult[]> {
+    try {
+      const installation = await this.resolver.resolve(workspaceId);
+      return await new SlackWebApiChannelAccessVerifier(installation).verify(
+        workspaceId,
+        channelIds,
+      );
+    } catch (error) {
+      if (error instanceof SlackInstallationCredentialResolutionError) {
+        return channelIds.map((channelId) => ({
+          channelId,
+          accessible: false,
+          code: error.retryable
+            ? 'VERIFICATION_UNAVAILABLE'
+            : 'WORKSPACE_RECONNECT_REQUIRED',
+          retryable: error.retryable,
+          displayName: null,
+        }));
       }
       throw error;
     }

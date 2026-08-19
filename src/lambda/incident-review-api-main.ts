@@ -1,5 +1,6 @@
 import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { SESv2Client } from '@aws-sdk/client-sesv2';
+import { SFNClient } from '@aws-sdk/client-sfn';
 import type {
   APIGatewayProxyEventV2WithJWTAuthorizer,
   APIGatewayProxyResultV2,
@@ -13,6 +14,7 @@ import {
   GetIncidentReview,
   GetReportRevision,
   ListIncidentReviews,
+  RetryIncidentProcessing,
 } from '../application/review-incident.js';
 import { GetSlackOnboardingStatus } from '../application/get-slack-onboarding-status.js';
 import { WorkspaceAccessService } from '../application/onboarding/workspace-access-service.js';
@@ -25,6 +27,7 @@ import { PostgresSlackOnboardingStatusRepository } from '../infrastructure/postg
 import { PostgresWorkspaceAccessRepository } from '../infrastructure/postgres/workspace-access-repository.js';
 import { assertDatabaseSchemaCompatible } from '../infrastructure/postgres/schema-compatibility.js';
 import { SecretsManagerSecretReader } from '../infrastructure/secrets/secrets-manager-secret-reader.js';
+import { SfnIncidentWorkflowStarter } from '../infrastructure/workflow/sfn-incident-workflow-starter.js';
 import { NodeSecureTokenGenerator } from '../infrastructure/security/node-secure-token-generator.js';
 import { SesWorkspaceInvitationEmailSender } from '../integrations/aws/ses-workspace-invitation-email-sender.js';
 import { createLogger } from '../observability/logger.js';
@@ -39,6 +42,7 @@ const invitationEmailClient = new SESv2Client({
   region: environment.AWS_REGION,
   maxAttempts: 3,
 });
+const workflowClient = new SFNClient({ region: environment.AWS_REGION });
 let handlerPromise: Promise<IncidentReviewApiHandler> | undefined;
 
 export async function handler(
@@ -118,6 +122,15 @@ async function buildHandler(): Promise<IncidentReviewApiHandler> {
       ),
       assignReviewer: new AssignIncidentReviewer(
         repository,
+        systemClock,
+        uuidGenerator,
+      ),
+      retryProcessing: new RetryIncidentProcessing(
+        repository,
+        new SfnIncidentWorkflowStarter(
+          workflowClient,
+          environment.INCIDENT_WORKFLOW_STATE_MACHINE_ARN,
+        ),
         systemClock,
         uuidGenerator,
       ),

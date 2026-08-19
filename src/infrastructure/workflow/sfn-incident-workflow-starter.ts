@@ -53,12 +53,17 @@ export class SfnIncidentWorkflowStarter implements IncidentWorkflowStarter {
 }
 
 export function executionName(
-  input: Pick<StartIncidentWorkflowInput, 'tenantId' | 'incidentId'>,
+  input: Pick<
+    StartIncidentWorkflowInput,
+    'tenantId' | 'incidentId' | 'attemptId'
+  >,
 ): string {
   const digest = createHash('sha256')
     .update(input.tenantId, 'utf8')
     .update('\0', 'utf8')
     .update(input.incidentId, 'utf8')
+    .update('\0', 'utf8')
+    .update(input.attemptId ?? 'initial', 'utf8')
     .digest('hex');
   return `incident-${digest}`;
 }

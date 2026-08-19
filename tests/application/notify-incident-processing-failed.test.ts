@@ -57,6 +57,7 @@ describe('NotifyIncidentProcessingFailed', () => {
       incidentId: incident.id,
       failureId,
       stage: 'ANALYSIS',
+      failureCode: 'NO_ACCESSIBLE_EVIDENCE',
     });
 
     expect(notifyProcessingFailed).toHaveBeenCalledWith({
@@ -66,6 +67,7 @@ describe('NotifyIncidentProcessingFailed', () => {
       channelId: incident.sourceChannelId,
       threadTs: incident.sourceThreadTs,
       stage: 'ANALYSIS',
+      failureCode: 'NO_ACCESSIBLE_EVIDENCE',
     });
   });
 
@@ -84,6 +86,7 @@ describe('NotifyIncidentProcessingFailed', () => {
         incidentId: incident.id,
         failureId: '7df1bcac-5583-4cd6-91db-981989f4c482',
         stage: 'ANALYSIS',
+        failureCode: 'NO_ACCESSIBLE_EVIDENCE',
       }),
     ).rejects.toThrow('Incident has not reached a terminal failure');
     expect(notifyProcessingFailed).not.toHaveBeenCalled();

@@ -391,6 +391,12 @@ data "aws_iam_policy_document" "incident_review_api" {
   }
 
   statement {
+    sid       = "RetryIncidentWorkflow"
+    actions   = ["states:StartExecution"]
+    resources = [aws_sfn_state_machine.incident_workflow.arn]
+  }
+
+  statement {
     sid       = "SendWorkspaceInvitationEmail"
     actions   = ["ses:SendEmail"]
     resources = ["*"]
@@ -467,6 +473,7 @@ resource "aws_lambda_function" "incident_review_api" {
       DATABASE_SSL                        = "true"
       LOG_LEVEL                           = var.log_level
       INVITATION_EMAIL_FROM_ADDRESS       = var.invitation_email_from_address
+      INCIDENT_WORKFLOW_STATE_MACHINE_ARN = aws_sfn_state_machine.incident_workflow.arn
       NODE_ENV                            = local.node_env
       REVIEW_API_MAX_BODY_BYTES           = tostring(var.review_api_max_body_bytes)
       REVIEW_APP_BASE_URL                 = local.review_application_url
@@ -535,6 +542,7 @@ locals {
     "GET /review/incidents",
     "GET /review/incidents/{incidentId}",
     "PATCH /review/incidents/{incidentId}/assignment",
+    "POST /review/incidents/{incidentId}/retry",
     "GET /review/incidents/{incidentId}/revisions/{revisionId}",
     "POST /review/incidents/{incidentId}/revisions",
     "POST /review/incidents/{incidentId}/revisions/{revisionId}/approve",

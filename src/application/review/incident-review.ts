@@ -48,7 +48,50 @@ export interface ReviewInboxItem {
 
 export interface ReviewInboxPage {
   readonly items: readonly ReviewInboxItem[];
+  readonly processingIssues: readonly IncidentProcessingIssue[];
   readonly nextCursor: ReviewInboxCursor | null;
+}
+
+export interface IncidentProcessingIssue {
+  readonly incidentId: string;
+  readonly workspaceId: string;
+  readonly title: string;
+  readonly severity: string;
+  readonly status: 'COLLECTING' | 'FAILED';
+  readonly incidentVersion: number;
+  readonly failureCode:
+    | 'NO_ACCESSIBLE_EVIDENCE'
+    | 'EVIDENCE_COLLECTION_INCOMPLETE'
+    | 'ANALYSIS_FAILED'
+    | 'REPORT_GENERATION_FAILED';
+  readonly failureReason: string | null;
+  readonly canRetry: boolean;
+  readonly updatedAt: string;
+  readonly sources: readonly {
+    readonly sourceId: string;
+    readonly channelId: string;
+    readonly displayName: string | null;
+    readonly status: string;
+    readonly permissionOutcome: string;
+    readonly failureReason: string | null;
+    readonly messageCount: number;
+  }[];
+}
+
+export const retryIncidentProcessingCommandSchema = z
+  .object({
+    expectedIncidentVersion: z.number().int().nonnegative(),
+    clientRequestId: z.uuid(),
+  })
+  .strict();
+
+export interface IncidentProcessingRetry {
+  readonly incidentId: string;
+  readonly workspaceId: string;
+  readonly incidentVersion: number;
+  readonly attemptId: string;
+  readonly sourceIds: readonly string[];
+  readonly idempotent: boolean;
 }
 
 export const assignIncidentReviewerCommandSchema = z

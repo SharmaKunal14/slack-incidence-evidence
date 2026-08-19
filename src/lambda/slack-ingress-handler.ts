@@ -6,6 +6,10 @@ import type { Logger } from 'pino';
 import type { Clock } from '../application/ports/clock.js';
 import type { IncidentScopeModal } from '../application/ports/incident-scope-modal.js';
 import type {
+  SlackChannelAccessResult,
+  SlackChannelAccessVerifier,
+} from '../application/ports/slack-channel-access-verifier.js';
+import type {
   RequestIncidentReview,
   RequestIncidentReviewCommand,
   RequestScopedIncidentReview,
@@ -30,6 +34,7 @@ export interface SlackIngressDependencies {
     'execute'
   >;
   readonly incidentScopeModal?: IncidentScopeModal;
+  readonly channelAccessVerifier?: SlackChannelAccessVerifier;
   readonly evidenceRetentionDays?: number;
 }
 
@@ -206,6 +211,29 @@ async function handleInteraction(
     return jsonResponse(503, { error: 'queue_unavailable' });
   }
   try {
+    if (dependencies.channelAccessVerifier !== undefined) {
+      const access = await dependencies.channelAccessVerifier.verify(
+        parsed.command.workspaceId,
+        parsed.command.channels.map((channel) => channel.channelId),
+      );
+      const errors = channelAccessFieldErrors(parsed.command.channels, access);
+      if (Object.keys(errors).length > 0) {
+        dependencies.logger.info(
+          {
+            workspaceId: parsed.command.workspaceId,
+            rejectedChannelCount: access.filter((item) => !item.accessible)
+              .length,
+            rejectionCodes: [
+              ...new Set(
+                access.flatMap((item) => (item.accessible ? [] : [item.code])),
+              ),
+            ],
+          },
+          'rejected incident scope with inaccessible Slack channels',
+        );
+        return jsonResponse(200, { response_action: 'errors', errors });
+      }
+    }
     const jobId = await dependencies.requestScopedIncidentReview.execute(
       parsed.command,
     );
@@ -225,6 +253,78 @@ async function handleInteraction(
     );
     return jsonResponse(503, { error: 'queue_unavailable' });
   }
+}
+
+function channelAccessFieldErrors(
+  channels: readonly { readonly channelId: string; readonly role: string }[],
+  results: readonly SlackChannelAccessResult[],
+): Readonly<Record<string, string>> {
+  const byId = new Map(results.map((result) => [result.channelId, result]));
+  const inaccessible = channels.flatMap((channel) => {
+    const result = byId.get(channel.channelId);
+    if (result?.accessible === true) return [];
+    return [
+      {
+        channel,
+        result:
+          result ??
+          ({
+            accessible: false,
+            channelId: channel.channelId,
+            displayName: null,
+            code: 'VERIFICATION_UNAVAILABLE',
+            retryable: true,
+          } satisfies SlackChannelAccessResult),
+      },
+    ];
+  });
+  const errors: Record<string, string> = {};
+  const primary = inaccessible.find(
+    ({ channel }) => channel.role === 'PRIMARY',
+  );
+  if (primary !== undefined) {
+    errors['primary_channel'] = channelAccessMessage(primary.result);
+  }
+  const additional = inaccessible.filter(
+    ({ channel }) => channel.role !== 'PRIMARY',
+  );
+  if (additional.length > 0) {
+    const names = additional
+      .map(({ result }) =>
+        result.displayName === null
+          ? result.channelId
+          : `#${result.displayName}`,
+      )
+      .join(', ');
+    const reconnect = additional.some(
+      ({ result }) => result.code === 'WORKSPACE_RECONNECT_REQUIRED',
+    );
+    const unavailable = additional.some(
+      ({ result }) => result.code === 'VERIFICATION_UNAVAILABLE',
+    );
+    errors['additional_channels'] = reconnect
+      ? 'Reconnect this workspace in OnRecord before collecting evidence.'
+      : unavailable
+        ? 'OnRecord could not verify channel access. Wait a moment and submit again.'
+        : `Add @OnRecord to ${names}, or remove those channels.`;
+  }
+  return errors;
+}
+
+function channelAccessMessage(result: SlackChannelAccessResult): string {
+  if (result.accessible) return '';
+  if (result.code === 'WORKSPACE_RECONNECT_REQUIRED') {
+    return 'Reconnect this workspace in OnRecord before collecting evidence.';
+  }
+  if (result.code === 'VERIFICATION_UNAVAILABLE') {
+    return 'OnRecord could not verify channel access. Wait a moment and submit again.';
+  }
+  const name =
+    result.displayName === null ? 'this channel' : `#${result.displayName}`;
+  if (result.code === 'UNSUPPORTED_CHANNEL') {
+    return `${name} is private or shared. Select a public, non-shared channel.`;
+  }
+  return `Add @OnRecord to ${name}, then submit again.`;
 }
 
 function reconstructRawBody(event: APIGatewayProxyEventV2): Buffer {

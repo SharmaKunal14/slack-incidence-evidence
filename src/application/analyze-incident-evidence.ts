@@ -84,8 +84,9 @@ export class AnalyzeIncidentEvidence {
       this.configuration.maxArtifacts + 1,
     );
     if (evidence.artifacts.length === 0) {
-      throw new IncidentAnalysisConfigurationError(
-        'No incident evidence is available for analysis',
+      return this.failWithoutAccessibleEvidence(
+        input.tenantId,
+        input.incidentId,
       );
     }
     if (evidence.artifacts.length > this.configuration.maxArtifacts) {
@@ -285,6 +286,34 @@ export class AnalyzeIncidentEvidence {
       await this.advanceToFailure(failed);
       return failedOutcome(failed);
     }
+  }
+
+  private async failWithoutAccessibleEvidence(
+    tenantId: string,
+    incidentId: string,
+  ): Promise<AnalyzeIncidentEvidenceOutcome> {
+    const incident = await this.requireIncident(tenantId, incidentId);
+    if (incident.status === 'FAILED') {
+      return {
+        status: 'FAILED',
+        analysisRunId: incident.id,
+        failureCode: 'NO_ACCESSIBLE_EVIDENCE',
+      };
+    }
+    if (incident.status !== 'COLLECTING') {
+      throw new IncidentAnalysisConfigurationError(
+        `Incident status ${incident.status} cannot fail evidence collection`,
+      );
+    }
+    const failed = IncidentAggregate.rehydrate(incident)
+      .transitionTo('FAILED', this.clock.now())
+      .toSnapshot();
+    await this.incidents.save(failed, incident.version);
+    return {
+      status: 'FAILED',
+      analysisRunId: incident.id,
+      failureCode: 'NO_ACCESSIBLE_EVIDENCE',
+    };
   }
 
   private async resolveKnownPeople(

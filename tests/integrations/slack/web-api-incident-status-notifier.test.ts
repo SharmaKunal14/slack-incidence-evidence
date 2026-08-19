@@ -164,6 +164,7 @@ describe('SlackWebApiIncidentStatusNotifier', () => {
       channelId: 'C001',
       threadTs: '1721178000.000100',
       stage: 'ANALYSIS',
+      failureCode: 'NO_ACCESSIBLE_EVIDENCE',
     });
 
     const body = request.mock.calls[0]?.[1]?.body;
@@ -178,6 +179,9 @@ describe('SlackWebApiIncidentStatusNotifier', () => {
       .parse(JSON.parse(body) as unknown);
     expect(parsedBody.client_msg_id).toBe(failureId);
     expect(parsedBody.text).toContain('operator attention required');
+    expect(parsedBody.text).toContain(
+      'No readable Slack evidence was available',
+    );
     expect(parsedBody.text).not.toContain('PII_REMAINS');
     expect(body).not.toContain(botToken);
   });

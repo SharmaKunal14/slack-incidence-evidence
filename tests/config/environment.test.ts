@@ -21,6 +21,7 @@ describe('Lambda environment configuration', () => {
       DATABASE_SECRET_ARN: 'database-secret-arn',
       DATABASE_HOST: 'pooler.example.test',
       DATABASE_NAME: 'postgres',
+      INCIDENT_WORKFLOW_STATE_MACHINE_ARN: 'state-machine-arn',
       SLACK_OAUTH_CLIENT_ID: '123.456',
       SLACK_OAUTH_REDIRECT_URI:
         'https://api.example.test/onboarding/slack/callback',
@@ -286,6 +287,7 @@ describe('Lambda environment configuration', () => {
       DATABASE_NAME: 'postgres',
       REVIEW_APP_BASE_URL: 'https://review.example.test',
       INVITATION_EMAIL_FROM_ADDRESS: 'invites@example.test',
+      INCIDENT_WORKFLOW_STATE_MACHINE_ARN: 'state-machine-arn',
       SLACK_OAUTH_CLIENT_ID: '123.456',
       SLACK_IDENTITY_REDIRECT_URI:
         'https://review.example.test/onboarding/slack/identity/callback',

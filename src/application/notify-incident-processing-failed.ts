@@ -6,6 +6,7 @@ export interface NotifyIncidentProcessingFailedCommand {
   readonly incidentId: string;
   readonly failureId: string;
   readonly stage: 'ANALYSIS' | 'REPORT';
+  readonly failureCode: string;
 }
 
 /** Sends a content-free terminal status after an incident has safely failed closed. */
@@ -45,6 +46,7 @@ export class NotifyIncidentProcessingFailed {
       channelId: incident.sourceChannelId,
       threadTs,
       stage: input.stage,
+      failureCode: input.failureCode,
     });
   }
 }

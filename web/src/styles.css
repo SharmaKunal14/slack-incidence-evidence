@@ -833,6 +833,53 @@ a {
   margin-top: 1rem;
 }
 
+.processing-issues {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding: 1.4rem;
+  border: 1px solid color-mix(in srgb, var(--red) 28%, transparent);
+  border-radius: 1.25rem;
+  background: color-mix(in srgb, var(--red) 5%, var(--surface));
+}
+
+.processing-issue-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.processing-issue-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.processing-issue-card h3,
+.processing-issue-card p {
+  margin: 0;
+}
+
+.processing-source-list {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.75rem 0 0;
+  padding-left: 1.15rem;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 720px) {
+  .processing-issue-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .member-card-actions select {
   width: auto;
   min-width: 11rem;

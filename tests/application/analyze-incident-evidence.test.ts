@@ -230,6 +230,28 @@ function useCase(
 }
 
 describe('AnalyzeIncidentEvidence', () => {
+  it('durably fails without invoking AI when collection produced no accessible evidence', async () => {
+    const repository = new InMemoryAnalysisRepository();
+    repository.evidence = { incidentTitle: 'Checkout outage', artifacts: [] };
+    const incidents = new InMemoryIncidentRepository();
+    const analyze = vi.fn<IncidentAnalyzer['analyze']>();
+
+    await expect(
+      useCase(repository, incidents, { analyze }).execute({
+        tenantId,
+        incidentId,
+      }),
+    ).resolves.toEqual({
+      status: 'FAILED',
+      analysisRunId: incidentId,
+      failureCode: 'NO_ACCESSIBLE_EVIDENCE',
+    });
+
+    expect(analyze).not.toHaveBeenCalled();
+    expect(repository.acquiredInput).toBeUndefined();
+    expect(incidents.incident.status).toBe('FAILED');
+  });
+
   it('builds a bounded manifest and persists a completed cited analysis', async () => {
     const repository = new InMemoryAnalysisRepository();
     const incidents = new InMemoryIncidentRepository();

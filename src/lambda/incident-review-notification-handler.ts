@@ -79,6 +79,7 @@ export function createIncidentReviewNotificationHandler(
           incidentId: input.incidentId,
           failureId: input.failureId,
           stage: input.failureStage,
+          failureCode: input.failureCode,
         });
       }
       dependencies.logger.info(

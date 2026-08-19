@@ -1,6 +1,7 @@
 import type {
   IncidentReviewBundle,
   IncidentReviewerAssignment,
+  IncidentProcessingRetry,
   ReportRevision,
   ReportRevisionDetail,
   ResolvedReviewQuestionAnswer,
@@ -65,4 +66,13 @@ export interface IncidentReviewRepository {
     readonly clientRequestId: string;
     readonly assignedAt: Date;
   }): Promise<IncidentReviewerAssignment>;
+  prepareProcessingRetry(input: {
+    readonly auditEventId: string;
+    readonly attemptId: string;
+    readonly reviewer: ReviewerIdentity;
+    readonly incidentId: string;
+    readonly expectedIncidentVersion: number;
+    readonly clientRequestId: string;
+    readonly requestedAt: Date;
+  }): Promise<IncidentProcessingRetry>;
 }

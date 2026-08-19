@@ -54,6 +54,7 @@ import {
   classificationValues,
   inboxSchema,
   incidentAssignmentResponseSchema,
+  incidentRetryResponseSchema,
   revisionDetailResponseSchema,
   revisionResponseSchema,
   slackDisconnectionResponseSchema,
@@ -64,6 +65,7 @@ import {
   type Classification,
   type Configuration,
   type InboxItem,
+  type ProcessingIssue,
   type RevisionDetail,
   type Statement,
 } from './contracts.js';
@@ -1268,14 +1270,51 @@ function InboxPage({
   readonly experience?: Experience;
   readonly token: string;
 }): ReactNode {
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<InboxFilter>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [retryingIncidentIds, setRetryingIncidentIds] = useState<
+    ReadonlySet<string>
+  >(new Set());
   const query = useQuery({
     queryKey: ['review-inbox'],
     queryFn: async () =>
       inboxSchema.parse(
         await apiClient(configuration, token, '/review/incidents?limit=50'),
       ),
+  });
+  const retryProcessing = useMutation({
+    mutationFn: async (issue: ProcessingIssue) => {
+      return incidentRetryResponseSchema.parse(
+        await apiClient(
+          configuration,
+          token,
+          `/review/incidents/${encodeURIComponent(issue.incidentId)}/retry`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              expectedIncidentVersion: issue.incidentVersion,
+              clientRequestId: crypto.randomUUID(),
+            }),
+          },
+        ),
+      );
+    },
+    onMutate: (issue) => {
+      setRetryingIncidentIds((current) =>
+        new Set(current).add(issue.incidentId),
+      );
+    },
+    onSettled: (_data, _error, issue) => {
+      setRetryingIncidentIds((current) => {
+        const updated = new Set(current);
+        updated.delete(issue.incidentId);
+        return updated;
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['review-inbox'] });
+    },
   });
 
   if (query.isPending) {
@@ -1328,6 +1367,87 @@ function InboxPage({
             </span>
           </div>
         </section>
+
+        {query.data.processingIssues.length > 0 && (
+          <section
+            className="processing-issues reveal reveal-delay-one"
+            aria-labelledby="processing-issues-title"
+          >
+            <div className="section-heading-row">
+              <div>
+                <p className="eyebrow">Action required</p>
+                <h2 id="processing-issues-title">Evidence collection issues</h2>
+              </div>
+              <span className="status-pill" data-status="FAILED">
+                {query.data.processingIssues.length}
+              </span>
+            </div>
+            <p className="muted-copy">
+              These incidents did not complete automated processing. Review the
+              safe failure reason and next action below.
+            </p>
+            <div className="processing-issue-list">
+              {query.data.processingIssues.map((issue) => (
+                <article
+                  className="processing-issue-card"
+                  key={issue.incidentId}
+                >
+                  <div>
+                    <div className="connection-card-heading">
+                      <h3>{issue.title}</h3>
+                      <span className="status-pill" data-status={issue.status}>
+                        {humanize(issue.status)}
+                      </span>
+                    </div>
+                    <p>{processingIssueGuidance(issue)}</p>
+                    {issue.failureReason !== null && (
+                      <p className="processing-failure-reason">
+                        Failure: {humanizeFailureReason(issue.failureReason)}
+                      </p>
+                    )}
+                    <ul className="processing-source-list">
+                      {issue.sources.map((source) => (
+                        <li key={source.sourceId}>
+                          <strong>
+                            {source.displayName === null
+                              ? source.channelId
+                              : `#${source.displayName}`}
+                          </strong>{' '}
+                          · {humanize(source.status)} ·{' '}
+                          {humanizeFailureReason(source.failureReason)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <button
+                    className="button button-primary"
+                    disabled={
+                      !issue.canRetry ||
+                      retryingIncidentIds.has(issue.incidentId)
+                    }
+                    onClick={() => retryProcessing.mutate(issue)}
+                    type="button"
+                  >
+                    {retryingIncidentIds.has(issue.incidentId) ? (
+                      <LoaderCircle className="spin" size={18} />
+                    ) : (
+                      <RotateCcw size={18} />
+                    )}
+                    {retryingIncidentIds.has(issue.incidentId)
+                      ? 'Retrying…'
+                      : 'Retry collection'}
+                  </button>
+                </article>
+              ))}
+            </div>
+            {retryProcessing.isError && (
+              <p className="form-notice" data-error="true" role="alert">
+                <AlertCircle size={16} />{' '}
+                {userFacingError(retryProcessing.error)}
+              </p>
+            )}
+          </section>
+        )}
 
         <section
           className="metric-grid reveal reveal-delay-one"
@@ -3460,6 +3580,47 @@ function humanize(value: string): string {
     .toLowerCase()
     .replaceAll('_', ' ')
     .replace(/^./u, (letter) => letter.toUpperCase());
+}
+
+function processingIssueGuidance(issue: ProcessingIssue): string {
+  if (issue.failureCode === 'ANALYSIS_FAILED') {
+    return issue.failureReason === 'PII_REMAINS'
+      ? 'OnRecord stopped because the model output did not pass its privacy check. No unsafe draft was saved.'
+      : 'Evidence was collected, but analysis could not be completed safely. Automatic retry is disabled to avoid duplicate model runs.';
+  }
+  if (issue.failureCode === 'REPORT_GENERATION_FAILED') {
+    return 'Evidence and analysis were preserved, but report generation did not complete. Automatic retry is disabled to protect the existing run history.';
+  }
+  if (issue.sources.some((source) => source.status === 'REVOKED')) {
+    return issue.canRetry
+      ? 'The Slack workspace is reconnected. Retry evidence collection.'
+      : 'Reconnect this Slack workspace before retrying evidence collection.';
+  }
+  if (
+    issue.sources.some((source) =>
+      ['SLACK_CHANNEL_ACCESS_UNAVAILABLE', 'SLACK_NOT_IN_CHANNEL'].includes(
+        source.failureReason ?? '',
+      ),
+    )
+  ) {
+    return 'Add @OnRecord to every listed public channel, then retry.';
+  }
+  return issue.canRetry
+    ? 'Resolve the source access problem shown below, then retry.'
+    : 'This incident cannot be retried automatically because evidence was partially collected or the workspace must be reconnected.';
+}
+
+function humanizeFailureReason(reason: string | null): string {
+  if (reason === null) return 'No detailed reason recorded';
+  const messages: Readonly<Record<string, string>> = {
+    SLACK_CHANNEL_ACCESS_UNAVAILABLE: 'OnRecord is not a channel member',
+    SLACK_NOT_IN_CHANNEL: 'OnRecord is not a channel member',
+    SLACK_CHANNEL_NOT_FOUND: 'Channel was not found or is not visible',
+    SLACK_MISSING_SCOPE: 'Slack permission is missing',
+    SLACK_TOKEN_REVOKED: 'Workspace connection was revoked',
+    SLACK_INVALID_AUTH: 'Workspace connection is invalid',
+  };
+  return messages[reason] ?? humanize(reason);
 }
 
 function severityTone(severity: string): string {

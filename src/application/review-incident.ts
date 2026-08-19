@@ -2,9 +2,11 @@ import { createHash } from 'node:crypto';
 import type { Clock } from './ports/clock.js';
 import type { IdGenerator } from './ports/id-generator.js';
 import type { IncidentReviewRepository } from './ports/incident-review-repository.js';
+import type { IncidentWorkflowStarter } from './ports/incident-workflow-starter.js';
 import {
   approveReportRevisionCommandSchema,
   assignIncidentReviewerCommandSchema,
+  retryIncidentProcessingCommandSchema,
   classificationCaution,
   createReportRevisionCommandSchema,
   ReviewAuthorizationError,
@@ -13,6 +15,7 @@ import {
   ReviewValidationError,
   type IncidentReviewBundle,
   type IncidentReviewerAssignment,
+  type IncidentProcessingRetry,
   type ReportRevision,
   type ReportRevisionDetail,
   type ResolvedReviewQuestionAnswer,
@@ -92,6 +95,40 @@ export class AssignIncidentReviewer {
       clientRequestId: command.clientRequestId,
       assignedAt: this.clock.now(),
     });
+  }
+}
+
+export class RetryIncidentProcessing {
+  public constructor(
+    private readonly reviews: IncidentReviewRepository,
+    private readonly workflows: IncidentWorkflowStarter,
+    private readonly clock: Clock,
+    private readonly idGenerator: IdGenerator,
+  ) {}
+
+  public async execute(input: {
+    readonly reviewer: ReviewerIdentity;
+    readonly incidentId: string;
+    readonly command: unknown;
+  }): Promise<IncidentProcessingRetry> {
+    const command = retryIncidentProcessingCommandSchema.parse(input.command);
+    const retry = await this.reviews.prepareProcessingRetry({
+      auditEventId: this.idGenerator.generate(),
+      attemptId: this.idGenerator.generate(),
+      reviewer: input.reviewer,
+      incidentId: input.incidentId,
+      expectedIncidentVersion: command.expectedIncidentVersion,
+      clientRequestId: command.clientRequestId,
+      requestedAt: this.clock.now(),
+    });
+    await this.workflows.start({
+      tenantId: retry.workspaceId,
+      incidentId: retry.incidentId,
+      jobId: retry.attemptId,
+      sourceIds: retry.sourceIds,
+      attemptId: retry.attemptId,
+    });
+    return retry;
   }
 }
 

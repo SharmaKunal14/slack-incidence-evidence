@@ -13,6 +13,7 @@ import type {
   GetIncidentReview,
   GetReportRevision,
   ListIncidentReviews,
+  RetryIncidentProcessing,
 } from '../application/review-incident.js';
 import type { GetSlackOnboardingStatus } from '../application/get-slack-onboarding-status.js';
 import {
@@ -45,6 +46,7 @@ export interface IncidentReviewApiDependencies {
   readonly createRevision: Pick<CreateReportRevision, 'execute'>;
   readonly approveRevision: Pick<ApproveReportRevision, 'execute'>;
   readonly assignReviewer: Pick<AssignIncidentReviewer, 'execute'>;
+  readonly retryProcessing: Pick<RetryIncidentProcessing, 'execute'>;
   readonly getSlackOnboardingStatus: Pick<GetSlackOnboardingStatus, 'execute'>;
   readonly workspaceAccess: Pick<
     WorkspaceAccessService,
@@ -181,6 +183,7 @@ export function createIncidentReviewApiHandler(
           });
           return jsonResponse(200, {
             items: page.items,
+            processingIssues: page.processingIssues,
             nextCursor:
               page.nextCursor === null ? null : encodeCursor(page.nextCursor),
           });
@@ -201,6 +204,15 @@ export function createIncidentReviewApiHandler(
             command: parseJsonBody(event, dependencies.maxBodyBytes),
           });
           return jsonResponse(200, { assignment });
+        }
+        case 'POST /review/incidents/{incidentId}/retry': {
+          const incidentId = parsePathId(event, 'incidentId');
+          const retry = await dependencies.retryProcessing.execute({
+            reviewer,
+            incidentId,
+            command: parseJsonBody(event, dependencies.maxBodyBytes),
+          });
+          return jsonResponse(202, { retry });
         }
         case 'GET /review/incidents/{incidentId}/revisions/{revisionId}': {
           const incidentId = parsePathId(event, 'incidentId');

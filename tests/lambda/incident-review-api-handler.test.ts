@@ -22,7 +22,11 @@ function dependencies(
 ): IncidentReviewApiDependencies {
   return {
     listReviews: {
-      execute: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+      execute: vi.fn().mockResolvedValue({
+        items: [],
+        processingIssues: [],
+        nextCursor: null,
+      }),
     },
     getReview: {
       execute: vi.fn().mockResolvedValue({ incident: { id: incidentId } }),
@@ -61,6 +65,16 @@ function dependencies(
         assignedSlackUserId: 'U001',
         incidentVersion: 5,
         updatedAt: '2026-07-18T01:05:00.000Z',
+      }),
+    },
+    retryProcessing: {
+      execute: vi.fn().mockResolvedValue({
+        incidentId,
+        workspaceId: 'T001',
+        incidentVersion: 6,
+        attemptId: '1fcf48ad-3b82-44a0-9f31-00546b499932',
+        sourceIds: ['source-1'],
+        idempotent: false,
       }),
     },
     getSlackOnboardingStatus: {
@@ -398,6 +412,40 @@ describe('incident review API boundary', () => {
       reviewer: { subject },
       incidentId,
       command,
+    });
+  });
+
+  it('starts an eligible evidence retry through the authenticated use case', async () => {
+    const deps = dependencies();
+    const handler = createIncidentReviewApiHandler(deps);
+    const command = {
+      expectedIncidentVersion: 5,
+      clientRequestId: 'd61ad8d8-5111-4ce0-a044-1addc5bf0414',
+    };
+
+    const response = await handler(
+      eventFor({
+        routeKey: 'POST /review/incidents/{incidentId}/retry',
+        pathParameters: { incidentId },
+        body: JSON.stringify(command),
+      }),
+    );
+
+    expect(structured(response).statusCode).toBe(202);
+    expect(deps.retryProcessing.execute).toHaveBeenCalledWith({
+      reviewer: { subject },
+      incidentId,
+      command,
+    });
+    expect(parsed(response)).toEqual({
+      retry: {
+        incidentId,
+        workspaceId: 'T001',
+        incidentVersion: 6,
+        attemptId: '1fcf48ad-3b82-44a0-9f31-00546b499932',
+        sourceIds: ['source-1'],
+        idempotent: false,
+      },
     });
   });
 

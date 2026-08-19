@@ -3,6 +3,7 @@ export interface StartIncidentWorkflowInput {
   readonly incidentId: string;
   readonly jobId: string;
   readonly sourceIds?: readonly string[];
+  readonly attemptId?: string;
 }
 
 /**

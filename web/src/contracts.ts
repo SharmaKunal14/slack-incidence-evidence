@@ -43,7 +43,63 @@ export const inboxItemSchema = z
 export const inboxSchema = z
   .object({
     items: z.array(inboxItemSchema).max(50),
+    processingIssues: z
+      .array(
+        z
+          .object({
+            incidentId: z.uuid(),
+            workspaceId: z.string().regex(/^T[A-Z0-9]{1,63}$/),
+            title: z.string().min(1).max(500),
+            severity: z.string(),
+            status: z.enum(['COLLECTING', 'FAILED']),
+            incidentVersion: z.number().int().nonnegative(),
+            failureCode: z.enum([
+              'NO_ACCESSIBLE_EVIDENCE',
+              'EVIDENCE_COLLECTION_INCOMPLETE',
+              'ANALYSIS_FAILED',
+              'REPORT_GENERATION_FAILED',
+            ]),
+            failureReason: z
+              .string()
+              .regex(/^[A-Z0-9_]{1,64}$/)
+              .nullable(),
+            canRetry: z.boolean(),
+            updatedAt: z.iso.datetime(),
+            sources: z
+              .array(
+                z
+                  .object({
+                    sourceId: z.string().min(1).max(128),
+                    channelId: z.string().regex(/^C[A-Z0-9]{1,63}$/),
+                    displayName: z.string().min(1).max(200).nullable(),
+                    status: z.string(),
+                    permissionOutcome: z.string(),
+                    failureReason: z.string().nullable(),
+                    messageCount: z.number().int().nonnegative(),
+                  })
+                  .strict(),
+              )
+              .max(5),
+          })
+          .strict(),
+      )
+      .max(20),
     nextCursor: z.string().max(1024).nullable(),
+  })
+  .strict();
+
+export const incidentRetryResponseSchema = z
+  .object({
+    retry: z
+      .object({
+        incidentId: z.uuid(),
+        workspaceId: z.string().regex(/^T[A-Z0-9]{1,63}$/),
+        incidentVersion: z.number().int().nonnegative(),
+        attemptId: z.uuid(),
+        sourceIds: z.array(z.string().min(1).max(128)).min(1).max(5),
+        idempotent: z.boolean(),
+      })
+      .strict(),
   })
   .strict();
 
@@ -315,6 +371,9 @@ export type Bundle = z.infer<typeof bundleSchema>;
 export type Classification = (typeof classificationValues)[number];
 export type Configuration = z.infer<typeof configurationSchema>;
 export type InboxItem = z.infer<typeof inboxItemSchema>;
+export type ProcessingIssue = z.infer<
+  typeof inboxSchema
+>['processingIssues'][number];
 export type RevisionDetail = z.infer<
   typeof revisionDetailResponseSchema
 >['revision'];

@@ -55,6 +55,19 @@ describe('SfnIncidentWorkflowStarter', () => {
     );
   });
 
+  it('uses a distinct deterministic execution for each explicit retry attempt', () => {
+    const firstRetry = { ...input, attemptId: 'retry-001' };
+    const sameRetryDelivery = {
+      ...firstRetry,
+      jobId: 'different-delivery-for-same-retry',
+    };
+    const secondRetry = { ...input, attemptId: 'retry-002' };
+
+    expect(executionName(firstRetry)).toBe(executionName(sameRetryDelivery));
+    expect(executionName(firstRetry)).not.toBe(executionName(secondRetry));
+    expect(executionName(firstRetry)).not.toBe(executionName(input));
+  });
+
   it('treats an existing execution as a successful duplicate request', async () => {
     const duplicate = new Error('execution already exists');
     duplicate.name = 'ExecutionAlreadyExists';

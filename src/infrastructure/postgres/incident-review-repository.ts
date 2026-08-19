@@ -6,6 +6,8 @@ import {
   parseReviewClassification,
   parseSectionType,
   type IncidentReviewBundle,
+  type IncidentProcessingIssue,
+  type IncidentProcessingRetry,
   type IncidentReviewerAssignment,
   type ReportRevision,
   type ReportRevisionDetail,
@@ -49,6 +51,27 @@ interface InboxRow {
   readonly latest_revision_id: string | null;
   readonly latest_revision_number: number | null;
   readonly latest_revision_status: 'DRAFT' | 'APPROVED' | null;
+}
+
+interface ProcessingIssueRow {
+  readonly incident_id: string;
+  readonly workspace_id: string;
+  readonly title: string;
+  readonly severity: string;
+  readonly incident_status: 'COLLECTING' | 'FAILED';
+  readonly incident_version: number;
+  readonly incident_updated_at: Date | string;
+  readonly source_id: string;
+  readonly channel_id: string;
+  readonly display_name: string | null;
+  readonly source_status: string;
+  readonly permission_outcome: string;
+  readonly failure_reason: string | null;
+  readonly message_count: number;
+  readonly artifact_count: number | string;
+  readonly connection_active: boolean;
+  readonly analysis_failure_code: string | null;
+  readonly report_failure_code: string | null;
 }
 
 interface BundleHeaderRow {
@@ -206,6 +229,7 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
     readonly authorized: boolean;
     readonly page: {
       readonly items: readonly ReviewInboxItem[];
+      readonly processingIssues: readonly IncidentProcessingIssue[];
       readonly nextCursor: ReviewInboxCursor | null;
     };
   }> {
@@ -221,11 +245,15 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       [reviewer.subject],
     );
     if (membership.rows[0]?.authorized !== true) {
-      return { authorized: false, page: { items: [], nextCursor: null } };
+      return {
+        authorized: false,
+        page: { items: [], processingIssues: [], nextCursor: null },
+      };
     }
 
-    const result = await this.pool.query<InboxRow>(
-      `
+    const [result, issueResult] = await Promise.all([
+      this.pool.query<InboxRow>(
+        `
         SELECT
           i.id AS incident_id,
           i.title,
@@ -298,13 +326,104 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
         ORDER BY i.created_at DESC, i.id DESC
         LIMIT $4
       `,
-      [
-        reviewer.subject,
-        cursor?.createdAt ?? null,
-        cursor?.incidentId ?? null,
-        limit + 1,
-      ],
-    );
+        [
+          reviewer.subject,
+          cursor?.createdAt ?? null,
+          cursor?.incidentId ?? null,
+          limit + 1,
+        ],
+      ),
+      this.pool.query<ProcessingIssueRow>(
+        `
+          WITH issue_incidents AS (
+            SELECT i.tenant_id, i.id, i.updated_at
+            FROM incidents i
+            JOIN reviewer_memberships membership
+              ON membership.tenant_id = i.tenant_id
+             AND membership.cognito_subject = $1
+             AND membership.status = 'ACTIVE'
+             AND membership.role IN ('OWNER', 'ADMIN')
+            WHERE i.status = 'FAILED'
+               OR (
+                 i.status = 'COLLECTING'
+                 AND EXISTS (
+                   SELECT 1
+                   FROM incident_sources source
+                   WHERE source.tenant_id = i.tenant_id
+                     AND source.incident_id = i.id
+                     AND source.status IN ('INACCESSIBLE', 'REVOKED', 'FAILED')
+                 )
+               )
+            ORDER BY i.updated_at DESC
+            LIMIT 20
+          )
+          SELECT
+            i.id AS incident_id,
+            i.source_workspace_id AS workspace_id,
+            i.title,
+            i.severity,
+            i.status AS incident_status,
+            i.version AS incident_version,
+            i.updated_at AS incident_updated_at,
+            source.id AS source_id,
+            source.provider_source_id AS channel_id,
+            source.display_name,
+            source.status AS source_status,
+            COALESCE(manifest.permission_outcome, 'UNKNOWN') AS permission_outcome,
+            manifest.completion_or_failure_reason AS failure_reason,
+            COALESCE(manifest.collected_message_count, 0) AS message_count,
+            (
+              SELECT COUNT(*)
+              FROM source_artifacts artifact
+              WHERE artifact.tenant_id = i.tenant_id
+                AND artifact.incident_id = i.id
+                AND artifact.deleted_at IS NULL
+            ) AS artifact_count,
+            (
+              SELECT analysis.failure_code
+              FROM incident_analysis_runs analysis
+              WHERE analysis.tenant_id = i.tenant_id
+                AND analysis.incident_id = i.id
+                AND analysis.status = 'FAILED'
+              ORDER BY analysis.analysis_version DESC
+              LIMIT 1
+            ) AS analysis_failure_code,
+            (
+              SELECT draft.failure_code
+              FROM incident_report_drafts draft
+              WHERE draft.tenant_id = i.tenant_id
+                AND draft.incident_id = i.id
+                AND draft.status = 'FAILED'
+              ORDER BY draft.draft_version DESC
+              LIMIT 1
+            ) AS report_failure_code,
+            EXISTS (
+              SELECT 1
+              FROM slack_installations installation
+              WHERE installation.tenant_id = i.tenant_id
+                AND installation.team_id = i.source_workspace_id
+                AND installation.status = 'ACTIVE'
+                AND installation.credential_secret_arn IS NOT NULL
+                AND (
+                  installation.credential_expires_at IS NULL
+                  OR installation.credential_expires_at > statement_timestamp()
+                )
+            ) AS connection_active
+          FROM issue_incidents selected
+          JOIN incidents i
+            ON i.tenant_id = selected.tenant_id AND i.id = selected.id
+          JOIN incident_sources source
+            ON source.tenant_id = i.tenant_id AND source.incident_id = i.id
+          LEFT JOIN source_coverage_manifests manifest
+            ON manifest.tenant_id = source.tenant_id
+           AND manifest.incident_id = source.incident_id
+           AND manifest.source_id = source.id
+           AND manifest.manifest_version = 1
+          ORDER BY i.updated_at DESC, source.source_role, source.id
+        `,
+        [reviewer.subject],
+      ),
+    ]);
     const hasNext = result.rows.length > limit;
     const visibleRows = result.rows.slice(0, limit);
     const items = visibleRows.map(toInboxItem);
@@ -313,6 +432,7 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       authorized: true,
       page: {
         items,
+        processingIssues: toProcessingIssues(issueResult.rows),
         nextCursor:
           hasNext && last !== undefined
             ? {
@@ -1376,6 +1496,265 @@ export class PostgresIncidentReviewRepository implements IncidentReviewRepositor
       client.release();
     }
   }
+
+  public async prepareProcessingRetry(input: {
+    readonly auditEventId: string;
+    readonly attemptId: string;
+    readonly reviewer: ReviewerIdentity;
+    readonly incidentId: string;
+    readonly expectedIncidentVersion: number;
+    readonly clientRequestId: string;
+    readonly requestedAt: Date;
+  }): Promise<IncidentProcessingRetry> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const incidentResult = await client.query<{
+        readonly tenant_id: string;
+        readonly source_workspace_id: string;
+        readonly status: string;
+        readonly version: number;
+      }>(
+        `
+          SELECT i.tenant_id, i.source_workspace_id, i.status, i.version
+          FROM incidents AS i
+          JOIN reviewer_memberships AS actor
+            ON actor.tenant_id = i.tenant_id
+           AND actor.cognito_subject = $1
+           AND actor.status = 'ACTIVE'
+           AND actor.role IN ('OWNER', 'ADMIN')
+          WHERE i.id = $2
+          FOR UPDATE OF i
+        `,
+        [input.reviewer.subject, input.incidentId],
+      );
+      const incident = incidentResult.rows[0];
+      if (incident === undefined) throw new ReviewNotFoundError();
+
+      const previous = await client.query<{
+        readonly attempt_id: string;
+      }>(
+        `
+          SELECT metadata ->> 'attemptId' AS attempt_id
+          FROM audit_events
+          WHERE tenant_id = $1
+            AND incident_id = $2
+            AND actor_id = $3
+            AND action = 'INCIDENT_PROCESSING_RETRY_REQUESTED'
+            AND request_id = $4
+          ORDER BY occurred_at DESC
+          LIMIT 1
+        `,
+        [
+          incident.tenant_id,
+          input.incidentId,
+          input.reviewer.subject,
+          input.clientRequestId,
+        ],
+      );
+      const sourceIdsResult = await client.query<{ readonly id: string }>(
+        `
+          SELECT id
+          FROM incident_sources
+          WHERE tenant_id = $1 AND incident_id = $2
+          ORDER BY source_role, id
+          FOR UPDATE
+        `,
+        [incident.tenant_id, input.incidentId],
+      );
+      const sourceIds = sourceIdsResult.rows.map((row) => row.id);
+      const previousAttemptId = previous.rows[0]?.attempt_id;
+      if (previousAttemptId !== undefined && previousAttemptId.length > 0) {
+        await client.query('COMMIT');
+        return {
+          incidentId: input.incidentId,
+          workspaceId: incident.source_workspace_id,
+          incidentVersion: incident.version,
+          attemptId: previousAttemptId,
+          sourceIds,
+          idempotent: true,
+        };
+      }
+      if (incident.status === 'COLLECTING') {
+        const activeRetry = await client.query<{
+          readonly attempt_id: string;
+        }>(
+          `
+            SELECT metadata ->> 'attemptId' AS attempt_id
+            FROM audit_events
+            WHERE tenant_id = $1
+              AND incident_id = $2
+              AND action = 'INCIDENT_PROCESSING_RETRY_REQUESTED'
+            ORDER BY occurred_at DESC
+            LIMIT 1
+          `,
+          [incident.tenant_id, input.incidentId],
+        );
+        const activeAttemptId = activeRetry.rows[0]?.attempt_id;
+        if (activeAttemptId !== undefined && activeAttemptId.length > 0) {
+          await client.query('COMMIT');
+          return {
+            incidentId: input.incidentId,
+            workspaceId: incident.source_workspace_id,
+            incidentVersion: incident.version,
+            attemptId: activeAttemptId,
+            sourceIds,
+            idempotent: true,
+          };
+        }
+      }
+      if (
+        !['COLLECTING', 'FAILED'].includes(incident.status) ||
+        incident.version !== input.expectedIncidentVersion ||
+        sourceIds.length === 0
+      ) {
+        throw new ReviewConflictError(
+          'Incident evidence is not eligible for retry',
+        );
+      }
+      const eligibility = await client.query<{
+        readonly retryable: boolean;
+        readonly artifact_count: number | string;
+      }>(
+        `
+          SELECT
+            BOOL_AND(status IN ('INACCESSIBLE', 'REVOKED', 'FAILED'))
+              AND EXISTS (
+                SELECT 1
+                FROM slack_installations installation
+                WHERE installation.tenant_id = $1
+                  AND installation.team_id = $3
+                  AND installation.status = 'ACTIVE'
+                  AND installation.credential_secret_arn IS NOT NULL
+                  AND (
+                    installation.credential_expires_at IS NULL
+                    OR installation.credential_expires_at > $4
+                  )
+              ) AS retryable,
+            (
+              SELECT COUNT(*)
+              FROM source_artifacts artifact
+              WHERE artifact.tenant_id = $1
+                AND artifact.incident_id = $2
+                AND artifact.deleted_at IS NULL
+            ) AS artifact_count
+          FROM incident_sources
+          WHERE tenant_id = $1 AND incident_id = $2
+        `,
+        [
+          incident.tenant_id,
+          input.incidentId,
+          incident.source_workspace_id,
+          input.requestedAt,
+        ],
+      );
+      const retryable = eligibility.rows[0];
+      if (
+        retryable?.retryable !== true ||
+        Number(retryable.artifact_count) !== 0
+      ) {
+        throw new ReviewConflictError(
+          'Only zero-evidence collection failures can be retried safely',
+        );
+      }
+
+      await client.query(
+        `
+          UPDATE incident_sources
+          SET status = 'PLANNED', updated_at = $1, version = version + 1
+          WHERE tenant_id = $2 AND incident_id = $3
+        `,
+        [input.requestedAt, incident.tenant_id, input.incidentId],
+      );
+      await client.query(
+        `
+          UPDATE source_collection_runs
+          SET status = 'COLLECTING', collected_message_count = 0,
+              permission_outcome = 'UNKNOWN', provider_rate_limit_state = '{}'::jsonb,
+              missing_or_excluded_periods = '[]'::jsonb,
+              completion_reason = NULL, failure_reason = NULL,
+              started_at = $1, finished_at = NULL, updated_at = $1,
+              version = version + 1
+          WHERE tenant_id = $2 AND incident_id = $3
+        `,
+        [input.requestedAt, incident.tenant_id, input.incidentId],
+      );
+      await client.query(
+        `
+          UPDATE source_collection_checkpoints AS checkpoint
+          SET phase = CASE
+                WHEN source.source_kind = 'SLACK_THREAD' THEN 'ANCHOR_THREAD'
+                ELSE 'CHANNEL'
+              END,
+              anchor_index = 0, collection_cursor = NULL,
+              pages_collected = 0, collected_message_count = 0,
+              last_collected_at = NULL, rate_limit_count = 0,
+              transient_failure_count = 0, rate_limited_until = NULL,
+              updated_at = $1, version = version + 1
+          FROM incident_sources AS source
+          WHERE checkpoint.tenant_id = $2
+            AND checkpoint.incident_id = $3
+            AND source.tenant_id = checkpoint.tenant_id
+            AND source.incident_id = checkpoint.incident_id
+            AND source.id = checkpoint.source_id
+        `,
+        [input.requestedAt, incident.tenant_id, input.incidentId],
+      );
+      await client.query(
+        `
+          UPDATE source_coverage_manifests
+          SET source_state = 'COLLECTING', collected_message_count = 0,
+              missing_or_excluded_periods = '[]'::jsonb,
+              permission_outcome = 'UNKNOWN', provider_rate_limit_state = '{}'::jsonb,
+              completion_or_failure_reason = NULL, updated_at = $1
+          WHERE tenant_id = $2 AND incident_id = $3
+        `,
+        [input.requestedAt, incident.tenant_id, input.incidentId],
+      );
+      const updated = await client.query<{ readonly version: number }>(
+        `
+          UPDATE incidents
+          SET status = 'COLLECTING', updated_at = $1, version = version + 1
+          WHERE tenant_id = $2 AND id = $3 AND version = $4
+          RETURNING version
+        `,
+        [
+          input.requestedAt,
+          incident.tenant_id,
+          input.incidentId,
+          input.expectedIncidentVersion,
+        ],
+      );
+      const incidentVersion = updated.rows[0]?.version;
+      if (incidentVersion === undefined) throw new ReviewConflictError();
+      await insertAuditEvent(client, {
+        id: input.auditEventId,
+        tenantId: incident.tenant_id,
+        incidentId: input.incidentId,
+        actorId: input.reviewer.subject,
+        action: 'INCIDENT_PROCESSING_RETRY_REQUESTED',
+        targetType: 'INCIDENT',
+        targetId: input.incidentId,
+        requestId: input.clientRequestId,
+        metadata: { attemptId: input.attemptId, sourceCount: sourceIds.length },
+        occurredAt: input.requestedAt,
+      });
+      await client.query('COMMIT');
+      return {
+        incidentId: input.incidentId,
+        workspaceId: incident.source_workspace_id,
+        incidentVersion,
+        attemptId: input.attemptId,
+        sourceIds,
+        idempotent: false,
+      };
+    } catch (error) {
+      await rollbackQuietly(client);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 }
 
 async function ensurePublicationJob(
@@ -1828,6 +2207,80 @@ function toRevisionSummary(row: RevisionRow): ReportRevisionSummary {
     statementCount: row.statement_count,
     acknowledgedContradictions: row.acknowledged_contradictions,
     acknowledgedOpenQuestions: row.acknowledged_open_questions,
+  };
+}
+
+function toProcessingIssues(
+  rows: readonly ProcessingIssueRow[],
+): readonly IncidentProcessingIssue[] {
+  const issues = new Map<string, IncidentProcessingIssue>();
+  for (const row of rows) {
+    const processingFailure = processingFailureFor(row);
+    const source = {
+      sourceId: row.source_id,
+      channelId: row.channel_id,
+      displayName: row.display_name,
+      status: row.source_status,
+      permissionOutcome: row.permission_outcome,
+      failureReason: row.failure_reason,
+      messageCount: row.message_count,
+    };
+    const existing = issues.get(row.incident_id);
+    if (existing !== undefined) {
+      issues.set(row.incident_id, {
+        ...existing,
+        canRetry:
+          existing.canRetry &&
+          row.connection_active &&
+          ['INACCESSIBLE', 'REVOKED', 'FAILED'].includes(row.source_status),
+        sources: [...existing.sources, source],
+      });
+      continue;
+    }
+    issues.set(row.incident_id, {
+      incidentId: row.incident_id,
+      workspaceId: row.workspace_id,
+      title: row.title,
+      severity: row.severity,
+      status: row.incident_status,
+      incidentVersion: row.incident_version,
+      failureCode: processingFailure.failureCode,
+      failureReason: processingFailure.failureReason,
+      canRetry:
+        Number(row.artifact_count) === 0 &&
+        row.connection_active &&
+        ['INACCESSIBLE', 'REVOKED', 'FAILED'].includes(row.source_status),
+      updatedAt: toIsoString(row.incident_updated_at),
+      sources: [source],
+    });
+  }
+  return [...issues.values()];
+}
+
+function processingFailureFor(
+  row: ProcessingIssueRow,
+): Pick<IncidentProcessingIssue, 'failureCode' | 'failureReason'> {
+  if (row.report_failure_code !== null) {
+    return {
+      failureCode: 'REPORT_GENERATION_FAILED',
+      failureReason: row.report_failure_code,
+    };
+  }
+  if (row.analysis_failure_code !== null) {
+    return {
+      failureCode: 'ANALYSIS_FAILED',
+      failureReason: row.analysis_failure_code,
+    };
+  }
+  if (row.incident_status === 'FAILED') {
+    return {
+      failureCode: 'NO_ACCESSIBLE_EVIDENCE',
+      failureReason: row.failure_reason,
+    };
+  }
+  return {
+    failureCode: 'EVIDENCE_COLLECTION_INCOMPLETE',
+    failureReason: row.failure_reason,
   };
 }
 

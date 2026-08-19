@@ -5,6 +5,7 @@ import {
   CreateReportRevision,
   GetReportRevision,
   ListIncidentReviews,
+  RetryIncidentProcessing,
 } from '../../src/application/review-incident.js';
 import {
   ReviewAuthorizationError,
@@ -104,6 +105,9 @@ function repository(): {
   readonly assignReviewer: ReturnType<
     typeof vi.fn<IncidentReviewRepository['assignReviewer']>
   >;
+  readonly prepareProcessingRetry: ReturnType<
+    typeof vi.fn<IncidentReviewRepository['prepareProcessingRetry']>
+  >;
 } {
   const createdRevision = {
     id: revisionId,
@@ -127,7 +131,7 @@ function repository(): {
       .fn<IncidentReviewRepository['listInbox']>()
       .mockResolvedValue({
         authorized: true,
-        page: { items: [], nextCursor: null },
+        page: { items: [], processingIssues: [], nextCursor: null },
       }),
     loadBundle: vi
       .fn<IncidentReviewRepository['loadBundle']>()
@@ -150,6 +154,16 @@ function repository(): {
         assignedSlackUserId: 'U001',
         incidentVersion: 5,
         updatedAt: now.toISOString(),
+      }),
+    prepareProcessingRetry: vi
+      .fn<IncidentReviewRepository['prepareProcessingRetry']>()
+      .mockResolvedValue({
+        incidentId,
+        workspaceId: 'T001',
+        incidentVersion: 6,
+        attemptId: '1fcf48ad-3b82-44a0-9f31-00546b499932',
+        sourceIds: ['source-1'],
+        idempotent: false,
       }),
   };
 }
@@ -177,6 +191,43 @@ function createCommand(): {
 }
 
 describe('human incident review', () => {
+  it('prepares and starts a tenant-scoped idempotent evidence retry', async () => {
+    const reviews = repository();
+    const workflowStart = vi.fn().mockResolvedValue(undefined);
+    const generate = vi
+      .fn()
+      .mockReturnValueOnce('21d6d96d-3dd1-4352-a342-4c609063aebf')
+      .mockReturnValueOnce('1fcf48ad-3b82-44a0-9f31-00546b499932');
+    const useCase = new RetryIncidentProcessing(
+      reviews,
+      { start: workflowStart },
+      { now: () => now },
+      { generate },
+    );
+
+    const result = await useCase.execute({
+      reviewer,
+      incidentId,
+      command: { expectedIncidentVersion: 5, clientRequestId: requestId },
+    });
+
+    expect(reviews.prepareProcessingRetry).toHaveBeenCalledWith({
+      auditEventId: '21d6d96d-3dd1-4352-a342-4c609063aebf',
+      attemptId: '1fcf48ad-3b82-44a0-9f31-00546b499932',
+      reviewer,
+      incidentId,
+      expectedIncidentVersion: 5,
+      clientRequestId: requestId,
+      requestedAt: now,
+    });
+    expect(workflowStart).toHaveBeenCalledWith({
+      tenantId: 'T001',
+      incidentId,
+      jobId: result.attemptId,
+      sourceIds: ['source-1'],
+      attemptId: result.attemptId,
+    });
+  });
   it('loads a specifically requested immutable revision', async () => {
     const reviews = repository();
     reviews.loadRevision.mockResolvedValueOnce({
@@ -220,7 +271,7 @@ describe('human incident review', () => {
     const reviews = repository();
     reviews.listInbox.mockResolvedValueOnce({
       authorized: false,
-      page: { items: [], nextCursor: null },
+      page: { items: [], processingIssues: [], nextCursor: null },
     });
 
     await expect(
