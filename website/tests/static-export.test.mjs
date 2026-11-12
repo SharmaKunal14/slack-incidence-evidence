@@ -40,6 +40,37 @@ test('exports a static demo redirect and all public demo assets', async () => {
   ]);
 });
 
+test('pairs each mobile story chapter with its evidence example', async () => {
+  const html = await readFile(new URL('index.html', output), 'utf8');
+  const chapters = [...html.matchAll(
+    /<article class="story-chapter" data-story-step="(\d)">([\s\S]*?)<\/article>/g,
+  )];
+  const examples = [
+    'Approved Slack scope',
+    'WAF rule changed at 08:57:42',
+    'Human-approved revision',
+  ];
+
+  assert.equal(chapters.length, examples.length);
+  for (const [index, chapter] of chapters.entries()) {
+    assert.equal(Number(chapter[1]), index);
+    assert.ok(chapter[2].includes(examples[index]));
+    assert.match(chapter[2], /class="story-inline-panel"/);
+    assert.doesNotMatch(chapter[2], /aria-hidden="true"/);
+  }
+});
+
+test('exports an explicitly associated mobile navigation control', async () => {
+  const html = await readFile(new URL('index.html', output), 'utf8');
+  const toggle = html.match(/<button[^>]*id="navigation-toggle"[^>]*>/)?.[0];
+
+  assert.ok(toggle);
+  assert.match(toggle, /aria-controls="primary-navigation"/);
+  assert.match(toggle, /aria-expanded="false"/);
+  assert.match(toggle, /aria-label="Toggle navigation"/);
+  assert.match(html, /<div[^>]*id="primary-navigation"/);
+});
+
 test('uses the configured public URL for absolute social metadata', async () => {
   const html = await readFile(new URL('index.html', output), 'utf8');
   const expectedUrl =

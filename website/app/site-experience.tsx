@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties } from "react";
 
 const demoHref = "/review-demo/demo.html";
 const connectSlackHref = requireHttpsUrl(
@@ -212,7 +212,7 @@ function ArchitectureJourney() {
             <Fragment key={lane.label}>
               <section className="journey-lane">
                 <div className="journey-lane-heading"><span>{lane.label}</span><h4>{lane.title}</h4></div>
-                <div className="journey-scroll">
+                <div className="journey-scroll" tabIndex={0} role="region" aria-label={`${lane.title} — scroll to explore`}>
                   <div className="journey-track">
                     {lane.nodes.map((node, nodeIndex) => {
                       const delay = lane.startDelay + nodeIndex * 0.62;
@@ -265,13 +265,14 @@ function ProductWorkspace() {
           <small className="product-disclosure">Production interface with synthetic evidence. External effects are disabled.</small>
         </div>
         <div className="product-window product-window-live" data-reveal>
-          <div className="window-bar"><span className="window-mark">OR</span><span>Production review UI · synthetic API</span><div><i /><i /><i /></div></div>
+          <div className="window-bar"><span className="window-mark">OR</span><span>Review workspace · sample incident</span><div aria-hidden="true"><i /><i /><i /></div></div>
           <iframe
             src="/review-demo/demo.html"
             title="Preview of the OnRecord review console"
             loading="lazy"
             sandbox="allow-scripts allow-same-origin"
             tabIndex={-1}
+            aria-hidden="true"
           />
           <a className="product-window-overlay" href={demoHref} aria-label="Open the full interactive product demo">
             <span>Open interactive product <b aria-hidden="true">↗</b></span>
@@ -282,31 +283,45 @@ function ProductWorkspace() {
   );
 }
 
+function StoryPanel({ step, hidden }: { step: number; hidden?: boolean }) {
+  if (step === 0) {
+    return (
+      <div className="story-panel story-panel-sources" data-story-panel="0" aria-hidden={hidden}>
+        <p className="story-panel-label">Approved Slack scope</p>
+        <div className="story-source-card"><span>09:07 · #incident-checkout</span><p>Failures may be happening before requests reach checkout.</p></div>
+        <div className="story-source-card"><span>09:10 · #security-alerts</span><p>Unapproved WAF change found 24 seconds before impact.</p></div>
+        <div className="story-source-card"><span>09:12 · #deployments</span><p>Deployment timing is suspicious, but not yet causal.</p></div>
+      </div>
+    );
+  }
+  if (step === 1) {
+    return (
+      <div className="story-panel story-panel-graph" data-story-panel="1" aria-hidden={hidden}>
+        <p className="story-panel-label">Evidence graph</p>
+        <div className="story-graph-row"><span>Observed</span><strong>WAF rule changed at 08:57:42</strong><i>2 sources</i></div>
+        <div className="story-graph-row"><span>Disputed</span><strong>Deployment caused the outage</strong><i>3 sources</i></div>
+        <div className="story-graph-row"><span>Unknown</span><strong>How was the session acquired?</strong><i>Open question</i></div>
+      </div>
+    );
+  }
+  return (
+    <div className="story-panel story-panel-approved" data-story-panel="2" aria-hidden={hidden}>
+      <p className="story-panel-label">Human-approved revision</p>
+      <span className="story-approved-state"><i /> Approved</span>
+      <h3>EU checkout outage</h3>
+      <p>An unauthorized WAF rule blocked checkout requests at the edge.</p>
+      <div><span>7 evidence sources</span><span>Revision 01</span></div>
+    </div>
+  );
+}
+
 function StoryReveal({ activeStep }: { activeStep: number }) {
   return (
     <section className="story-section" id="method">
       <div className="shell story-layout">
         <div className="story-stage" data-active-step={activeStep} aria-label="An incident moving from Slack evidence to a human-approved record">
           <div className="story-stage-topline"><span>Incident · INC-DEMO-1042</span><span>0{activeStep + 1} / 03</span></div>
-          <div className="story-panel story-panel-sources" data-story-panel="0">
-            <p className="story-panel-label">Approved Slack scope</p>
-            <div className="story-source-card"><span>09:07 · #incident-checkout</span><p>Failures may be happening before requests reach checkout.</p></div>
-            <div className="story-source-card"><span>09:10 · #security-alerts</span><p>Unapproved WAF change found 24 seconds before impact.</p></div>
-            <div className="story-source-card"><span>09:12 · #deployments</span><p>Deployment timing is suspicious, but not yet causal.</p></div>
-          </div>
-          <div className="story-panel story-panel-graph" data-story-panel="1">
-            <p className="story-panel-label">Evidence graph</p>
-            <div className="story-graph-row"><span>Observed</span><strong>WAF rule changed at 08:57:42</strong><i>2 sources</i></div>
-            <div className="story-graph-row"><span>Disputed</span><strong>Deployment caused the outage</strong><i>3 sources</i></div>
-            <div className="story-graph-row"><span>Unknown</span><strong>How was the session acquired?</strong><i>Open question</i></div>
-          </div>
-          <div className="story-panel story-panel-approved" data-story-panel="2">
-            <p className="story-panel-label">Human-approved revision</p>
-            <span className="story-approved-state"><i /> Approved</span>
-            <h3>EU checkout outage</h3>
-            <p>An unauthorized WAF rule blocked checkout requests at the edge.</p>
-            <div><span>7 evidence sources</span><span>Revision 01</span></div>
-          </div>
+          {workflow.map((item, index) => <StoryPanel key={item.step} step={index} hidden={activeStep !== index} />)}
         </div>
         <div className="story-chapters">
           <header data-reveal>
@@ -318,7 +333,8 @@ function StoryReveal({ activeStep }: { activeStep: number }) {
               <span>{item.step}</span>
               <p className="kicker">{item.kicker}</p>
               <h3>{item.title}</h3>
-              <p>{item.copy}</p>
+              <p className="story-chapter-copy">{item.copy}</p>
+              <div className="story-inline-panel"><StoryPanel step={index} /></div>
             </article>
           ))}
         </div>
@@ -328,16 +344,32 @@ function StoryReveal({ activeStep }: { activeStep: number }) {
 }
 
 function WalkthroughDialog({ onClose }: { onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement;
+    dialog?.showModal();
+    document.body.style.overflow = "hidden";
+    return () => {
+      dialog?.close();
+      document.body.style.overflow = previousOverflow;
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+        previousFocus.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+
   return (
-    <div className="walkthrough-dialog" role="dialog" aria-modal="true" aria-labelledby="walkthrough-title">
-      <button className="walkthrough-backdrop" type="button" onClick={onClose} aria-label="Close walkthrough" />
+    <dialog ref={dialogRef} className="walkthrough-dialog" aria-labelledby="walkthrough-title" onCancel={onClose} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="walkthrough-dialog-panel">
         <div className="walkthrough-dialog-heading">
           <div>
             <p className="kicker">2-minute product story</p>
             <h2 id="walkthrough-title">Slack evidence to approved record.</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close walkthrough" autoFocus>×</button>
+          <button type="button" onClick={onClose} aria-label="Close walkthrough">×</button>
         </div>
         <video controls autoPlay playsInline preload="metadata" poster="/video/onrecord-workflow-poster.jpg">
           <source src="/video/onrecord-workflow-120s.mp4" type="video/mp4" />
@@ -346,7 +378,7 @@ function WalkthroughDialog({ onClose }: { onClose: () => void }) {
         </video>
         <p>Connected test environment · synthetic incident data · sequences accelerated</p>
       </div>
-    </div>
+    </dialog>
   );
 }
 
@@ -356,7 +388,7 @@ function TechnicalProof() {
       <details className="shell technical-disclosure">
         <summary>
           <span><small>Technical appendix</small><strong>Want to see how it is built?</strong></span>
-          <i aria-hidden="true">+</i>
+          <i aria-hidden="true"><span>+</span></i>
         </summary>
         <div className="technical-content">
           <ArchitectureJourney />
@@ -436,17 +468,23 @@ export function OnRecordSite() {
   }, []);
 
   useEffect(() => {
-    if (!walkthroughOpen) return;
+    if (!navOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setWalkthroughOpen(false);
+      if (event.key === "Escape") {
+        setNavOpen(false);
+        document.getElementById("navigation-toggle")?.focus();
+      }
     };
-    document.body.style.overflow = "hidden";
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Element && !event.target.closest(".site-nav")) setNavOpen(false);
+    };
     document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
     return () => {
-      document.body.style.overflow = "";
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
     };
-  }, [walkthroughOpen]);
+  }, [navOpen]);
 
   return (
     <main className="marketing-site">
@@ -457,7 +495,7 @@ export function OnRecordSite() {
             <span className="wordmark-glyph" aria-hidden="true"><i /><i /><i /></span>
             <span>OnRecord</span>
           </a>
-          <div className="nav-links" data-open={navOpen}>
+          <div className="nav-links" id="primary-navigation" data-open={navOpen}>
             <a href="#product" onClick={() => setNavOpen(false)}>Product</a>
             <a href="#method" onClick={() => setNavOpen(false)}>How it works</a>
             <a href="#trust" onClick={() => setNavOpen(false)}>Trust</a>
@@ -466,8 +504,10 @@ export function OnRecordSite() {
           <div className="nav-actions">
             <button
               className="nav-toggle"
+              id="navigation-toggle"
               type="button"
               aria-expanded={navOpen}
+              aria-controls="primary-navigation"
               aria-label="Toggle navigation"
               onClick={() => setNavOpen((open) => !open)}
             >
