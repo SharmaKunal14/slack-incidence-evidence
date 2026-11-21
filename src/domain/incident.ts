@@ -154,3 +154,5 @@ export class IncidentAggregate {
     return { ...this.snapshot };
   }
 }
+
+// Smart CI live subset verification.
