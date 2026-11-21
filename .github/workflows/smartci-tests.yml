@@ -1,0 +1,84 @@
+name: Smart CI / OnRecord tests
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+concurrency:
+  group: smartci-onrecord-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          path: app
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Install native test dependencies
+        working-directory: app
+        run: npm ci --ignore-scripts
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        id: control
+        continue-on-error: true
+        with:
+          repository: SharmaKunal14/smart-ci
+          ref: e6b35ea089abedfd49b6ca0547a5351058d6b1ed
+          path: control
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        id: python
+        continue-on-error: true
+        with:
+          python-version: '3.14'
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        id: uv
+        continue-on-error: true
+        with:
+          version: '0.11.6'
+          enable-cache: false
+      - name: Install pinned Smart CI
+        id: tool
+        if: steps.control.outcome == 'success' && steps.python.outcome == 'success' && steps.uv.outcome == 'success'
+        continue-on-error: true
+        working-directory: control
+        run: uv sync --frozen
+      - name: Plan and execute; full fallback if the tool is unavailable
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          TOOL_READY: ${{ steps.tool.outcome }}
+          FORCE_FULL: ${{ vars.SMARTCI_FORCE_FULL }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          status=2
+          if [[ "$TOOL_READY" == 'success' && "$FORCE_FULL" != 'true' ]]; then
+            control/.venv/bin/smartci typescript run \
+              --repo "$GITHUB_WORKSPACE/app" \
+              --config "$GITHUB_WORKSPACE/control/examples/onrecord/typescript.json" \
+              --base "$BASE_SHA" --output "$RUNNER_TEMP/smartci-result"
+            status=$?
+          fi
+          if [[ "$status" -eq 0 || "$status" -eq 1 ]]; then
+            exit "$status"
+          fi
+          echo 'Smart CI unavailable or incomplete: running unfiltered native Vitest.'
+          cd app
+          node node_modules/vitest/vitest.mjs run --config vitest.config.ts --allowOnly=false --passWithNoTests=false
+      - name: Upload bounded audit artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: smartci-onrecord-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/smartci-result/audit.md
+            ${{ runner.temp }}/smartci-result/selection.json
+            ${{ runner.temp }}/smartci-result/run.json
+          if-no-files-found: ignore
+          retention-days: 3
